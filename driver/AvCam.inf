@@ -1,6 +1,3 @@
-; Prototype INF placeholder.
-; The hardware/service sections will be completed when the AVStream driver sources exist.
-
 [Version]
 Signature   = "$WINDOWS NT$"
 Class       = Camera
@@ -11,8 +8,37 @@ CatalogFile = AvCam.cat
 PnpLockdown = 1
 
 [DestinationDirs]
-DefaultDestDir = 13
+AvCam.CopyFiles = 12
+
+[SourceDisksNames]
+1 = %DiskName%,,,
+
+[SourceDisksFiles]
+AvCam.sys = 1
+
+[Manufacturer]
+%ProviderName% = AvCamModels,NTamd64
+
+[AvCamModels.NTamd64]
+%DeviceName% = AvCam.Install, Root\AvCamVirtualCamera
+
+[AvCam.Install]
+CopyFiles = AvCam.CopyFiles
+
+[AvCam.CopyFiles]
+AvCam.sys
+
+[AvCam.Install.Services]
+AddService = AvCam,0x00000002,AvCam.Service
+
+[AvCam.Service]
+DisplayName   = %DeviceName%
+ServiceType   = 1
+StartType     = 3
+ErrorControl  = 1
+ServiceBinary = %12%\AvCam.sys
 
 [Strings]
 ProviderName = "AvCam Project"
 DeviceName   = "AvCam Virtual Camera"
+DiskName     = "AvCam Virtual Camera Installation Media"
