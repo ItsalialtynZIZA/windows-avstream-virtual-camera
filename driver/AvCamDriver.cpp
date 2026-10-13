@@ -1,8 +1,7 @@
 #include <ntddk.h>
+#include <ks.h>
 
-// Phase 1 placeholder.
-// Next step: convert this into a proper AVStream minidriver and register
-// KSDEVICE_DESCRIPTOR / KSFILTER_DESCRIPTOR / KSPIN_DESCRIPTOR_EX.
+extern const KSDEVICE_DESCRIPTOR g_AvCamDeviceDescriptor;
 
 extern "C"
 NTSTATUS DriverEntry(
@@ -10,14 +9,9 @@ NTSTATUS DriverEntry(
     _In_ PUNICODE_STRING RegistryPath
 )
 {
-    UNREFERENCED_PARAMETER(DriverObject);
-    UNREFERENCED_PARAMETER(RegistryPath);
-
-    DbgPrintEx(
-        DPFLTR_IHVDRIVER_ID,
-        DPFLTR_INFO_LEVEL,
-        "AvCam: DriverEntry prototype loaded.\n"
+    return KsInitializeDriver(
+        DriverObject,
+        RegistryPath,
+        &g_AvCamDeviceDescriptor
     );
-
-    return STATUS_SUCCESS;
 }
