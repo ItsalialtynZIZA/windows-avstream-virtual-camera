@@ -78,8 +78,11 @@
 - [x] PREfast currently passes with 0 warnings / 0 errors
 - [x] Fail CI when PREfast emits C/CA/MSB warnings
 - [x] Validate all packaged PowerShell helper syntax in CI
+- [x] Compile feeder with `/W4`, `/sdl`, and `/permissive-`
 - [x] Guarded one-boot Driver Verifier helper targeting `AvCam.sys` only
 - [x] Guarded test-signing enable/disable helpers and runtime safety notes
+- [x] Document dedicated Driver Verifier/runtime stress matrix
+- [x] Package hardening guide with the runtime test artifact
 - [ ] Runtime Driver Verifier pass on a dedicated Windows 11 test VM/machine
 - [ ] Runtime concurrency/open-close/reconnect stress pass
 - [ ] Runtime pool/IRQL validation under Driver Verifier
