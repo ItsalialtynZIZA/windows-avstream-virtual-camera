@@ -98,21 +98,21 @@ const KSPIN_DESCRIPTOR_EX g_AvCamCapturePinDescriptor =
     nullptr,
     nullptr,
     {
-        nullptr,
         0,
         nullptr,
         0,
+        nullptr,
         RTL_NUMBER_OF(g_AvCamVideoRanges),
         g_AvCamVideoRanges,
         KSPIN_DATAFLOW_OUT,
         KSPIN_COMMUNICATION_BOTH,
-        &KSCATEGORY_VIDEO,
+        &PIN_CATEGORY_CAPTURE,
         &g_AvCamCapturePinName,
         0
     },
-    0,
+    KSPIN_FLAG_PROCESS_IN_RUN_STATE_ONLY,
     1,
     0,
     nullptr,
-    AvCamIntersectHandler
+    reinterpret_cast<PFNKSINTERSECTHANDLEREX>(AvCamIntersectHandler)
 };
