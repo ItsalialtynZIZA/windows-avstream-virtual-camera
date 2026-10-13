@@ -77,10 +77,12 @@ NTSTATUS AvCamDeviceAdd(_In_ PKSDEVICE Device)
         return status;
     }
 
+    KsAcquireDevice(Device);
     status = KsAddItemToObjectBag(
         Device->Bag,
         context,
         AvCamDeviceContextCleanup);
+    KsReleaseDevice(Device);
 
     if (!NT_SUCCESS(status))
     {
