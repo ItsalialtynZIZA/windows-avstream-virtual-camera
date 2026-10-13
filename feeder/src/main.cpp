@@ -108,6 +108,8 @@ struct Options
 {
     std::wstring source = L"test";
     std::wstring deviceName = L"OBS Virtual Camera";
+    bool listSources = false;
+    bool showHelp = false;
 };
 
 void PrintUsage()
@@ -115,7 +117,8 @@ void PrintUsage()
     std::wcout
         << L"Usage:\n"
         << L"  AvCamFeeder.exe --source test\n"
-        << L"  AvCamFeeder.exe --source obs [--device-name \"OBS Virtual Camera\"]\n";
+        << L"  AvCamFeeder.exe --source obs [--device-name \"OBS Virtual Camera\"]\n"
+        << L"  AvCamFeeder.exe --list-sources\n";
 }
 
 bool ParseOptions(int argc, wchar_t* argv[], Options& options)
@@ -126,8 +129,14 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
 
         if (argument == L"--help" || argument == L"-h")
         {
-            PrintUsage();
-            return false;
+            options.showHelp = true;
+            continue;
+        }
+
+        if (argument == L"--list-sources")
+        {
+            options.listSources = true;
+            continue;
         }
 
         if (argument == L"--source" && index + 1 < argc)
@@ -382,7 +391,13 @@ int wmain(int argc, wchar_t* argv[])
     Options options;
     if (!ParseOptions(argc, argv, options))
     {
-        return argc > 1 ? 2 : 0;
+        return 2;
+    }
+
+    if (options.showHelp)
+    {
+        PrintUsage();
+        return 0;
     }
 
     ComApartment com;
@@ -391,6 +406,17 @@ int wmain(int argc, wchar_t* argv[])
         std::wcerr << L"COM initialization failed: 0x"
                    << std::hex << static_cast<unsigned long>(com.result) << L"\n";
         return 3;
+    }
+
+    if (options.listSources)
+    {
+        const auto sources = EnumerateMediaFoundationVideoSources();
+        std::wcout << L"Media Foundation video sources (" << sources.size() << L"):\n";
+        for (std::size_t index = 0; index < sources.size(); ++index)
+        {
+            std::wcout << L"  [" << index << L"] " << sources[index] << L"\n";
+        }
+        return 0;
     }
 
     auto source = CreateFrameSource(options);
@@ -495,8 +521,6 @@ int wmain(int argc, wchar_t* argv[])
                 nextStatsTick = now + 1000ull;
             }
 
-            // Test source is generated locally. Media Foundation ReadSample blocks
-            // to source cadence, but this small delay also prevents hot spinning.
             Sleep(1);
         }
     }
