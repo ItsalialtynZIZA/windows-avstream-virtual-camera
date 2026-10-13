@@ -1,15 +1,19 @@
 #include <ntddk.h>
 #include <ks.h>
 
-// M1 device descriptor. Filter factories will be attached in the next step.
-// Zero static filters is valid in AVStream and lets us validate driver/PnP
-// initialization independently from capture pin implementation.
+#include "AvCamFilter.h"
+
+static const KSFILTER_DESCRIPTOR* g_AvCamFilterDescriptors[] =
+{
+    &g_AvCamFilterDescriptor
+};
+
 const KSDEVICE_DESCRIPTOR g_AvCamDeviceDescriptor =
 {
-    nullptr,                        // Dispatch (AVStream defaults)
-    0,                              // FilterDescriptorsCount
-    nullptr,                        // FilterDescriptors
-    KSDEVICE_DESCRIPTOR_VERSION_2,  // Version
-    0,                              // Flags
-    nullptr                         // Alignment
+    nullptr,                               // Dispatch (AVStream defaults)
+    RTL_NUMBER_OF(g_AvCamFilterDescriptors),
+    g_AvCamFilterDescriptors,
+    KSDEVICE_DESCRIPTOR_VERSION_2,
+    0,
+    nullptr
 };
