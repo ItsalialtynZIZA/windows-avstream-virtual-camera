@@ -29,9 +29,18 @@ bool TestPatternFrameSource::ReadFrame(
         return false;
     }
 
-    const std::uint64_t targetTickMs =
+    std::uint64_t now = GetTickCount64();
+    std::uint64_t targetTickMs =
         startTickMs_ + (static_cast<std::uint64_t>(frameIndex_) * 1000ull) / 30ull;
-    const std::uint64_t now = GetTickCount64();
+
+    // If the source was not polled for a while (for example while AvCam was
+    // absent), resynchronize instead of emitting a burst of catch-up frames.
+    if (now > targetTickMs + 250ull)
+    {
+        frameIndex_ = 0;
+        startTickMs_ = now;
+        targetTickMs = now;
+    }
 
     if (targetTickMs > now)
     {
