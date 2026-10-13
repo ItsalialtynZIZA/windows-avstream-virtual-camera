@@ -29,18 +29,26 @@
 
 ## M3 - User-mode frame transport
 - [x] Shared frame protocol
-- [x] SetupAPI discovery in feeder
-- [x] Open driver-facing device interface from feeder
-- [ ] Register producer device interface from driver
-- [ ] Implement frame submission IOCTL/property path
-- [ ] Handle producer disconnect/reconnect
-- [ ] Add bounded queue and frame dropping
+- [x] Register/enable producer discovery device interface
+- [x] SetupAPI producer discovery in feeder
+- [x] Define private AVStream KS frame-transport method set
+- [x] Validate fixed 1280x720 BGRA32 producer packets
+- [x] Implement ref-counted nonpaged latest-frame store
+- [x] Switch capture output to submitted frame with synthetic fallback
+- [x] Probe camera filters and identify AvCam through the private KS method
+- [x] Stream moving BGRA32 test frames continuously from feeder
+- [x] Compile/package driver and feeder successfully in CI
+- [ ] Runtime-test private method transport on Windows 11 x64
+- [ ] Add automatic producer/filter reconnect after device restart
+- [ ] Add frame/drop/fallback counters and diagnostics
 
 ## M4 - OBS bridge
-- [ ] Enumerate OBS Virtual Camera
-- [ ] Capture frames with Media Foundation
-- [ ] Convert to driver input format
-- [ ] Feed frames continuously
+- [ ] Introduce feeder frame-source abstraction
+- [ ] Enumerate OBS Virtual Camera with Media Foundation
+- [ ] Capture frames from OBS
+- [ ] Convert/scale to 1280x720 BGRA32 when needed
+- [ ] Feed frames continuously through the existing KS transport
+- [ ] Handle OBS source disconnect/reconnect
 
 ## M5 - Hardening
 - [ ] Concurrency review
