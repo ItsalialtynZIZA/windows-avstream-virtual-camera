@@ -346,6 +346,7 @@ void PrintStats(const AvCamTransportStats& stats)
     std::wcout
         << L"stats: submitted=" << stats.SubmittedFrames
         << L" replaced=" << stats.ReplacedFrames
+        << L" dropped=" << stats.DroppedFrames
         << L" capture_reads=" << stats.CaptureReads
         << L" fallback=" << stats.FallbackFrames
         << L"\n";
