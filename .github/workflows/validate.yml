@@ -32,6 +32,12 @@ jobs:
       - name: Add MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
 
+      - name: Cache WDK packages
+        uses: actions/cache@v4
+        with:
+          path: packages
+          key: wdk-sdk-x64-10.0.26100.6584
+
       - name: Restore WDK and SDK packages
         run: nuget restore packages.config -PackagesDirectory packages -NonInteractive
 
