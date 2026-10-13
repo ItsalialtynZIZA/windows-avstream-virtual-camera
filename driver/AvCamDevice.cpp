@@ -1,6 +1,7 @@
 #include "AvCamCommon.h"
 #include "AvCamDevice.h"
 #include "AvCamFilter.h"
+#include "AvCamFrameStore.h"
 #include "../shared/VirtualCameraProtocol.h"
 
 namespace
@@ -32,6 +33,7 @@ void AvCamDeviceContextCleanup(_In_ PVOID Item)
         RtlFreeUnicodeString(&context->ProducerInterfaceLink);
     }
 
+    AvCamFrameStoreShutdown();
     ExFreePoolWithTag(context, kAvCamDeviceContextTag);
 }
 
@@ -42,6 +44,12 @@ NTSTATUS AvCamDeviceAdd(_In_ PKSDEVICE Device)
         return STATUS_INVALID_PARAMETER;
     }
 
+    NTSTATUS status = AvCamFrameStoreInitialize();
+    if (!NT_SUCCESS(status))
+    {
+        return status;
+    }
+
     auto* context = static_cast<AvCamDeviceContext*>(
         ExAllocatePool2(
             POOL_FLAG_NON_PAGED,
@@ -50,12 +58,13 @@ NTSTATUS AvCamDeviceAdd(_In_ PKSDEVICE Device)
 
     if (context == nullptr)
     {
+        AvCamFrameStoreShutdown();
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     RtlZeroMemory(context, sizeof(*context));
 
-    NTSTATUS status = IoRegisterDeviceInterface(
+    status = IoRegisterDeviceInterface(
         Device->PhysicalDeviceObject,
         &GUID_DEVINTERFACE_AVCAM_FRAME_SINK,
         nullptr,
@@ -64,6 +73,7 @@ NTSTATUS AvCamDeviceAdd(_In_ PKSDEVICE Device)
     if (!NT_SUCCESS(status))
     {
         ExFreePoolWithTag(context, kAvCamDeviceContextTag);
+        AvCamFrameStoreShutdown();
         return status;
     }
 
@@ -76,6 +86,7 @@ NTSTATUS AvCamDeviceAdd(_In_ PKSDEVICE Device)
     {
         RtlFreeUnicodeString(&context->ProducerInterfaceLink);
         ExFreePoolWithTag(context, kAvCamDeviceContextTag);
+        AvCamFrameStoreShutdown();
         return status;
     }
 
