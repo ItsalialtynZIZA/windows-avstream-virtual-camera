@@ -20,6 +20,14 @@ target_compile_definitions(AvCamFeeder PRIVATE
     _WIN32_WINNT=0x0A00
 )
 
+if (MSVC)
+    target_compile_options(AvCamFeeder PRIVATE
+        /W4
+        /sdl
+        /permissive-
+    )
+endif()
+
 target_link_libraries(AvCamFeeder PRIVATE
     setupapi
     mf
