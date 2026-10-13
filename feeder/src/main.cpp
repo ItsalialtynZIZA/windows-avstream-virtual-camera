@@ -3,8 +3,8 @@
 #include <ks.h>
 #include <ksmedia.h>
 
+#include <atomic>
 #include <cstddef>
-#include <cstring>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -14,6 +14,21 @@
 
 namespace
 {
+std::atomic_bool g_Running{true};
+
+BOOL WINAPI ConsoleControlHandler(DWORD controlType)
+{
+    if (controlType == CTRL_C_EVENT ||
+        controlType == CTRL_BREAK_EVENT ||
+        controlType == CTRL_CLOSE_EVENT)
+    {
+        g_Running.store(false);
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 struct DevInfoList
 {
     HDEVINFO value = INVALID_HANDLE_VALUE;
@@ -24,6 +39,42 @@ struct DevInfoList
         {
             SetupDiDestroyDeviceInfoList(value);
         }
+    }
+};
+
+struct WinHandle
+{
+    HANDLE value = INVALID_HANDLE_VALUE;
+
+    ~WinHandle()
+    {
+        if (value != INVALID_HANDLE_VALUE)
+        {
+            CloseHandle(value);
+        }
+    }
+
+    WinHandle() = default;
+    WinHandle(const WinHandle&) = delete;
+    WinHandle& operator=(const WinHandle&) = delete;
+
+    WinHandle(WinHandle&& other) noexcept : value(other.value)
+    {
+        other.value = INVALID_HANDLE_VALUE;
+    }
+
+    WinHandle& operator=(WinHandle&& other) noexcept
+    {
+        if (this != &other)
+        {
+            if (value != INVALID_HANDLE_VALUE)
+            {
+                CloseHandle(value);
+            }
+            value = other.value;
+            other.value = INVALID_HANDLE_VALUE;
+        }
+        return *this;
     }
 };
 
@@ -96,7 +147,7 @@ std::vector<std::wstring> FindDevicePaths(const GUID& interfaceGuid)
     return paths;
 }
 
-std::vector<std::byte> BuildTestFramePacket()
+std::vector<std::byte> CreateFramePacket()
 {
     const size_t totalBytes =
         sizeof(AvCamFrameHeader) + AVCAM_FRAME_BYTES_BGRA32;
@@ -112,55 +163,51 @@ std::vector<std::byte> BuildTestFramePacket()
     header->Timestamp100ns = 0;
     header->PayloadBytes = AVCAM_FRAME_BYTES_BGRA32;
 
+    return packet;
+}
+
+void FillMovingTestPattern(std::vector<std::byte>& packet, unsigned long frameIndex)
+{
+    auto* header = reinterpret_cast<AvCamFrameHeader*>(packet.data());
+    header->Timestamp100ns = GetTickCount64() * 10000ull;
+
     auto* pixels = reinterpret_cast<unsigned char*>(
         packet.data() + sizeof(AvCamFrameHeader));
+
+    const unsigned long movingBar =
+        (frameIndex * 12u) % AVCAM_FRAME_WIDTH;
 
     for (unsigned long y = 0; y < AVCAM_FRAME_HEIGHT; ++y)
     {
         auto* row = pixels + y * AVCAM_FRAME_STRIDE_BGRA32;
         for (unsigned long x = 0; x < AVCAM_FRAME_WIDTH; ++x)
         {
-            const unsigned long offset = x * 4;
+            const unsigned long offset = x * 4u;
             const unsigned char horizontal =
                 static_cast<unsigned char>((x * 255u) / (AVCAM_FRAME_WIDTH - 1u));
             const unsigned char vertical =
                 static_cast<unsigned char>((y * 255u) / (AVCAM_FRAME_HEIGHT - 1u));
-            const bool checker = (((x / 64u) + (y / 64u)) & 1u) != 0;
 
-            row[offset + 0] = checker ? 0x20 : horizontal;
-            row[offset + 1] = vertical;
-            row[offset + 2] = checker ? horizontal : 0xE0;
+            const unsigned long distance =
+                (x > movingBar) ? (x - movingBar) : (movingBar - x);
+            const bool highlight = distance < 24u;
+
+            row[offset + 0] = highlight ? 0x20 : horizontal;
+            row[offset + 1] = highlight ? 0xE0 : vertical;
+            row[offset + 2] = highlight ? 0xFF : 0x40;
             row[offset + 3] = 0xFF;
         }
     }
-
-    return packet;
 }
 
-bool SubmitTestFrameToFilter(const std::wstring& filterPath)
+bool SubmitFrame(HANDLE filter, std::vector<std::byte>& packet, DWORD* errorCode)
 {
-    HANDLE filter = CreateFileW(
-        filterPath.c_str(),
-        GENERIC_READ | GENERIC_WRITE,
-        FILE_SHARE_READ | FILE_SHARE_WRITE,
-        nullptr,
-        OPEN_EXISTING,
-        FILE_ATTRIBUTE_NORMAL,
-        nullptr);
-
-    if (filter == INVALID_HANDLE_VALUE)
-    {
-        return false;
-    }
-
     KSMETHOD method{};
     method.Set = KSMETHODSETID_AVCAM_FRAME_TRANSPORT;
     method.Id = AVCAM_METHOD_SUBMIT_FRAME;
     method.Flags = KSMETHOD_TYPE_SEND;
 
-    auto packet = BuildTestFramePacket();
     DWORD bytesReturned = 0;
-
     const BOOL ok = DeviceIoControl(
         filter,
         IOCTL_KS_METHOD,
@@ -171,20 +218,51 @@ bool SubmitTestFrameToFilter(const std::wstring& filterPath)
         &bytesReturned,
         nullptr);
 
-    if (!ok)
+    if (!ok && errorCode != nullptr)
     {
-        CloseHandle(filter);
-        return false;
+        *errorCode = GetLastError();
     }
 
-    std::wcout << L"Accepted by AVStream filter: " << filterPath << L"\n";
-    CloseHandle(filter);
-    return true;
+    return ok != FALSE;
+}
+
+WinHandle FindAvCamFilter(std::vector<std::byte>& probePacket)
+{
+    const auto cameraFilters = FindDevicePaths(KSCATEGORY_VIDEO_CAMERA);
+
+    for (const auto& filterPath : cameraFilters)
+    {
+        WinHandle candidate;
+        candidate.value = CreateFileW(
+            filterPath.c_str(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
+            nullptr,
+            OPEN_EXISTING,
+            FILE_ATTRIBUTE_NORMAL,
+            nullptr);
+
+        if (candidate.value == INVALID_HANDLE_VALUE)
+        {
+            continue;
+        }
+
+        DWORD errorCode = ERROR_SUCCESS;
+        if (SubmitFrame(candidate.value, probePacket, &errorCode))
+        {
+            std::wcout << L"Accepted by AVStream filter: " << filterPath << L"\n";
+            return candidate;
+        }
+    }
+
+    return {};
 }
 } // namespace
 
 int wmain()
 {
+    SetConsoleCtrlHandler(ConsoleControlHandler, TRUE);
+
     std::wcout << L"AvCam feeder\n";
     std::wcout << L"Protocol version: " << AVCAM_PROTOCOL_VERSION << L"\n";
 
@@ -200,22 +278,34 @@ int wmain()
 
     std::wcout << L"AvCam producer interface detected.\n";
 
-    const auto cameraFilters = FindDevicePaths(KSCATEGORY_VIDEO_CAMERA);
-    if (cameraFilters.empty())
+    auto packet = CreateFramePacket();
+    FillMovingTestPattern(packet, 0);
+
+    WinHandle filter = FindAvCamFilter(packet);
+    if (filter.value == INVALID_HANDLE_VALUE)
     {
-        std::wcerr << L"No AVStream camera filters are present.\n";
+        std::wcerr << L"AvCam filter did not accept the private frame method.\n";
         return 3;
     }
 
-    for (const auto& filterPath : cameraFilters)
+    std::wcout << L"Streaming 1280x720 BGRA32 test frames. Press Ctrl+C to stop.\n";
+
+    unsigned long frameIndex = 1;
+    while (g_Running.load())
     {
-        if (SubmitTestFrameToFilter(filterPath))
+        FillMovingTestPattern(packet, frameIndex++);
+
+        DWORD errorCode = ERROR_SUCCESS;
+        if (!SubmitFrame(filter.value, packet, &errorCode))
         {
-            std::wcout << L"Submitted one 1280x720 BGRA32 test frame.\n";
-            return 0;
+            std::wcerr << L"Frame submission failed. Win32 error: "
+                       << errorCode << L"\n";
+            return 4;
         }
+
+        Sleep(33);
     }
 
-    std::wcerr << L"AvCam filter did not accept the private frame method.\n";
-    return 4;
+    std::wcout << L"Feeder stopped.\n";
+    return 0;
 }
