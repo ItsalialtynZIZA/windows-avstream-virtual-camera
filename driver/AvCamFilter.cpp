@@ -32,6 +32,8 @@ NTSTATUS AvCamSubmitFrameMethod(
     const ULONG requiredBytes =
         sizeof(AvCamFrameHeader) + AVCAM_FRAME_BYTES_BGRA32;
 
+    // IOCTL_KS_METHOD carries method data in the DeviceIoControl output/data
+    // buffer. KSMETHOD_TYPE_READ means the minidriver reads that data.
     if (stack->Parameters.DeviceIoControl.OutputBufferLength < requiredBytes)
     {
         return STATUS_BUFFER_TOO_SMALL;
@@ -94,14 +96,14 @@ DEFINE_KSMETHOD_TABLE(g_AvCamMethodItems)
 {
     DEFINE_KSMETHOD_ITEM(
         AVCAM_METHOD_SUBMIT_FRAME,
-        KSMETHOD_TYPE_WRITE,
+        KSMETHOD_TYPE_READ,
         AvCamSubmitFrameMethod,
         sizeof(KSMETHOD),
         sizeof(AvCamFrameHeader) + AVCAM_FRAME_BYTES_BGRA32,
         nullptr),
     DEFINE_KSMETHOD_ITEM(
         AVCAM_METHOD_GET_STATS,
-        KSMETHOD_TYPE_READ,
+        KSMETHOD_TYPE_WRITE,
         AvCamGetStatsMethod,
         sizeof(KSMETHOD),
         sizeof(AvCamTransportStats),
