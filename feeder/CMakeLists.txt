@@ -11,3 +11,7 @@ add_executable(AvCamFeeder
 target_include_directories(AvCamFeeder PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../shared
 )
+
+target_link_libraries(AvCamFeeder PRIVATE
+    setupapi
+)
