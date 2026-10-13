@@ -1,4 +1,5 @@
 #include "AvCamCommon.h"
+#include "AvCamDevice.h"
 #include "AvCamFilter.h"
 
 static const KSFILTER_DESCRIPTOR* g_AvCamFilterDescriptors[] =
