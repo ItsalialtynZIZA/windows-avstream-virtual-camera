@@ -22,6 +22,7 @@ target_compile_definitions(AvCamFeeder PRIVATE
 
 target_link_libraries(AvCamFeeder PRIVATE
     setupapi
+    mf
     mfplat
     mfreadwrite
     mfuuid
