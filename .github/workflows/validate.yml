@@ -103,3 +103,8 @@ jobs:
           path: |
             driver/x64/Release/AvCam/**
             driver/x64/Release/AvCam.cer
+            scripts/install-test-package.ps1
+            scripts/install-driver.ps1
+            scripts/uninstall-driver.ps1
+            scripts/verify-camera.ps1
+            docs/local-test.md
