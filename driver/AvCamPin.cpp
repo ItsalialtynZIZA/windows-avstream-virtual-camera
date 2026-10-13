@@ -67,7 +67,7 @@ const KS_DATARANGE_VIDEO g_AvCamVideoRange =
         kFrameInterval100ns,
         sizeof(KS_BITMAPINFOHEADER),
         kWidth,
-        kHeight,
+        -kHeight, // negative RGB height = top-down memory order
         1,
         32,
         KS_BI_RGB,
@@ -111,7 +111,7 @@ bool IsExactAvCamFormat(_In_ const KS_DATAFORMAT_VIDEOINFOHEADER* format)
         IsEqualGUID(dataFormat.Specifier, KSDATAFORMAT_SPECIFIER_VIDEOINFO) &&
         bmi.biSize >= sizeof(KS_BITMAPINFOHEADER) &&
         bmi.biWidth == kWidth &&
-        bmi.biHeight == kHeight &&
+        bmi.biHeight == -kHeight &&
         bmi.biPlanes == 1 &&
         bmi.biBitCount == 32 &&
         bmi.biCompression == KS_BI_RGB &&
