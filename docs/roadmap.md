@@ -11,17 +11,21 @@
 - [x] Replace placeholder with AVStream minidriver entry point
 - [x] Register camera filter categories
 - [x] Complete root-enumerated INF/service skeleton
-- [ ] Build cleanly with VS2022 + WDK 26100.6584
-- [ ] Test-sign package
+- [x] Build cleanly with VS2022 + WDK 26100.6584
+- [x] Test-sign package in CI
+- [x] Build signed INF/CAT/SYS package artifact
 - [ ] Install on Windows 11 x64
 - [ ] Confirm device in Device Manager
 
 ## M2 - Synthetic video
 - [x] Create capture pin descriptor
-- [x] Advertise fixed 1280x720 @ ~30 fps intersection format
+- [x] Advertise exact 1280x720 RGB32 @ ~30 fps KS_DATARANGE_VIDEO
+- [x] Validate connection format through SetDataFormat
 - [x] Add deterministic RGB32 synthetic frame generator
-- [ ] Validate allocator/format negotiation in WDK build
+- [x] Validate allocator/format code in WDK build
+- [x] Publish test package artifact from CI
 - [ ] Verify Windows Camera application
+- [ ] Verify Chrome/Edge camera enumeration
 
 ## M3 - User-mode frame transport
 - [x] Shared frame protocol
