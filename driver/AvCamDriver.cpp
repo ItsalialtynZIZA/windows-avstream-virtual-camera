@@ -1,7 +1,8 @@
-#include <ntddk.h>
-#include <ks.h>
+#include "AvCamCommon.h"
 
 extern const KSDEVICE_DESCRIPTOR g_AvCamDeviceDescriptor;
+
+extern "C" DRIVER_INITIALIZE DriverEntry;
 
 extern "C"
 NTSTATUS DriverEntry(
