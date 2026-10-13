@@ -11,6 +11,7 @@ const wchar_t* TestPatternFrameSource::Name() const noexcept
 bool TestPatternFrameSource::Start()
 {
     frameIndex_ = 0;
+    startTickMs_ = GetTickCount64();
     return true;
 }
 
@@ -28,10 +29,20 @@ bool TestPatternFrameSource::ReadFrame(
         return false;
     }
 
+    const std::uint64_t targetTickMs =
+        startTickMs_ + (static_cast<std::uint64_t>(frameIndex_) * 1000ull) / 30ull;
+    const std::uint64_t now = GetTickCount64();
+
+    if (targetTickMs > now)
+    {
+        Sleep(static_cast<DWORD>(targetTickMs - now));
+    }
+
     Timestamp100ns = GetTickCount64() * 10000ull;
 
     const unsigned long movingBar =
-        (frameIndex_++ * 12u) % AVCAM_FRAME_WIDTH;
+        (frameIndex_ * 12u) % AVCAM_FRAME_WIDTH;
+    ++frameIndex_;
 
     for (unsigned long y = 0; y < AVCAM_FRAME_HEIGHT; ++y)
     {
