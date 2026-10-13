@@ -122,11 +122,13 @@ jobs:
             scripts/install-driver.ps1
             scripts/uninstall-driver.ps1
             scripts/verify-camera.ps1
+            scripts/runtime-smoke-check.ps1
             scripts/driver-verifier.ps1
             scripts/enable-test-signing.ps1
             scripts/disable-test-signing.ps1
             docs/local-test.md
             docs/hardening.md
+            docs/production-signing.md
 
       - name: Analyze AVStream driver with PREfast
         shell: pwsh
