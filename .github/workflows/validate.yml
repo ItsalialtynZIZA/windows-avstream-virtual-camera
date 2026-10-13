@@ -107,6 +107,7 @@ jobs:
             scripts/install-driver.ps1
             scripts/uninstall-driver.ps1
             scripts/verify-camera.ps1
+            scripts/driver-verifier.ps1
             docs/local-test.md
 
       - name: Analyze AVStream driver with PREfast
