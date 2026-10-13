@@ -26,6 +26,13 @@ jobs:
         shell: pwsh
         run: Get-ChildItem build/feeder -Recurse -Filter AvCamFeeder.exe
 
+      - name: Upload feeder executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: AvCamFeeder-x64
+          if-no-files-found: error
+          path: build/feeder/Release/AvCamFeeder.exe
+
   driver:
     runs-on: windows-2022
     steps:
