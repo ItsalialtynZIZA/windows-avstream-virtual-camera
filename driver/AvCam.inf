@@ -8,7 +8,7 @@ CatalogFile = AvCam.cat
 PnpLockdown = 1
 
 [DestinationDirs]
-AvCam.CopyFiles = 12
+AvCam.CopyFiles = 13
 
 [SourceDisksNames]
 1 = %DiskName%,,,
@@ -36,7 +36,7 @@ DisplayName   = %DeviceName%
 ServiceType   = 1
 StartType     = 3
 ErrorControl  = 1
-ServiceBinary = %12%\AvCam.sys
+ServiceBinary = %13%\AvCam.sys
 
 [Strings]
 ProviderName = "AvCam Project"
