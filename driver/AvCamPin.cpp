@@ -101,36 +101,22 @@ NTSTATUS AvCamPinProcess(_In_ PKSPIN Pin)
         return STATUS_PENDING;
     }
 
-    NTSTATUS status = STATUS_SUCCESS;
-
-    while (leading != nullptr)
+    PKSSTREAM_HEADER header = leading->StreamHeader;
+    if (header == nullptr || header->Data == nullptr || header->FrameExtent < kFrameBytes)
     {
-        PKSSTREAM_HEADER header = leading->StreamHeader;
-        if (header == nullptr || header->Data == nullptr || header->FrameExtent < kFrameBytes)
-        {
-            KsStreamPointerUnlock(leading, FALSE);
-            return STATUS_BUFFER_TOO_SMALL;
-        }
-
-        FillSyntheticFrame(static_cast<UCHAR*>(header->Data));
-        header->DataUsed = kFrameBytes;
-        header->Duration = kFrameInterval100ns;
-        header->OptionsFlags |= KSSTREAM_HEADER_OPTIONSF_DURATIONVALID;
-
-        status = KsStreamPointerAdvance(leading);
-        if (!NT_SUCCESS(status))
-        {
-            if (status == STATUS_DEVICE_NOT_READY)
-            {
-                status = STATUS_SUCCESS;
-            }
-            break;
-        }
-
-        leading = KsPinGetLeadingEdgeStreamPointer(Pin, KSSTREAM_POINTER_STATE_LOCKED);
+        KsStreamPointerUnlock(leading, FALSE);
+        return STATUS_BUFFER_TOO_SMALL;
     }
 
-    return status;
+    FillSyntheticFrame(static_cast<UCHAR*>(header->Data));
+    header->DataUsed = kFrameBytes;
+    header->Duration = kFrameInterval100ns;
+    header->OptionsFlags |= KSSTREAM_HEADER_OPTIONSF_DURATIONVALID;
+
+    // Eject=TRUE completes this frame and advances the queue. Returning
+    // STATUS_PENDING tells AVStream not to immediately spin on the same pin.
+    KsStreamPointerUnlock(leading, TRUE);
+    return STATUS_PENDING;
 }
 
 NTSTATUS AvCamIntersectHandler(
@@ -235,7 +221,8 @@ const KSPIN_DESCRIPTOR_EX g_AvCamCapturePinDescriptor =
         &g_AvCamCapturePinName,
         0
     },
-    KSPIN_FLAG_PROCESS_IN_RUN_STATE_ONLY,
+    KSPIN_FLAG_PROCESS_IN_RUN_STATE_ONLY |
+        KSPIN_FLAG_INITIATE_PROCESSING_ON_EVERY_ARRIVAL,
     1,
     0,
     &g_AvCamAllocatorFraming,
