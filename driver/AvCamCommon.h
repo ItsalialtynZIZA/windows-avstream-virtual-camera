@@ -5,6 +5,7 @@ extern "C" {
 }
 
 #include <windef.h>
+#include <unknown.h>
 #include <ks.h>
 #include <ksmedia.h>
 
