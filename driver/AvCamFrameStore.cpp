@@ -177,11 +177,17 @@ NTSTATUS AvCamSubmitFrame(
     return STATUS_SUCCESS;
 }
 
+_Success_(return != FALSE)
 BOOLEAN AvCamCopyLatestFrame(
     _Out_writes_bytes_(DestinationBytes) UCHAR* Destination,
     _In_ ULONG DestinationBytes,
     _Out_opt_ PULONGLONG Timestamp100ns)
 {
+    if (Timestamp100ns != nullptr)
+    {
+        *Timestamp100ns = 0;
+    }
+
     if (!IsFrameStoreInitialized() || Destination == nullptr ||
         DestinationBytes < AVCAM_FRAME_BYTES_BGRA32)
     {
