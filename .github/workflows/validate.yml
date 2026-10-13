@@ -146,3 +146,32 @@ jobs:
           }
 
           Write-Host 'PREfast completed with zero detected warnings.'
+
+  runtime-bundle:
+    needs:
+      - driver
+      - feeder
+    runs-on: windows-2022
+    steps:
+      - name: Download driver artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: AvCam-test-package-x64
+          path: runtime/driver
+
+      - name: Download feeder artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: AvCamFeeder-x64
+          path: runtime/feeder
+
+      - name: Show runtime bundle contents
+        shell: pwsh
+        run: Get-ChildItem runtime -Recurse | Select-Object FullName, Length
+
+      - name: Upload combined runtime bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: AvCam-runtime-test-x64
+          if-no-files-found: error
+          path: runtime/**
