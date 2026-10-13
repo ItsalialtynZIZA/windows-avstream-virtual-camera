@@ -23,6 +23,10 @@
 - [x] Use top-down RGB32 memory order (`biHeight = -720`)
 - [x] Validate connection format through SetDataFormat
 - [x] Add deterministic RGB32 synthetic frame generator
+- [x] Pace capture processing from a per-pin 30 fps timer/DPC
+- [x] Keep frame copy in the AVStream Process callback rather than the DPC
+- [x] Use AVStream reference-clock correlated timestamps for `PresentationTime`
+- [x] Publish `KS_FRAME_INFO` with frame numbers when the consumer provides the extended header
 - [x] Validate allocator/format code in WDK build
 - [x] Publish test package artifact from CI
 - [ ] Verify Windows Camera application
@@ -33,6 +37,7 @@
 - [x] Register/enable producer discovery device interface
 - [x] SetupAPI producer discovery in feeder
 - [x] Define private AVStream KS frame-transport method set
+- [x] Correct KS method data directions (`SUBMIT_FRAME=READ`, `GET_STATS=WRITE`)
 - [x] Validate fixed 1280x720 BGRA32 producer packets
 - [x] Implement bounded nonpaged latest-frame store
 - [x] Add rundown protection for frame-store teardown
@@ -42,6 +47,7 @@
 - [x] Stream moving BGRA32 test frames continuously from feeder
 - [x] Add automatic producer/filter reconnect after device restart
 - [x] Add submitted/replaced/dropped/capture/fallback transport counters
+- [x] Print dropped-frame back-pressure in feeder live stats
 - [x] Compile/package driver and feeder successfully in CI
 - [ ] Runtime-test private method transport on Windows 11 x64
 
@@ -66,9 +72,12 @@
 ## M5 - Hardening
 - [x] Guard `KSDEVICE` object-bag mutation with the AVStream device mutex
 - [x] Bounded frame pool + rundown-protected teardown design
+- [x] Timer/DPC teardown synchronized before pin-context release
+- [x] Use AVStream reference clock instead of producer timestamps for capture presentation time
 - [x] PREfast / Driver Minimum Rules in CI
 - [x] PREfast currently passes with 0 warnings / 0 errors
 - [x] Fail CI when PREfast emits C/CA/MSB warnings
+- [x] Validate all packaged PowerShell helper syntax in CI
 - [x] Guarded one-boot Driver Verifier helper targeting `AvCam.sys` only
 - [x] Guarded test-signing enable/disable helpers and runtime safety notes
 - [ ] Runtime Driver Verifier pass on a dedicated Windows 11 test VM/machine
