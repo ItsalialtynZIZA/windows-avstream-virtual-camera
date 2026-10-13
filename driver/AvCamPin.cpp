@@ -1,7 +1,4 @@
-#include <ntddk.h>
-#include <ks.h>
-#include <ksmedia.h>
-
+#include "AvCamCommon.h"
 #include "AvCamPin.h"
 
 namespace
