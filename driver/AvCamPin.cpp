@@ -22,6 +22,8 @@ struct AvCamPinContext
     KTIMER FrameTimer;
     KDPC FrameDpc;
     volatile LONG TimerActive;
+    PIKSREFERENCECLOCK ReferenceClock;
+    volatile LONG64 FrameNumber;
 };
 
 GUID g_AvCamCapturePinName = { STATIC_PINNAME_VIDEO_CAPTURE };
@@ -174,6 +176,15 @@ void StartFrameTimer(_In_ AvCamPinContext* Context)
         &Context->FrameDpc);
 }
 
+void ReleaseReferenceClock(_In_ AvCamPinContext* Context)
+{
+    if (Context->ReferenceClock != nullptr)
+    {
+        Context->ReferenceClock->Release();
+        Context->ReferenceClock = nullptr;
+    }
+}
+
 NTSTATUS AvCamPinCreate(_In_ PKSPIN Pin, _In_ PIRP Irp)
 {
     UNREFERENCED_PARAMETER(Irp);
@@ -200,7 +211,7 @@ NTSTATUS AvCamPinCreate(_In_ PKSPIN Pin, _In_ PIRP Irp)
     KeInitializeDpc(&context->FrameDpc, AvCamFrameTimerDpc, context);
 
     Pin->Context = context;
-    Pin->StreamHeaderSize = sizeof(KSSTREAM_HEADER);
+    Pin->StreamHeaderSize = sizeof(KSSTREAM_HEADER) + sizeof(KS_FRAME_INFO);
     return STATUS_SUCCESS;
 }
 
@@ -222,6 +233,7 @@ NTSTATUS AvCamPinClose(_In_ PKSPIN Pin, _In_ PIRP Irp)
         // race is no longer executing before the context and pin are released.
         KeFlushQueuedDpcs();
 
+        ReleaseReferenceClock(context);
         context->Pin = nullptr;
         Pin->Context = nullptr;
         ExFreePoolWithTag(context, kAvCamPinContextTag);
@@ -274,6 +286,16 @@ NTSTATUS AvCamPinSetState(
 
     auto* context = static_cast<AvCamPinContext*>(Pin->Context);
 
+    if (ToState == KSSTATE_ACQUIRE && FromState == KSSTATE_STOP)
+    {
+        ReleaseReferenceClock(context);
+        if (!NT_SUCCESS(KsPinGetReferenceClockInterface(Pin, &context->ReferenceClock)))
+        {
+            context->ReferenceClock = nullptr;
+        }
+        InterlockedExchange64(&context->FrameNumber, 0);
+    }
+
     if (ToState == KSSTATE_RUN && FromState != KSSTATE_RUN)
     {
         StartFrameTimer(context);
@@ -281,6 +303,13 @@ NTSTATUS AvCamPinSetState(
     else if (FromState == KSSTATE_RUN && ToState != KSSTATE_RUN)
     {
         StopFrameTimer(context);
+    }
+
+    if (ToState == KSSTATE_STOP)
+    {
+        StopFrameTimer(context);
+        ReleaseReferenceClock(context);
+        InterlockedExchange64(&context->FrameNumber, 0);
     }
 
     return STATUS_SUCCESS;
@@ -308,7 +337,7 @@ void FillSyntheticFrame(_Out_writes_bytes_(kFrameBytes) UCHAR* destination)
 
 NTSTATUS AvCamPinProcess(_In_ PKSPIN Pin)
 {
-    if (Pin == nullptr)
+    if (Pin == nullptr || Pin->Context == nullptr)
     {
         return STATUS_INVALID_PARAMETER;
     }
@@ -328,10 +357,10 @@ NTSTATUS AvCamPinProcess(_In_ PKSPIN Pin)
         return STATUS_BUFFER_TOO_SMALL;
     }
 
+    auto* context = static_cast<AvCamPinContext*>(Pin->Context);
     auto* destination = static_cast<UCHAR*>(header->Data);
-    ULONGLONG producerTimestamp100ns = 0;
 
-    if (!AvCamCopyLatestFrame(destination, kFrameBytes, &producerTimestamp100ns))
+    if (!AvCamCopyLatestFrame(destination, kFrameBytes, nullptr))
     {
         AvCamRecordFallbackFrame();
         FillSyntheticFrame(destination);
@@ -341,12 +370,26 @@ NTSTATUS AvCamPinProcess(_In_ PKSPIN Pin)
     header->Duration = kFrameInterval100ns;
     header->OptionsFlags |= KSSTREAM_HEADER_OPTIONSF_DURATIONVALID;
 
-    if (producerTimestamp100ns != 0)
+    if (context->ReferenceClock != nullptr)
     {
-        header->PresentationTime.Time = static_cast<LONGLONG>(producerTimestamp100ns);
+        LONGLONG correlatedSystemTime = 0;
+        header->PresentationTime.Time =
+            context->ReferenceClock->GetCorrelatedTime(&correlatedSystemTime);
         header->PresentationTime.Numerator = 1;
         header->PresentationTime.Denominator = 1;
         header->OptionsFlags |= KSSTREAM_HEADER_OPTIONSF_TIMEVALID;
+    }
+
+    const LONGLONG frameNumber =
+        InterlockedIncrement64(&context->FrameNumber);
+
+    if (header->Size >= sizeof(KSSTREAM_HEADER) + sizeof(KS_FRAME_INFO))
+    {
+        auto* frameInfo = reinterpret_cast<PKS_FRAME_INFO>(header + 1);
+        frameInfo->ExtendedHeaderSize = sizeof(KS_FRAME_INFO);
+        frameInfo->dwFrameFlags = KS_VIDEO_FLAG_FRAME;
+        frameInfo->PictureNumber = frameNumber;
+        frameInfo->DropCount = 0;
     }
 
     KsStreamPointerUnlock(leading, TRUE);
