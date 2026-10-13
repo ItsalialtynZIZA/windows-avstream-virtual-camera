@@ -49,6 +49,7 @@
 - [x] Add submitted/replaced/dropped/capture/fallback transport counters
 - [x] Print dropped-frame back-pressure in feeder live stats
 - [x] Compile/package driver and feeder successfully in CI
+- [x] Add automated runtime smoke-check helper
 - [ ] Runtime-test private method transport on Windows 11 x64
 
 ## M4 - OBS bridge
@@ -83,7 +84,13 @@
 - [x] Guarded test-signing enable/disable helpers and runtime safety notes
 - [x] Document dedicated Driver Verifier/runtime stress matrix
 - [x] Package hardening guide with the runtime test artifact
+- [x] Document production signing path and release-signing boundary
 - [ ] Runtime Driver Verifier pass on a dedicated Windows 11 test VM/machine
 - [ ] Runtime concurrency/open-close/reconnect stress pass
 - [ ] Runtime pool/IRQL validation under Driver Verifier
-- [ ] Production signing/installer documentation
+
+## M6 - Release readiness
+- [ ] Validate Microsoft-signed release package on clean Windows 11 with normal signing enforcement
+- [ ] Confirm Secure Boot-compatible release installation
+- [ ] Finalize installer UX after runtime validation
+- [ ] Merge draft PR only after all runtime gates pass
