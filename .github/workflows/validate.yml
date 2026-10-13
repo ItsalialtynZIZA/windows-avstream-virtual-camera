@@ -87,3 +87,12 @@ jobs:
       - name: Show driver outputs
         shell: pwsh
         run: Get-ChildItem driver -Recurse -Include AvCam.sys,AvCam.inf,AvCam.cat,AvCam.cer
+
+      - name: Upload test-signed driver package
+        uses: actions/upload-artifact@v4
+        with:
+          name: AvCam-test-package-x64
+          if-no-files-found: error
+          path: |
+            driver/x64/Release/AvCam/**
+            driver/x64/Release/AvCam.cer
