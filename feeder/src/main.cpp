@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "FrameSource.h"
+#include "MediaFoundationFrameSource.h"
 #include "TestPatternFrameSource.h"
 #include "VirtualCameraProtocol.h"
 
@@ -31,6 +32,25 @@ BOOL WINAPI ConsoleControlHandler(DWORD controlType)
 
     return FALSE;
 }
+
+struct ComApartment
+{
+    HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    bool shouldUninitialize = SUCCEEDED(result);
+
+    ~ComApartment()
+    {
+        if (shouldUninitialize)
+        {
+            CoUninitialize();
+        }
+    }
+
+    bool IsUsable() const noexcept
+    {
+        return SUCCEEDED(result) || result == RPC_E_CHANGED_MODE;
+    }
+};
 
 struct DevInfoList
 {
@@ -83,6 +103,69 @@ struct WinHandle
         }
     }
 };
+
+struct Options
+{
+    std::wstring source = L"test";
+    std::wstring deviceName = L"OBS Virtual Camera";
+};
+
+void PrintUsage()
+{
+    std::wcout
+        << L"Usage:\n"
+        << L"  AvCamFeeder.exe --source test\n"
+        << L"  AvCamFeeder.exe --source obs [--device-name \"OBS Virtual Camera\"]\n";
+}
+
+bool ParseOptions(int argc, wchar_t* argv[], Options& options)
+{
+    for (int index = 1; index < argc; ++index)
+    {
+        const std::wstring argument = argv[index];
+
+        if (argument == L"--help" || argument == L"-h")
+        {
+            PrintUsage();
+            return false;
+        }
+
+        if (argument == L"--source" && index + 1 < argc)
+        {
+            options.source = argv[++index];
+            continue;
+        }
+
+        if (argument == L"--device-name" && index + 1 < argc)
+        {
+            options.deviceName = argv[++index];
+            continue;
+        }
+
+        std::wcerr << L"Unknown or incomplete argument: " << argument << L"\n";
+        PrintUsage();
+        return false;
+    }
+
+    if (options.source != L"test" && options.source != L"obs")
+    {
+        std::wcerr << L"Unsupported source: " << options.source << L"\n";
+        PrintUsage();
+        return false;
+    }
+
+    return true;
+}
+
+std::unique_ptr<IFrameSource> CreateFrameSource(const Options& options)
+{
+    if (options.source == L"obs")
+    {
+        return std::make_unique<MediaFoundationFrameSource>(options.deviceName);
+    }
+
+    return std::make_unique<TestPatternFrameSource>();
+}
 
 std::vector<std::wstring> FindDevicePaths(const GUID& interfaceGuid)
 {
@@ -292,64 +375,102 @@ WinHandle FindAvCamFilter(std::vector<std::byte>& probePacket)
 }
 } // namespace
 
-int wmain()
+int wmain(int argc, wchar_t* argv[])
 {
     SetConsoleCtrlHandler(ConsoleControlHandler, TRUE);
 
-    TestPatternFrameSource source;
+    Options options;
+    if (!ParseOptions(argc, argv, options))
+    {
+        return argc > 1 ? 2 : 0;
+    }
+
+    ComApartment com;
+    if (!com.IsUsable())
+    {
+        std::wcerr << L"COM initialization failed: 0x"
+                   << std::hex << static_cast<unsigned long>(com.result) << L"\n";
+        return 3;
+    }
+
+    auto source = CreateFrameSource(options);
     auto packet = CreateFramePacket();
 
     std::wcout << L"AvCam feeder\n";
     std::wcout << L"Protocol version: " << AVCAM_PROTOCOL_VERSION << L"\n";
-    std::wcout << L"Frame source: " << source.Name() << L"\n";
+    std::wcout << L"Requested source: " << options.source << L"\n";
     std::wcout << L"Press Ctrl+C to stop.\n";
 
-    bool announcedWaiting = false;
+    bool sourceStarted = false;
+    bool announcedSourceWaiting = false;
+    bool announcedTransportWaiting = false;
 
     while (g_Running.load())
     {
+        if (!sourceStarted)
+        {
+            if (!source->Start())
+            {
+                if (!announcedSourceWaiting)
+                {
+                    std::wcout << L"Waiting for frame source: " << source->Name() << L"\n";
+                    announcedSourceWaiting = true;
+                }
+                Sleep(1000);
+                continue;
+            }
+
+            sourceStarted = true;
+            announcedSourceWaiting = false;
+            std::wcout << L"Frame source started: " << source->Name() << L"\n";
+        }
+
         const auto producerInterfaces =
             FindDevicePaths(GUID_DEVINTERFACE_AVCAM_FRAME_SINK);
 
         if (producerInterfaces.empty())
         {
-            if (!announcedWaiting)
+            if (!announcedTransportWaiting)
             {
                 std::wcout << L"Waiting for AvCam driver/device...\n";
-                announcedWaiting = true;
+                announcedTransportWaiting = true;
             }
             Sleep(1000);
             continue;
         }
 
-        if (!FillPacketFromSource(source, packet))
+        if (!FillPacketFromSource(*source, packet))
         {
-            std::wcerr << L"Frame source failed to produce a probe frame.\n";
-            return 2;
+            std::wcerr << L"Frame source lost. Reconnecting source...\n";
+            source->Stop();
+            sourceStarted = false;
+            Sleep(500);
+            continue;
         }
 
         WinHandle filter = FindAvCamFilter(packet);
         if (filter.value == INVALID_HANDLE_VALUE)
         {
-            if (!announcedWaiting)
+            if (!announcedTransportWaiting)
             {
                 std::wcout << L"AvCam device is present; waiting for filter transport...\n";
-                announcedWaiting = true;
+                announcedTransportWaiting = true;
             }
             Sleep(1000);
             continue;
         }
 
-        announcedWaiting = false;
+        announcedTransportWaiting = false;
         std::wcout << L"Streaming 1280x720 BGRA32 frames.\n";
         ULONGLONG nextStatsTick = GetTickCount64() + 1000ull;
 
         while (g_Running.load())
         {
-            if (!FillPacketFromSource(source, packet))
+            if (!FillPacketFromSource(*source, packet))
             {
-                std::wcerr << L"Frame source failed. Reconnecting source path...\n";
-                Sleep(500);
+                std::wcerr << L"Frame source lost. Reconnecting source...\n";
+                source->Stop();
+                sourceStarted = false;
                 break;
             }
 
@@ -357,7 +478,7 @@ int wmain()
             if (!SubmitFrame(filter.value, packet, &errorCode))
             {
                 std::wcerr << L"Frame transport lost (Win32 error "
-                           << errorCode << L"). Reconnecting...\n";
+                           << errorCode << L"). Reconnecting transport...\n";
                 filter.Reset();
                 Sleep(500);
                 break;
@@ -374,10 +495,13 @@ int wmain()
                 nextStatsTick = now + 1000ull;
             }
 
-            Sleep(33);
+            // Test source is generated locally. Media Foundation ReadSample blocks
+            // to source cadence, but this small delay also prevents hot spinning.
+            Sleep(1);
         }
     }
 
+    source->Stop();
     std::wcout << L"Feeder stopped.\n";
     return 0;
 }
