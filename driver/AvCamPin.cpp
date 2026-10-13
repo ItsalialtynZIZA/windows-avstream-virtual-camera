@@ -222,6 +222,7 @@ NTSTATUS AvCamPinProcess(_In_ PKSPIN Pin)
 
     if (!AvCamCopyLatestFrame(destination, kFrameBytes, &producerTimestamp100ns))
     {
+        AvCamRecordFallbackFrame();
         FillSyntheticFrame(destination);
     }
 
