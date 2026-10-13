@@ -25,6 +25,7 @@ constexpr unsigned long AVCAM_FRAME_BYTES_BGRA32 = AVCAM_FRAME_STRIDE_BGRA32 * A
 enum : unsigned long
 {
     AVCAM_METHOD_SUBMIT_FRAME = 1,
+    AVCAM_METHOD_GET_STATS = 2,
 };
 
 struct AvCamFrameHeader
@@ -36,6 +37,16 @@ struct AvCamFrameHeader
     unsigned long PixelFormat;
     unsigned long long Timestamp100ns;
     unsigned long PayloadBytes;
+};
+
+struct AvCamTransportStats
+{
+    unsigned long Version;
+    unsigned long Reserved;
+    unsigned long long SubmittedFrames;
+    unsigned long long ReplacedFrames;
+    unsigned long long CaptureReads;
+    unsigned long long FallbackFrames;
 };
 
 enum : unsigned long
