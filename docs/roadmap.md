@@ -20,6 +20,7 @@
 ## M2 - Synthetic video
 - [x] Create capture pin descriptor
 - [x] Advertise exact 1280x720 RGB32 @ ~30 fps KS_DATARANGE_VIDEO
+- [x] Use top-down RGB32 memory order (`biHeight = -720`)
 - [x] Validate connection format through SetDataFormat
 - [x] Add deterministic RGB32 synthetic frame generator
 - [x] Validate allocator/format code in WDK build
@@ -37,18 +38,26 @@
 - [x] Switch capture output to submitted frame with synthetic fallback
 - [x] Probe camera filters and identify AvCam through the private KS method
 - [x] Stream moving BGRA32 test frames continuously from feeder
+- [x] Add automatic producer/filter reconnect after device restart
+- [x] Add submitted/replaced/capture/fallback transport counters
 - [x] Compile/package driver and feeder successfully in CI
 - [ ] Runtime-test private method transport on Windows 11 x64
-- [ ] Add automatic producer/filter reconnect after device restart
-- [ ] Add frame/drop/fallback counters and diagnostics
 
 ## M4 - OBS bridge
-- [ ] Introduce feeder frame-source abstraction
-- [ ] Enumerate OBS Virtual Camera with Media Foundation
-- [ ] Capture frames from OBS
-- [ ] Convert/scale to 1280x720 BGRA32 when needed
-- [ ] Feed frames continuously through the existing KS transport
-- [ ] Handle OBS source disconnect/reconnect
+- [x] Introduce feeder frame-source abstraction
+- [x] Add source lifecycle/reconnect abstraction
+- [x] Enumerate video capture devices with Media Foundation
+- [x] Select OBS Virtual Camera by friendly-name match
+- [x] Capture frames through IMFSourceReader
+- [x] Request RGB32 1280x720 @ 30 fps through advanced video processing
+- [x] Copy RGB32 with real IMF2DBuffer pitch into top-down transport frames
+- [x] Feed frames continuously through the existing KS transport
+- [x] Handle OBS source disconnect/reconnect
+- [x] Support CLI modes `--source test` and `--source obs`
+- [x] Compile/link OBS bridge successfully in Windows CI
+- [ ] Runtime-test OBS Virtual Camera -> AvCam on Windows 11 x64
+- [ ] Validate actual negotiated Media Foundation output attributes at runtime
+- [ ] Add `--list-sources` diagnostic command
 
 ## M5 - Hardening
 - [ ] Concurrency review
