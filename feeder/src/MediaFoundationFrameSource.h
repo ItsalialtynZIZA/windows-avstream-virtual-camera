@@ -7,6 +7,9 @@
 #include <mfreadwrite.h>
 
 #include <string>
+#include <vector>
+
+std::vector<std::wstring> EnumerateMediaFoundationVideoSources();
 
 class MediaFoundationFrameSource final : public IFrameSource
 {
