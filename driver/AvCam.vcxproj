@@ -74,6 +74,7 @@
     <ClCompile Include="AvCamDriver.cpp" />
     <ClCompile Include="AvCamDevice.cpp" />
     <ClCompile Include="AvCamFilter.cpp" />
+    <ClCompile Include="AvCamFrameStore.cpp" />
     <ClCompile Include="AvCamPin.cpp" />
   </ItemGroup>
 
@@ -81,6 +82,7 @@
     <ClInclude Include="AvCamCommon.h" />
     <ClInclude Include="AvCamDevice.h" />
     <ClInclude Include="AvCamFilter.h" />
+    <ClInclude Include="AvCamFrameStore.h" />
     <ClInclude Include="AvCamPin.h" />
   </ItemGroup>
 
