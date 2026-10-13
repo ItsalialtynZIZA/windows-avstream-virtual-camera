@@ -48,10 +48,7 @@ struct WinHandle
 
     ~WinHandle()
     {
-        if (value != INVALID_HANDLE_VALUE)
-        {
-            CloseHandle(value);
-        }
+        Reset();
     }
 
     WinHandle() = default;
@@ -67,14 +64,20 @@ struct WinHandle
     {
         if (this != &other)
         {
-            if (value != INVALID_HANDLE_VALUE)
-            {
-                CloseHandle(value);
-            }
+            Reset();
             value = other.value;
             other.value = INVALID_HANDLE_VALUE;
         }
         return *this;
+    }
+
+    void Reset()
+    {
+        if (value != INVALID_HANDLE_VALUE)
+        {
+            CloseHandle(value);
+            value = INVALID_HANDLE_VALUE;
+        }
     }
 };
 
@@ -305,62 +308,72 @@ int wmain()
 
     std::wcout << L"AvCam feeder\n";
     std::wcout << L"Protocol version: " << AVCAM_PROTOCOL_VERSION << L"\n";
-
-    const auto producerInterfaces =
-        FindDevicePaths(GUID_DEVINTERFACE_AVCAM_FRAME_SINK);
-
-    if (producerInterfaces.empty())
-    {
-        std::wcerr << L"AvCam producer interface is not present.\n";
-        std::wcerr << L"Install/start the AvCam driver before running the feeder.\n";
-        return 2;
-    }
-
-    std::wcout << L"AvCam producer interface detected.\n";
+    std::wcout << L"Press Ctrl+C to stop.\n";
 
     auto packet = CreateFramePacket();
-    FillMovingTestPattern(packet, 0);
-
-    WinHandle filter = FindAvCamFilter(packet);
-    if (filter.value == INVALID_HANDLE_VALUE)
-    {
-        std::wcerr << L"AvCam filter did not accept the private frame method.\n";
-        return 3;
-    }
-
-    std::wcout << L"Streaming 1280x720 BGRA32 test frames. Press Ctrl+C to stop.\n";
-
-    unsigned long frameIndex = 1;
-    ULONGLONG nextStatsTick = GetTickCount64() + 1000ull;
+    unsigned long frameIndex = 0;
+    bool announcedWaiting = false;
 
     while (g_Running.load())
     {
+        const auto producerInterfaces =
+            FindDevicePaths(GUID_DEVINTERFACE_AVCAM_FRAME_SINK);
+
+        if (producerInterfaces.empty())
+        {
+            if (!announcedWaiting)
+            {
+                std::wcout << L"Waiting for AvCam driver/device...\n";
+                announcedWaiting = true;
+            }
+            Sleep(1000);
+            continue;
+        }
+
         FillMovingTestPattern(packet, frameIndex++);
-
-        DWORD errorCode = ERROR_SUCCESS;
-        if (!SubmitFrame(filter.value, packet, &errorCode))
+        WinHandle filter = FindAvCamFilter(packet);
+        if (filter.value == INVALID_HANDLE_VALUE)
         {
-            std::wcerr << L"Frame submission failed. Win32 error: "
-                       << errorCode << L"\n";
-            return 4;
+            if (!announcedWaiting)
+            {
+                std::wcout << L"AvCam device is present; waiting for filter transport...\n";
+                announcedWaiting = true;
+            }
+            Sleep(1000);
+            continue;
         }
 
-        const ULONGLONG now = GetTickCount64();
-        if (now >= nextStatsTick)
-        {
-            AvCamTransportStats stats{};
-            if (QueryStats(filter.value, stats))
-            {
-                PrintStats(stats);
-            }
-            else
-            {
-                std::wcerr << L"Transport stats query failed.\n";
-            }
-            nextStatsTick = now + 1000ull;
-        }
+        announcedWaiting = false;
+        std::wcout << L"Streaming 1280x720 BGRA32 test frames.\n";
+        ULONGLONG nextStatsTick = GetTickCount64() + 1000ull;
 
-        Sleep(33);
+        while (g_Running.load())
+        {
+            FillMovingTestPattern(packet, frameIndex++);
+
+            DWORD errorCode = ERROR_SUCCESS;
+            if (!SubmitFrame(filter.value, packet, &errorCode))
+            {
+                std::wcerr << L"Frame transport lost (Win32 error "
+                           << errorCode << L"). Reconnecting...\n";
+                filter.Reset();
+                Sleep(500);
+                break;
+            }
+
+            const ULONGLONG now = GetTickCount64();
+            if (now >= nextStatsTick)
+            {
+                AvCamTransportStats stats{};
+                if (QueryStats(filter.value, stats))
+                {
+                    PrintStats(stats);
+                }
+                nextStatsTick = now + 1000ull;
+            }
+
+            Sleep(33);
+        }
     }
 
     std::wcout << L"Feeder stopped.\n";
