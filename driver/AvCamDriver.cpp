@@ -1,6 +1,5 @@
 #include "AvCamCommon.h"
-
-extern const KSDEVICE_DESCRIPTOR g_AvCamDeviceDescriptor;
+#include "AvCamDevice.h"
 
 extern "C" DRIVER_INITIALIZE DriverEntry;
 
