@@ -61,6 +61,11 @@
   <ItemGroup>
     <ClCompile Include="AvCamDriver.cpp" />
     <ClCompile Include="AvCamDevice.cpp" />
+    <ClCompile Include="AvCamFilter.cpp" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ClInclude Include="AvCamFilter.h" />
   </ItemGroup>
 
   <ItemGroup>
