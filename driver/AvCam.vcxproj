@@ -49,6 +49,9 @@
     <Link>
       <AdditionalDependencies>ks.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <DriverSign>
+      <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
+    </DriverSign>
   </ItemDefinitionGroup>
 
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -60,6 +63,9 @@
     <Link>
       <AdditionalDependencies>ks.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <DriverSign>
+      <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
+    </DriverSign>
   </ItemDefinitionGroup>
 
   <ItemGroup>
@@ -70,6 +76,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ClInclude Include="AvCamCommon.h" />
+    <ClInclude Include="AvCamDevice.h" />
     <ClInclude Include="AvCamFilter.h" />
     <ClInclude Include="AvCamPin.h" />
   </ItemGroup>
