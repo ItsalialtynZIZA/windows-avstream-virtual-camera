@@ -1,6 +1,7 @@
 #pragma once
 
 #include "AvCamCommon.h"
+#include "../shared/VirtualCameraProtocol.h"
 
 NTSTATUS AvCamFrameStoreInitialize();
 void AvCamFrameStoreShutdown();
@@ -14,3 +15,6 @@ BOOLEAN AvCamCopyLatestFrame(
     _Out_writes_bytes_(DestinationBytes) UCHAR* Destination,
     _In_ ULONG DestinationBytes,
     _Out_opt_ PULONGLONG Timestamp100ns);
+
+void AvCamRecordFallbackFrame();
+void AvCamGetTransportStats(_Out_ AvCamTransportStats* Stats);
