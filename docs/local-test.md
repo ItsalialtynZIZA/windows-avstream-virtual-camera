@@ -117,7 +117,23 @@ Expected feeder behavior:
 - it waits for AvCam to reappear;
 - it reopens the matching camera filter and resumes frame submission.
 
-## 8. M4 OBS Virtual Camera bridge test
+## 8. Inspect Media Foundation camera names
+
+Before the OBS test, list the names Windows exposes through Media Foundation:
+
+```powershell
+.\AvCamFeeder.exe --list-sources
+```
+
+Confirm that an OBS camera source is present. A normal result should include a name similar to:
+
+```text
+OBS Virtual Camera
+```
+
+If the name is different, use a distinctive case-insensitive substring with `--device-name` in the next step.
+
+## 9. M4 OBS Virtual Camera bridge test
 
 Start OBS and configure the scene that should be forwarded. Then start `OBS Virtual Camera` in OBS.
 
@@ -151,7 +167,7 @@ Expected behavior:
 
 If OBS Virtual Camera is not running when the feeder starts, the feeder should wait and retry rather than terminate. If OBS Virtual Camera disappears while streaming, the source is stopped and re-enumerated until it becomes available again.
 
-## 9. Browser enumeration test
+## 10. Browser enumeration test
 
 After Windows Camera works, test Chrome or Edge on a normal camera-permission test page or a local WebRTC test page.
 
@@ -162,7 +178,7 @@ Success criteria:
 - when the feeder uses `--source obs`, the browser receives the OBS scene through AvCam;
 - starting/stopping browser capture does not destabilize the driver.
 
-## 10. Cleanup
+## 11. Cleanup
 
 Run elevated:
 
