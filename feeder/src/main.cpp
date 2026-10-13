@@ -5,11 +5,14 @@
 
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <iostream>
 #include <memory>
 #include <string>
 #include <vector>
 
+#include "FrameSource.h"
+#include "TestPatternFrameSource.h"
 #include "VirtualCameraProtocol.h"
 
 namespace
@@ -152,7 +155,7 @@ std::vector<std::wstring> FindDevicePaths(const GUID& interfaceGuid)
 
 std::vector<std::byte> CreateFramePacket()
 {
-    const size_t totalBytes =
+    const std::size_t totalBytes =
         sizeof(AvCamFrameHeader) + AVCAM_FRAME_BYTES_BGRA32;
 
     std::vector<std::byte> packet(totalBytes);
@@ -169,38 +172,25 @@ std::vector<std::byte> CreateFramePacket()
     return packet;
 }
 
-void FillMovingTestPattern(std::vector<std::byte>& packet, unsigned long frameIndex)
+bool FillPacketFromSource(IFrameSource& source, std::vector<std::byte>& packet)
 {
-    auto* header = reinterpret_cast<AvCamFrameHeader*>(packet.data());
-    header->Timestamp100ns = GetTickCount64() * 10000ull;
+    if (packet.size() < sizeof(AvCamFrameHeader) + AVCAM_FRAME_BYTES_BGRA32)
+    {
+        return false;
+    }
 
+    auto* header = reinterpret_cast<AvCamFrameHeader*>(packet.data());
     auto* pixels = reinterpret_cast<unsigned char*>(
         packet.data() + sizeof(AvCamFrameHeader));
 
-    const unsigned long movingBar =
-        (frameIndex * 12u) % AVCAM_FRAME_WIDTH;
-
-    for (unsigned long y = 0; y < AVCAM_FRAME_HEIGHT; ++y)
+    std::uint64_t timestamp100ns = 0;
+    if (!source.ReadFrame(pixels, AVCAM_FRAME_BYTES_BGRA32, timestamp100ns))
     {
-        auto* row = pixels + y * AVCAM_FRAME_STRIDE_BGRA32;
-        for (unsigned long x = 0; x < AVCAM_FRAME_WIDTH; ++x)
-        {
-            const unsigned long offset = x * 4u;
-            const unsigned char horizontal =
-                static_cast<unsigned char>((x * 255u) / (AVCAM_FRAME_WIDTH - 1u));
-            const unsigned char vertical =
-                static_cast<unsigned char>((y * 255u) / (AVCAM_FRAME_HEIGHT - 1u));
-
-            const unsigned long distance =
-                (x > movingBar) ? (x - movingBar) : (movingBar - x);
-            const bool highlight = distance < 24u;
-
-            row[offset + 0] = highlight ? 0x20 : horizontal;
-            row[offset + 1] = highlight ? 0xE0 : vertical;
-            row[offset + 2] = highlight ? 0xFF : 0x40;
-            row[offset + 3] = 0xFF;
-        }
+        return false;
     }
+
+    header->Timestamp100ns = timestamp100ns;
+    return true;
 }
 
 bool SubmitFrame(HANDLE filter, std::vector<std::byte>& packet, DWORD* errorCode)
@@ -306,12 +296,14 @@ int wmain()
 {
     SetConsoleCtrlHandler(ConsoleControlHandler, TRUE);
 
+    TestPatternFrameSource source;
+    auto packet = CreateFramePacket();
+
     std::wcout << L"AvCam feeder\n";
     std::wcout << L"Protocol version: " << AVCAM_PROTOCOL_VERSION << L"\n";
+    std::wcout << L"Frame source: " << source.Name() << L"\n";
     std::wcout << L"Press Ctrl+C to stop.\n";
 
-    auto packet = CreateFramePacket();
-    unsigned long frameIndex = 0;
     bool announcedWaiting = false;
 
     while (g_Running.load())
@@ -330,7 +322,12 @@ int wmain()
             continue;
         }
 
-        FillMovingTestPattern(packet, frameIndex++);
+        if (!FillPacketFromSource(source, packet))
+        {
+            std::wcerr << L"Frame source failed to produce a probe frame.\n";
+            return 2;
+        }
+
         WinHandle filter = FindAvCamFilter(packet);
         if (filter.value == INVALID_HANDLE_VALUE)
         {
@@ -344,12 +341,17 @@ int wmain()
         }
 
         announcedWaiting = false;
-        std::wcout << L"Streaming 1280x720 BGRA32 test frames.\n";
+        std::wcout << L"Streaming 1280x720 BGRA32 frames.\n";
         ULONGLONG nextStatsTick = GetTickCount64() + 1000ull;
 
         while (g_Running.load())
         {
-            FillMovingTestPattern(packet, frameIndex++);
+            if (!FillPacketFromSource(source, packet))
+            {
+                std::wcerr << L"Frame source failed. Reconnecting source path...\n";
+                Sleep(500);
+                break;
+            }
 
             DWORD errorCode = ERROR_SUCCESS;
             if (!SubmitFrame(filter.value, packet, &errorCode))
