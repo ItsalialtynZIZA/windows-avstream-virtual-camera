@@ -6,6 +6,8 @@ class TestPatternFrameSource final : public IFrameSource
 {
 public:
     const wchar_t* Name() const noexcept override;
+    bool Start() override;
+    void Stop() noexcept override;
 
     bool ReadFrame(
         unsigned char* Destination,
