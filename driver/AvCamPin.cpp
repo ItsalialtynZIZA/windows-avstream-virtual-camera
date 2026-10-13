@@ -13,6 +13,16 @@ constexpr ULONG kFrameBytes = AVCAM_FRAME_BYTES_BGRA32;
 constexpr ULONG kFramesPerSecond = 30;
 constexpr ULONG kBitRate = kFrameBytes * 8u * kFramesPerSecond;
 constexpr REFERENCE_TIME kFrameInterval100ns = 333333; // ~30 fps
+constexpr LONG kFramePeriodMs = 33;
+constexpr ULONG kAvCamPinContextTag = 'PnCA';
+
+struct AvCamPinContext
+{
+    PKSPIN Pin;
+    KTIMER FrameTimer;
+    KDPC FrameDpc;
+    volatile LONG TimerActive;
+};
 
 GUID g_AvCamCapturePinName = { STATIC_PINNAME_VIDEO_CAPTURE };
 GUID g_AvCamCapturePinCategory =
@@ -119,6 +129,51 @@ bool IsExactAvCamFormat(_In_ const KS_DATAFORMAT_VIDEOINFOHEADER* format)
         vih.AvgTimePerFrame == kFrameInterval100ns;
 }
 
+_Function_class_(KDEFERRED_ROUTINE)
+void AvCamFrameTimerDpc(
+    _In_ PKDPC Dpc,
+    _In_opt_ PVOID DeferredContext,
+    _In_opt_ PVOID SystemArgument1,
+    _In_opt_ PVOID SystemArgument2)
+{
+    UNREFERENCED_PARAMETER(Dpc);
+    UNREFERENCED_PARAMETER(SystemArgument1);
+    UNREFERENCED_PARAMETER(SystemArgument2);
+
+    auto* context = static_cast<AvCamPinContext*>(DeferredContext);
+    if (context == nullptr || context->Pin == nullptr)
+    {
+        return;
+    }
+
+    if (InterlockedCompareExchange(&context->TimerActive, 0, 0) != 0)
+    {
+        // Keep the timer DPC short. AVStream schedules the actual Process
+        // callback asynchronously, where the frame copy is performed.
+        KsPinAttemptProcessing(context->Pin, TRUE);
+    }
+}
+
+void StopFrameTimer(_In_ AvCamPinContext* Context)
+{
+    InterlockedExchange(&Context->TimerActive, 0);
+    KeCancelTimer(&Context->FrameTimer);
+    KeRemoveQueueDpc(&Context->FrameDpc);
+}
+
+void StartFrameTimer(_In_ AvCamPinContext* Context)
+{
+    LARGE_INTEGER dueTime{};
+    dueTime.QuadPart = -kFrameInterval100ns;
+
+    InterlockedExchange(&Context->TimerActive, 1);
+    KeSetTimerEx(
+        &Context->FrameTimer,
+        dueTime,
+        kFramePeriodMs,
+        &Context->FrameDpc);
+}
+
 NTSTATUS AvCamPinCreate(_In_ PKSPIN Pin, _In_ PIRP Irp)
 {
     UNREFERENCED_PARAMETER(Irp);
@@ -128,7 +183,50 @@ NTSTATUS AvCamPinCreate(_In_ PKSPIN Pin, _In_ PIRP Irp)
         return STATUS_INVALID_PARAMETER;
     }
 
+    auto* context = static_cast<AvCamPinContext*>(
+        ExAllocatePool2(
+            POOL_FLAG_NON_PAGED,
+            sizeof(AvCamPinContext),
+            kAvCamPinContextTag));
+
+    if (context == nullptr)
+    {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+
+    RtlZeroMemory(context, sizeof(*context));
+    context->Pin = Pin;
+    KeInitializeTimerEx(&context->FrameTimer, NotificationTimer);
+    KeInitializeDpc(&context->FrameDpc, AvCamFrameTimerDpc, context);
+
+    Pin->Context = context;
     Pin->StreamHeaderSize = sizeof(KSSTREAM_HEADER);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS AvCamPinClose(_In_ PKSPIN Pin, _In_ PIRP Irp)
+{
+    UNREFERENCED_PARAMETER(Irp);
+
+    if (Pin == nullptr)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    auto* context = static_cast<AvCamPinContext*>(Pin->Context);
+    if (context != nullptr)
+    {
+        StopFrameTimer(context);
+
+        // Close runs at PASSIVE_LEVEL. Ensure a timer DPC that lost the cancel
+        // race is no longer executing before the context and pin are released.
+        KeFlushQueuedDpcs();
+
+        context->Pin = nullptr;
+        Pin->Context = nullptr;
+        ExFreePoolWithTag(context, kAvCamPinContextTag);
+    }
+
     return STATUS_SUCCESS;
 }
 
@@ -169,9 +267,22 @@ NTSTATUS AvCamPinSetState(
     _In_ KSSTATE ToState,
     _In_ KSSTATE FromState)
 {
-    UNREFERENCED_PARAMETER(Pin);
-    UNREFERENCED_PARAMETER(ToState);
-    UNREFERENCED_PARAMETER(FromState);
+    if (Pin == nullptr || Pin->Context == nullptr)
+    {
+        return STATUS_INVALID_DEVICE_STATE;
+    }
+
+    auto* context = static_cast<AvCamPinContext*>(Pin->Context);
+
+    if (ToState == KSSTATE_RUN && FromState != KSSTATE_RUN)
+    {
+        StartFrameTimer(context);
+    }
+    else if (FromState == KSSTATE_RUN && ToState != KSSTATE_RUN)
+    {
+        StopFrameTimer(context);
+    }
+
     return STATUS_SUCCESS;
 }
 
@@ -296,7 +407,7 @@ NTSTATUS AvCamIntersectHandler(
 const KSPIN_DISPATCH g_AvCamPinDispatch =
 {
     AvCamPinCreate,
-    nullptr,
+    AvCamPinClose,
     AvCamPinProcess,
     nullptr,
     AvCamPinSetDataFormat,
@@ -325,8 +436,8 @@ const KSPIN_DESCRIPTOR_EX g_AvCamCapturePinDescriptor =
         &g_AvCamCapturePinName,
         0
     },
-    KSPIN_FLAG_PROCESS_IN_RUN_STATE_ONLY |
-        KSPIN_FLAG_INITIATE_PROCESSING_ON_EVERY_ARRIVAL,
+    KSPIN_FLAG_DO_NOT_INITIATE_PROCESSING |
+        KSPIN_FLAG_PROCESS_IN_RUN_STATE_ONLY,
     1,
     0,
     &g_AvCamAllocatorFraming,
