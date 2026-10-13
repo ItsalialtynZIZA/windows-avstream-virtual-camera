@@ -56,10 +56,10 @@
 - [x] Handle OBS source disconnect/reconnect
 - [x] Support CLI modes `--source test` and `--source obs`
 - [x] Compile/link OBS bridge successfully in Windows CI
+- [x] Harden non-IMF2DBuffer fallback with negotiated `MF_MT_DEFAULT_STRIDE`
+- [x] Revalidate media type after `MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED`
 - [ ] Runtime-test OBS Virtual Camera -> AvCam on Windows 11 x64
 - [ ] Validate actual negotiated Media Foundation output attributes at runtime
-- [ ] Harden non-IMF2DBuffer fallback with negotiated `MF_MT_DEFAULT_STRIDE`
-- [ ] Revalidate media type after `MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED`
 
 ## M5 - Hardening
 - [ ] Concurrency review
