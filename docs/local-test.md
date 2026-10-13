@@ -68,24 +68,25 @@ Before starting the feeder, open Windows Camera and select `AvCam Virtual Camera
 Expected fallback behavior:
 
 - camera opens without an error;
-- mode is 1280x720 RGB32;
+- mode is 1280x720 top-down RGB32;
 - deterministic synthetic diagnostic image is visible;
 - repeatedly opening/closing the camera does not crash or hang Windows.
 
 ## 6. M3 user-mode transport test
 
-Start the extracted feeder executable in a normal console:
+Start the extracted feeder executable with the deterministic test source:
 
 ```powershell
-.\AvCamFeeder.exe
+.\AvCamFeeder.exe --source test
 ```
 
 Expected startup sequence includes messages similar to:
 
 ```text
 AvCam feeder
-AvCam producer interface detected / AVStream filter accepted
-Streaming 1280x720 BGRA32 test frames
+Frame source started: moving-test-pattern
+Accepted by AVStream filter: ...
+Streaming 1280x720 BGRA32 frames
 ```
 
 The image in Windows Camera should switch from the driver's static synthetic fallback to the feeder's moving test pattern.
@@ -114,9 +115,43 @@ Expected feeder behavior:
 - it reports the transport loss;
 - it does not terminate;
 - it waits for AvCam to reappear;
-- it reopens the matching camera filter and resumes test-frame submission.
+- it reopens the matching camera filter and resumes frame submission.
 
-## 8. Browser enumeration test
+## 8. M4 OBS Virtual Camera bridge test
+
+Start OBS and configure the scene that should be forwarded. Then start `OBS Virtual Camera` in OBS.
+
+Run:
+
+```powershell
+.\AvCamFeeder.exe --source obs
+```
+
+The default Media Foundation friendly-name search is:
+
+```text
+OBS Virtual Camera
+```
+
+If the installed OBS build exposes a different friendly name, specify a case-insensitive substring:
+
+```powershell
+.\AvCamFeeder.exe --source obs --device-name "OBS Virtual Camera"
+```
+
+Expected behavior:
+
+1. the feeder finds the OBS capture device through Media Foundation;
+2. Source Reader requests RGB32 1280x720 @ 30 fps using advanced video processing;
+3. Media Foundation color conversion/resize/frame-rate conversion is used when necessary;
+4. RGB32 rows are copied using the actual `IMF2DBuffer` pitch into the top-down AvCam transport layout;
+5. frames are sent through the existing private KS transport;
+6. Windows Camera showing `AvCam Virtual Camera` displays the OBS scene;
+7. `submitted` and `capture_reads` counters continue increasing.
+
+If OBS Virtual Camera is not running when the feeder starts, the feeder should wait and retry rather than terminate. If OBS Virtual Camera disappears while streaming, the source is stopped and re-enumerated until it becomes available again.
+
+## 9. Browser enumeration test
 
 After Windows Camera works, test Chrome or Edge on a normal camera-permission test page or a local WebRTC test page.
 
@@ -124,9 +159,10 @@ Success criteria:
 
 - `AvCam Virtual Camera` is offered as a camera source;
 - selecting it produces video;
+- when the feeder uses `--source obs`, the browser receives the OBS scene through AvCam;
 - starting/stopping browser capture does not destabilize the driver.
 
-## 9. Cleanup
+## 10. Cleanup
 
 Run elevated:
 
