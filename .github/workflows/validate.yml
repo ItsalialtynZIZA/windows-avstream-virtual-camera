@@ -1,0 +1,21 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  feeder:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure feeder
+        run: cmake -S feeder -B build/feeder -A x64
+
+      - name: Build feeder
+        run: cmake --build build/feeder --config Release
+
+      - name: Show result
+        shell: pwsh
+        run: Get-ChildItem build/feeder -Recurse -Filter AvCamFeeder.exe
