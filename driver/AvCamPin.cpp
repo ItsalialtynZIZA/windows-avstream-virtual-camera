@@ -85,7 +85,7 @@ NTSTATUS AvCamIntersectHandler(
     vih.bmiHeader.biHeight = kHeight;
     vih.bmiHeader.biPlanes = 1;
     vih.bmiHeader.biBitCount = 32;
-    vih.bmiHeader.biCompression = BI_RGB;
+    vih.bmiHeader.biCompression = KS_BI_RGB;
     vih.bmiHeader.biSizeImage = kFrameBytes;
     vih.bmiHeader.biXPelsPerMeter = 0;
     vih.bmiHeader.biYPelsPerMeter = 0;
