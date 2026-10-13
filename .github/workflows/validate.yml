@@ -111,4 +111,20 @@ jobs:
 
       - name: Analyze AVStream driver with PREfast
         shell: pwsh
-        run: msbuild driver/AvCam.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath" /p:RunCodeAnalysis=true /p:EnablePREfast=true
+        run: |
+          $output = & msbuild driver/AvCam.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath" /p:RunCodeAnalysis=true /p:EnablePREfast=true 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+
+          if ($exitCode -ne 0) {
+            throw "PREfast MSBuild failed with exit code $exitCode."
+          }
+
+          $warnings = @($output | Select-String -Pattern '\bwarning\s+(C|CA|MSB)\d{4,5}\s*:' -CaseSensitive:$false)
+          if ($warnings.Count -gt 0) {
+            Write-Host 'PREfast warnings detected:'
+            $warnings | ForEach-Object { Write-Host $_.Line }
+            throw "PREfast emitted $($warnings.Count) warning(s)."
+          }
+
+          Write-Host 'PREfast completed with zero detected warnings.'
