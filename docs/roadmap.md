@@ -34,12 +34,14 @@
 - [x] SetupAPI producer discovery in feeder
 - [x] Define private AVStream KS frame-transport method set
 - [x] Validate fixed 1280x720 BGRA32 producer packets
-- [x] Implement ref-counted nonpaged latest-frame store
+- [x] Implement bounded nonpaged latest-frame store
+- [x] Add rundown protection for frame-store teardown
+- [x] Drop producer frames under slot back-pressure instead of allocating in the hot path
 - [x] Switch capture output to submitted frame with synthetic fallback
 - [x] Probe camera filters and identify AvCam through the private KS method
 - [x] Stream moving BGRA32 test frames continuously from feeder
 - [x] Add automatic producer/filter reconnect after device restart
-- [x] Add submitted/replaced/capture/fallback transport counters
+- [x] Add submitted/replaced/dropped/capture/fallback transport counters
 - [x] Compile/package driver and feeder successfully in CI
 - [ ] Runtime-test private method transport on Windows 11 x64
 
@@ -62,9 +64,14 @@
 - [ ] Validate actual negotiated Media Foundation output attributes at runtime
 
 ## M5 - Hardening
-- [ ] Concurrency review
-- [ ] Pool/memory validation
-- [ ] IRQL review
-- [ ] Driver Verifier
-- [ ] Static analysis
-- [ ] Installer and signing documentation
+- [x] Guard `KSDEVICE` object-bag mutation with the AVStream device mutex
+- [x] Bounded frame pool + rundown-protected teardown design
+- [x] PREfast / Driver Minimum Rules in CI
+- [x] PREfast currently passes with 0 warnings / 0 errors
+- [x] Fail CI when PREfast emits C/CA/MSB warnings
+- [x] Guarded one-boot Driver Verifier helper targeting `AvCam.sys` only
+- [x] Guarded test-signing enable/disable helpers and runtime safety notes
+- [ ] Runtime Driver Verifier pass on a dedicated Windows 11 test VM/machine
+- [ ] Runtime concurrency/open-close/reconnect stress pass
+- [ ] Runtime pool/IRQL validation under Driver Verifier
+- [ ] Production signing/installer documentation
