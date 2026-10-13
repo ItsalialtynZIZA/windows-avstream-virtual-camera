@@ -17,9 +17,9 @@ AvCam.CopyFiles = 13
 AvCam.sys = 1
 
 [Manufacturer]
-%ProviderName% = AvCamModels,NTamd64
+%ProviderName% = AvCamModels,NTamd64.10.0...22000
 
-[AvCamModels.NTamd64]
+[AvCamModels.NTamd64.10.0...22000]
 %DeviceName% = AvCam.Install, Root\AvCamVirtualCamera
 
 [AvCam.Install]
