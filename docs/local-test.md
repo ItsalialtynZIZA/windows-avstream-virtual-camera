@@ -2,14 +2,36 @@
 
 Use a dedicated development/test machine. Kernel-driver test signing and Driver Verifier can change system behavior and can require a reboot. Do not use this procedure on a production machine.
 
-## 1. Preferred test inputs: GitHub Actions artifacts
+## 1. Preferred test input: one GitHub Actions bundle
 
 From the latest successful `Validate` run for `dev/initial-avstream`, download and extract:
 
-- `AvCam-test-package-x64`
-- `AvCamFeeder-x64`
+- `AvCam-runtime-test-x64`
 
-The driver artifact contains the test-signed driver package plus installation, verification, test-signing, and Driver Verifier helper scripts. The feeder artifact contains `AvCamFeeder.exe`.
+The combined artifact contains:
+
+```text
+driver\
+  driver\x64\Release\AvCam\AvCam.inf
+  driver\x64\Release\AvCam\AvCam.sys
+  driver\x64\Release\AvCam\avcam.cat
+  driver\x64\Release\AvCam.cer
+  scripts\...
+  docs\local-test.md
+  docs\hardening.md
+feeder\
+  AvCamFeeder.exe
+```
+
+Open an **elevated PowerShell** in the extracted `AvCam-runtime-test-x64` directory and define these paths once:
+
+```powershell
+$DriverDir = (Resolve-Path .\driver).Path
+$Feeder = (Resolve-Path .\feeder\AvCamFeeder.exe).Path
+Set-ExecutionPolicy -Scope Process Bypass
+```
+
+The separate `AvCam-test-package-x64` and `AvCamFeeder-x64` artifacts remain available for debugging, but the combined runtime bundle is preferred for normal testing.
 
 ## 2. Test-signing state
 
@@ -18,26 +40,25 @@ The helper installer does not enable test-signing automatically.
 If test-signing must be enabled, use the guarded helper from elevated PowerShell:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\scripts\enable-test-signing.ps1 -IUnderstandThisChangesBootTrust
+& "$DriverDir\scripts\enable-test-signing.ps1" -IUnderstandThisChangesBootTrust
 ```
 
 Reboot Windows after the change. This changes Windows boot/driver trust policy. The helper deliberately does not disable Secure Boot or alter firmware settings. If platform policy blocks test-signing, use a dedicated driver-development test environment instead of weakening firmware security automatically.
 
-## 3. Install the CI test package
+After reboot, return to the extracted runtime-bundle directory and re-create `$DriverDir` and `$Feeder` if this is a new PowerShell session.
 
-Open PowerShell as Administrator in the extracted driver artifact directory.
+## 3. Install the CI test package
 
 First try the guarded installer without changing certificate stores:
 
 ```powershell
-.\scripts\install-test-package.ps1 -PackageDirectory .
+& "$DriverDir\scripts\install-test-package.ps1" -PackageDirectory $DriverDir
 ```
 
 If Windows rejects the package because the CI test certificate is not trusted, and this is a dedicated test machine, explicitly opt in to certificate trust:
 
 ```powershell
-.\scripts\install-test-package.ps1 -PackageDirectory . -TrustTestCertificate
+& "$DriverDir\scripts\install-test-package.ps1" -PackageDirectory $DriverDir -TrustTestCertificate
 ```
 
 The installer does not enable test-signing by itself.
@@ -47,7 +68,7 @@ The installer does not enable test-signing by itself.
 Run elevated:
 
 ```powershell
-.\scripts\verify-camera.ps1
+& "$DriverDir\scripts\verify-camera.ps1"
 ```
 
 Expected device:
@@ -70,14 +91,15 @@ Expected fallback behavior:
 - camera opens without an error;
 - mode is 1280x720 top-down RGB32;
 - deterministic synthetic diagnostic image is visible;
+- capture is paced by the driver's ~30 fps timer rather than by consumer-buffer arrival rate;
 - repeatedly opening/closing the camera does not crash or hang Windows.
 
 ## 6. M3 user-mode transport test
 
-Start the extracted feeder executable with the deterministic test source:
+Start the feeder with the deterministic test source:
 
 ```powershell
-.\AvCamFeeder.exe --source test
+& $Feeder --source test
 ```
 
 Expected startup sequence includes messages similar to:
@@ -94,13 +116,14 @@ The image in Windows Camera should switch from the driver's static synthetic fal
 Approximately once per second the feeder should print transport counters:
 
 ```text
-stats: submitted=... replaced=... capture_reads=... fallback=...
+stats: submitted=... replaced=... dropped=... capture_reads=... fallback=...
 ```
 
 Interpretation:
 
 - `submitted` increasing: user-mode -> driver transport works;
 - `replaced` increasing: producer is replacing the latest buffered frame as designed;
+- `dropped` increasing: bounded frame slots are applying back-pressure rather than allocating indefinitely;
 - `capture_reads` increasing while Windows Camera is open: AVStream capture pin is consuming submitted frames;
 - `fallback` increasing before the first submitted frame: synthetic fallback path is active.
 
@@ -122,7 +145,7 @@ Expected feeder behavior:
 Before the OBS test, list the names Windows exposes through Media Foundation:
 
 ```powershell
-.\AvCamFeeder.exe --list-sources
+& $Feeder --list-sources
 ```
 
 Confirm that an OBS camera source is present. A normal result should include a name similar to:
@@ -140,13 +163,13 @@ Start OBS and configure the scene that should be forwarded. Then start `OBS Virt
 Run:
 
 ```powershell
-.\AvCamFeeder.exe --source obs
+& $Feeder --source obs
 ```
 
 If the installed OBS build exposes a different friendly name, specify a case-insensitive substring:
 
 ```powershell
-.\AvCamFeeder.exe --source obs --device-name "OBS Virtual Camera"
+& $Feeder --source obs --device-name "OBS Virtual Camera"
 ```
 
 Expected behavior:
@@ -156,7 +179,7 @@ Expected behavior:
 3. Media Foundation color conversion/resize/frame-rate conversion is used when necessary;
 4. RGB32 rows are copied using the actual `IMF2DBuffer` pitch, or the negotiated signed `MF_MT_DEFAULT_STRIDE` fallback, into the top-down AvCam transport layout;
 5. output media type is revalidated if Source Reader reports `CURRENTMEDIATYPECHANGED`;
-6. frames are sent through the existing private KS transport;
+6. frames are sent through the private KS transport using the corrected method-data directions;
 7. Windows Camera showing `AvCam Virtual Camera` displays the OBS scene;
 8. `submitted` and `capture_reads` counters continue increasing.
 
@@ -180,20 +203,20 @@ Driver Verifier intentionally stresses kernel drivers and can bugcheck Windows w
 Check current verifier state first from elevated PowerShell:
 
 ```powershell
-.\scripts\driver-verifier.ps1 -Action Status
+& "$DriverDir\scripts\driver-verifier.ps1" -Action Status
 ```
 
 After all normal M2-M4 tests above work, configure **AvCam.sys only** for one boot:
 
 ```powershell
-.\scripts\driver-verifier.ps1 -Action EnableOneBoot -IUnderstandThisCanCrashTheTestMachine
+& "$DriverDir\scripts\driver-verifier.ps1" -Action EnableOneBoot -IUnderstandThisCanCrashTheTestMachine
 ```
 
 Review `verifier /querysettings`, then reboot the dedicated test machine. After reboot, exercise:
 
 - Windows Camera open/close repeatedly;
-- `AvCamFeeder.exe --source test`;
-- `AvCamFeeder.exe --source obs`;
+- `$Feeder --source test`;
+- `$Feeder --source obs`;
 - OBS Virtual Camera start/stop;
 - AvCam device disable/enable;
 - browser camera open/close;
@@ -204,7 +227,7 @@ If Driver Verifier detects a kernel violation, Windows may bugcheck. Preserve th
 To clear persistent Driver Verifier settings explicitly:
 
 ```powershell
-.\scripts\driver-verifier.ps1 -Action Reset -IUnderstandThisCanCrashTheTestMachine
+& "$DriverDir\scripts\driver-verifier.ps1" -Action Reset -IUnderstandThisCanCrashTheTestMachine
 ```
 
 Then reboot. The reset action clears persistent Driver Verifier settings on that test machine, not only AvCam-specific settings.
@@ -214,13 +237,13 @@ Then reboot. The reset action clears persistent Driver Verifier settings on that
 Run elevated:
 
 ```powershell
-.\scripts\uninstall-driver.ps1
+& "$DriverDir\scripts\uninstall-driver.ps1"
 ```
 
 If test-signing was enabled specifically for this test machine and is no longer required:
 
 ```powershell
-.\scripts\disable-test-signing.ps1
+& "$DriverDir\scripts\disable-test-signing.ps1"
 ```
 
 Reboot after changing test-signing state.
