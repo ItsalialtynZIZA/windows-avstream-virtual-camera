@@ -3,86 +3,110 @@
 namespace
 {
 constexpr ULONG kAvCamFrameTag = 'FrCA';
+constexpr ULONG kFrameSlotCount = 3;
+constexpr ULONG kInvalidSlot = MAXULONG;
 
-struct AvCamFrameBlob
+struct AvCamFrameSlot
 {
-    volatile LONG RefCount;
-    ULONG DataBytes;
+    UCHAR* Data;
     ULONGLONG Timestamp100ns;
-    UCHAR Data[1];
+    LONG Readers;
+    BOOLEAN Valid;
+    BOOLEAN Writing;
 };
 
 KSPIN_LOCK g_FrameStoreLock;
-AvCamFrameBlob* g_LatestFrame = nullptr;
-BOOLEAN g_FrameStoreInitialized = FALSE;
+EX_RUNDOWN_REF g_FrameStoreRundown;
+AvCamFrameSlot g_FrameSlots[kFrameSlotCount]{};
+ULONG g_LatestSlot = kInvalidSlot;
+volatile LONG g_FrameStoreInitialized = 0;
 
 volatile LONG64 g_SubmittedFrames = 0;
 volatile LONG64 g_ReplacedFrames = 0;
+volatile LONG64 g_DroppedFrames = 0;
 volatile LONG64 g_CaptureReads = 0;
 volatile LONG64 g_FallbackFrames = 0;
-
-void ReleaseFrame(_In_opt_ AvCamFrameBlob* Frame)
-{
-    if (Frame != nullptr && InterlockedDecrement(&Frame->RefCount) == 0)
-    {
-        ExFreePoolWithTag(Frame, kAvCamFrameTag);
-    }
-}
-
-AvCamFrameBlob* AcquireLatestFrame()
-{
-    KIRQL oldIrql;
-    KeAcquireSpinLock(&g_FrameStoreLock, &oldIrql);
-
-    AvCamFrameBlob* frame = g_LatestFrame;
-    if (frame != nullptr)
-    {
-        InterlockedIncrement(&frame->RefCount);
-    }
-
-    KeReleaseSpinLock(&g_FrameStoreLock, oldIrql);
-    return frame;
-}
 
 ULONGLONG ReadCounter(_In_ volatile LONG64* Counter)
 {
     return static_cast<ULONGLONG>(
         InterlockedCompareExchange64(Counter, 0, 0));
 }
+
+BOOLEAN IsFrameStoreInitialized()
+{
+    return InterlockedCompareExchange(&g_FrameStoreInitialized, 0, 0) != 0;
+}
+
+void ResetSlotMetadata(_Inout_ AvCamFrameSlot& Slot)
+{
+    Slot.Timestamp100ns = 0;
+    Slot.Readers = 0;
+    Slot.Valid = FALSE;
+    Slot.Writing = FALSE;
+}
 } // namespace
 
 NTSTATUS AvCamFrameStoreInitialize()
 {
-    if (g_FrameStoreInitialized)
+    if (IsFrameStoreInitialized())
     {
         return STATUS_SUCCESS;
     }
 
     KeInitializeSpinLock(&g_FrameStoreLock);
-    g_LatestFrame = nullptr;
+    ExInitializeRundownProtection(&g_FrameStoreRundown);
+    g_LatestSlot = kInvalidSlot;
+
+    for (ULONG index = 0; index < kFrameSlotCount; ++index)
+    {
+        ResetSlotMetadata(g_FrameSlots[index]);
+        g_FrameSlots[index].Data = static_cast<UCHAR*>(
+            ExAllocatePool2(
+                POOL_FLAG_NON_PAGED,
+                AVCAM_FRAME_BYTES_BGRA32,
+                kAvCamFrameTag));
+
+        if (g_FrameSlots[index].Data == nullptr)
+        {
+            for (ULONG cleanupIndex = 0; cleanupIndex < index; ++cleanupIndex)
+            {
+                ExFreePoolWithTag(g_FrameSlots[cleanupIndex].Data, kAvCamFrameTag);
+                g_FrameSlots[cleanupIndex].Data = nullptr;
+            }
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+    }
+
     InterlockedExchange64(&g_SubmittedFrames, 0);
     InterlockedExchange64(&g_ReplacedFrames, 0);
+    InterlockedExchange64(&g_DroppedFrames, 0);
     InterlockedExchange64(&g_CaptureReads, 0);
     InterlockedExchange64(&g_FallbackFrames, 0);
-    g_FrameStoreInitialized = TRUE;
+    InterlockedExchange(&g_FrameStoreInitialized, 1);
     return STATUS_SUCCESS;
 }
 
 void AvCamFrameStoreShutdown()
 {
-    if (!g_FrameStoreInitialized)
+    if (InterlockedExchange(&g_FrameStoreInitialized, 0) == 0)
     {
         return;
     }
 
-    KIRQL oldIrql;
-    KeAcquireSpinLock(&g_FrameStoreLock, &oldIrql);
-    AvCamFrameBlob* oldFrame = g_LatestFrame;
-    g_LatestFrame = nullptr;
-    KeReleaseSpinLock(&g_FrameStoreLock, oldIrql);
+    // Prevent teardown while a submit/capture copy is using one of the fixed slots.
+    ExWaitForRundownProtectionRelease(&g_FrameStoreRundown);
 
-    ReleaseFrame(oldFrame);
-    g_FrameStoreInitialized = FALSE;
+    g_LatestSlot = kInvalidSlot;
+    for (ULONG index = 0; index < kFrameSlotCount; ++index)
+    {
+        if (g_FrameSlots[index].Data != nullptr)
+        {
+            ExFreePoolWithTag(g_FrameSlots[index].Data, kAvCamFrameTag);
+            g_FrameSlots[index].Data = nullptr;
+        }
+        ResetSlotMetadata(g_FrameSlots[index]);
+    }
 }
 
 NTSTATUS AvCamSubmitFrame(
@@ -90,7 +114,7 @@ NTSTATUS AvCamSubmitFrame(
     _In_ ULONG FrameBytes,
     _In_ ULONGLONG Timestamp100ns)
 {
-    if (!g_FrameStoreInitialized)
+    if (!IsFrameStoreInitialized())
     {
         return STATUS_DEVICE_NOT_READY;
     }
@@ -100,35 +124,56 @@ NTSTATUS AvCamSubmitFrame(
         return STATUS_INVALID_BUFFER_SIZE;
     }
 
-    const SIZE_T allocationBytes =
-        FIELD_OFFSET(AvCamFrameBlob, Data) + static_cast<SIZE_T>(FrameBytes);
-
-    auto* newFrame = static_cast<AvCamFrameBlob*>(
-        ExAllocatePool2(POOL_FLAG_NON_PAGED, allocationBytes, kAvCamFrameTag));
-
-    if (newFrame == nullptr)
+    if (!ExAcquireRundownProtection(&g_FrameStoreRundown))
     {
-        return STATUS_INSUFFICIENT_RESOURCES;
+        return STATUS_DEVICE_NOT_READY;
     }
 
-    newFrame->RefCount = 1; // global store owns one reference
-    newFrame->DataBytes = FrameBytes;
-    newFrame->Timestamp100ns = Timestamp100ns;
-    RtlCopyMemory(newFrame->Data, FrameData, FrameBytes);
-
+    ULONG writeSlot = kInvalidSlot;
     KIRQL oldIrql;
     KeAcquireSpinLock(&g_FrameStoreLock, &oldIrql);
-    AvCamFrameBlob* oldFrame = g_LatestFrame;
-    g_LatestFrame = newFrame;
+
+    for (ULONG index = 0; index < kFrameSlotCount; ++index)
+    {
+        AvCamFrameSlot& slot = g_FrameSlots[index];
+        if (index != g_LatestSlot && !slot.Writing && slot.Readers == 0)
+        {
+            slot.Writing = TRUE;
+            writeSlot = index;
+            break;
+        }
+    }
+
+    KeReleaseSpinLock(&g_FrameStoreLock, oldIrql);
+
+    if (writeSlot == kInvalidSlot)
+    {
+        InterlockedIncrement64(&g_DroppedFrames);
+        ExReleaseRundownProtection(&g_FrameStoreRundown);
+        // Dropping is intentional back-pressure, not a transport disconnect.
+        return STATUS_SUCCESS;
+    }
+
+    AvCamFrameSlot& target = g_FrameSlots[writeSlot];
+    RtlCopyMemory(target.Data, FrameData, AVCAM_FRAME_BYTES_BGRA32);
+
+    KeAcquireSpinLock(&g_FrameStoreLock, &oldIrql);
+    const BOOLEAN replacedExisting =
+        g_LatestSlot != kInvalidSlot && g_FrameSlots[g_LatestSlot].Valid;
+
+    target.Timestamp100ns = Timestamp100ns;
+    target.Valid = TRUE;
+    target.Writing = FALSE;
+    g_LatestSlot = writeSlot;
     KeReleaseSpinLock(&g_FrameStoreLock, oldIrql);
 
     InterlockedIncrement64(&g_SubmittedFrames);
-    if (oldFrame != nullptr)
+    if (replacedExisting)
     {
         InterlockedIncrement64(&g_ReplacedFrames);
     }
 
-    ReleaseFrame(oldFrame);
+    ExReleaseRundownProtection(&g_FrameStoreRundown);
     return STATUS_SUCCESS;
 }
 
@@ -137,26 +182,58 @@ BOOLEAN AvCamCopyLatestFrame(
     _In_ ULONG DestinationBytes,
     _Out_opt_ PULONGLONG Timestamp100ns)
 {
-    if (!g_FrameStoreInitialized || Destination == nullptr ||
+    if (!IsFrameStoreInitialized() || Destination == nullptr ||
         DestinationBytes < AVCAM_FRAME_BYTES_BGRA32)
     {
         return FALSE;
     }
 
-    AvCamFrameBlob* frame = AcquireLatestFrame();
-    if (frame == nullptr)
+    if (!ExAcquireRundownProtection(&g_FrameStoreRundown))
     {
         return FALSE;
     }
 
-    RtlCopyMemory(Destination, frame->Data, frame->DataBytes);
+    ULONG readSlot = kInvalidSlot;
+    ULONGLONG timestamp = 0;
+
+    KIRQL oldIrql;
+    KeAcquireSpinLock(&g_FrameStoreLock, &oldIrql);
+
+    if (g_LatestSlot != kInvalidSlot)
+    {
+        AvCamFrameSlot& latest = g_FrameSlots[g_LatestSlot];
+        if (latest.Valid && !latest.Writing && latest.Data != nullptr)
+        {
+            ++latest.Readers;
+            readSlot = g_LatestSlot;
+            timestamp = latest.Timestamp100ns;
+        }
+    }
+
+    KeReleaseSpinLock(&g_FrameStoreLock, oldIrql);
+
+    if (readSlot == kInvalidSlot)
+    {
+        ExReleaseRundownProtection(&g_FrameStoreRundown);
+        return FALSE;
+    }
+
+    RtlCopyMemory(
+        Destination,
+        g_FrameSlots[readSlot].Data,
+        AVCAM_FRAME_BYTES_BGRA32);
+
+    KeAcquireSpinLock(&g_FrameStoreLock, &oldIrql);
+    --g_FrameSlots[readSlot].Readers;
+    KeReleaseSpinLock(&g_FrameStoreLock, oldIrql);
+
     if (Timestamp100ns != nullptr)
     {
-        *Timestamp100ns = frame->Timestamp100ns;
+        *Timestamp100ns = timestamp;
     }
 
     InterlockedIncrement64(&g_CaptureReads);
-    ReleaseFrame(frame);
+    ExReleaseRundownProtection(&g_FrameStoreRundown);
     return TRUE;
 }
 
@@ -176,6 +253,7 @@ void AvCamGetTransportStats(_Out_ AvCamTransportStats* Stats)
     Stats->Version = AVCAM_PROTOCOL_VERSION;
     Stats->SubmittedFrames = ReadCounter(&g_SubmittedFrames);
     Stats->ReplacedFrames = ReadCounter(&g_ReplacedFrames);
+    Stats->DroppedFrames = ReadCounter(&g_DroppedFrames);
     Stats->CaptureReads = ReadCounter(&g_CaptureReads);
     Stats->FallbackFrames = ReadCounter(&g_FallbackFrames);
 }
