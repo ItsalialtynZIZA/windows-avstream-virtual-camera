@@ -16,4 +16,5 @@ public:
 
 private:
     unsigned long frameIndex_ = 0;
+    std::uint64_t startTickMs_ = 0;
 };
