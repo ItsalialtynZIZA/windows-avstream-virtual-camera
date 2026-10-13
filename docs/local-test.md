@@ -1,6 +1,6 @@
 # Local Windows 11 x64 test plan
 
-Use a dedicated development/test machine. Kernel-driver test signing changes the Windows trust configuration and requires a reboot. Do not use this procedure on a production machine.
+Use a dedicated development/test machine. Kernel-driver test signing and Driver Verifier can change system behavior and can require a reboot. Do not use this procedure on a production machine.
 
 ## 1. Preferred test inputs: GitHub Actions artifacts
 
@@ -9,20 +9,20 @@ From the latest successful `Validate` run for `dev/initial-avstream`, download a
 - `AvCam-test-package-x64`
 - `AvCamFeeder-x64`
 
-The driver artifact contains the test-signed driver package plus installation/verification helper scripts. The feeder artifact contains `AvCamFeeder.exe`.
+The driver artifact contains the test-signed driver package plus installation, verification, test-signing, and Driver Verifier helper scripts. The feeder artifact contains `AvCamFeeder.exe`.
 
 ## 2. Test-signing state
 
 The helper installer does not enable test-signing automatically.
 
-If the test machine is already configured for test driver development, confirm its state first. If test-signing must be enabled, use the repository helper from an elevated PowerShell and reboot:
+If test-signing must be enabled, use the guarded helper from elevated PowerShell:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-.\scripts\enable-test-signing.ps1
+.\scripts\enable-test-signing.ps1 -IUnderstandThisChangesBootTrust
 ```
 
-This changes the machine's driver trust configuration. Use it only on a dedicated test machine.
+Reboot Windows after the change. This changes Windows boot/driver trust policy. The helper deliberately does not disable Secure Boot or alter firmware settings. If platform policy blocks test-signing, use a dedicated driver-development test environment instead of weakening firmware security automatically.
 
 ## 3. Install the CI test package
 
@@ -40,7 +40,7 @@ If Windows rejects the package because the CI test certificate is not trusted, a
 .\scripts\install-test-package.ps1 -PackageDirectory . -TrustTestCertificate
 ```
 
-The script does not enable test-signing by itself.
+The installer does not enable test-signing by itself.
 
 ## 4. Verify PnP enumeration
 
@@ -143,12 +143,6 @@ Run:
 .\AvCamFeeder.exe --source obs
 ```
 
-The default Media Foundation friendly-name search is:
-
-```text
-OBS Virtual Camera
-```
-
 If the installed OBS build exposes a different friendly name, specify a case-insensitive substring:
 
 ```powershell
@@ -160,10 +154,11 @@ Expected behavior:
 1. the feeder finds the OBS capture device through Media Foundation;
 2. Source Reader requests RGB32 1280x720 @ 30 fps using advanced video processing;
 3. Media Foundation color conversion/resize/frame-rate conversion is used when necessary;
-4. RGB32 rows are copied using the actual `IMF2DBuffer` pitch into the top-down AvCam transport layout;
-5. frames are sent through the existing private KS transport;
-6. Windows Camera showing `AvCam Virtual Camera` displays the OBS scene;
-7. `submitted` and `capture_reads` counters continue increasing.
+4. RGB32 rows are copied using the actual `IMF2DBuffer` pitch, or the negotiated signed `MF_MT_DEFAULT_STRIDE` fallback, into the top-down AvCam transport layout;
+5. output media type is revalidated if Source Reader reports `CURRENTMEDIATYPECHANGED`;
+6. frames are sent through the existing private KS transport;
+7. Windows Camera showing `AvCam Virtual Camera` displays the OBS scene;
+8. `submitted` and `capture_reads` counters continue increasing.
 
 If OBS Virtual Camera is not running when the feeder starts, the feeder should wait and retry rather than terminate. If OBS Virtual Camera disappears while streaming, the source is stopped and re-enumerated until it becomes available again.
 
@@ -178,7 +173,43 @@ Success criteria:
 - when the feeder uses `--source obs`, the browser receives the OBS scene through AvCam;
 - starting/stopping browser capture does not destabilize the driver.
 
-## 11. Cleanup
+## 11. M5 Driver Verifier test — dedicated test VM/machine only
+
+Driver Verifier intentionally stresses kernel drivers and can bugcheck Windows when it detects a violation. Microsoft recommends running it only on machines used for driver testing/debugging. Do not run this on a production or important workstation.
+
+Check current verifier state first from elevated PowerShell:
+
+```powershell
+.\scripts\driver-verifier.ps1 -Action Status
+```
+
+After all normal M2-M4 tests above work, configure **AvCam.sys only** for one boot:
+
+```powershell
+.\scripts\driver-verifier.ps1 -Action EnableOneBoot -IUnderstandThisCanCrashTheTestMachine
+```
+
+Review `verifier /querysettings`, then reboot the dedicated test machine. After reboot, exercise:
+
+- Windows Camera open/close repeatedly;
+- `AvCamFeeder.exe --source test`;
+- `AvCamFeeder.exe --source obs`;
+- OBS Virtual Camera start/stop;
+- AvCam device disable/enable;
+- browser camera open/close;
+- feeder/consumer reconnect loops.
+
+If Driver Verifier detects a kernel violation, Windows may bugcheck. Preserve the crash dump and analyze it with WinDbg before changing the driver.
+
+To clear persistent Driver Verifier settings explicitly:
+
+```powershell
+.\scripts\driver-verifier.ps1 -Action Reset -IUnderstandThisCanCrashTheTestMachine
+```
+
+Then reboot. The reset action clears persistent Driver Verifier settings on that test machine, not only AvCam-specific settings.
+
+## 12. Cleanup
 
 Run elevated:
 
