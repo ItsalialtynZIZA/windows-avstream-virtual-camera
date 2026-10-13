@@ -60,6 +60,36 @@ NTSTATUS AvCamSubmitFrameMethod(
     return status;
 }
 
+NTSTATUS AvCamGetStatsMethod(
+    _In_ PIRP Irp,
+    _In_ PKSIDENTIFIER Request,
+    _Inout_ PVOID Data)
+{
+    if (Irp == nullptr || Request == nullptr || Data == nullptr)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    const auto* method = reinterpret_cast<const KSMETHOD*>(Request);
+    if (!IsEqualGUID(method->Set, KSMETHODSETID_AVCAM_FRAME_TRANSPORT) ||
+        method->Id != AVCAM_METHOD_GET_STATS)
+    {
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    const PIO_STACK_LOCATION stack = IoGetCurrentIrpStackLocation(Irp);
+    if (stack == nullptr ||
+        stack->Parameters.DeviceIoControl.OutputBufferLength < sizeof(AvCamTransportStats))
+    {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    auto* stats = static_cast<AvCamTransportStats*>(Data);
+    AvCamGetTransportStats(stats);
+    Irp->IoStatus.Information = sizeof(*stats);
+    return STATUS_SUCCESS;
+}
+
 DEFINE_KSMETHOD_TABLE(g_AvCamMethodItems)
 {
     DEFINE_KSMETHOD_ITEM(
@@ -68,6 +98,13 @@ DEFINE_KSMETHOD_TABLE(g_AvCamMethodItems)
         AvCamSubmitFrameMethod,
         sizeof(KSMETHOD),
         sizeof(AvCamFrameHeader) + AVCAM_FRAME_BYTES_BGRA32,
+        nullptr),
+    DEFINE_KSMETHOD_ITEM(
+        AVCAM_METHOD_GET_STATS,
+        KSMETHOD_TYPE_READ,
+        AvCamGetStatsMethod,
+        sizeof(KSMETHOD),
+        sizeof(AvCamTransportStats),
         nullptr)
 };
 
