@@ -47,6 +47,7 @@
 - [x] Introduce feeder frame-source abstraction
 - [x] Add source lifecycle/reconnect abstraction
 - [x] Enumerate video capture devices with Media Foundation
+- [x] Add `--list-sources` diagnostic command
 - [x] Select OBS Virtual Camera by friendly-name match
 - [x] Capture frames through IMFSourceReader
 - [x] Request RGB32 1280x720 @ 30 fps through advanced video processing
@@ -57,7 +58,8 @@
 - [x] Compile/link OBS bridge successfully in Windows CI
 - [ ] Runtime-test OBS Virtual Camera -> AvCam on Windows 11 x64
 - [ ] Validate actual negotiated Media Foundation output attributes at runtime
-- [ ] Add `--list-sources` diagnostic command
+- [ ] Harden non-IMF2DBuffer fallback with negotiated `MF_MT_DEFAULT_STRIDE`
+- [ ] Revalidate media type after `MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED`
 
 ## M5 - Hardening
 - [ ] Concurrency review
