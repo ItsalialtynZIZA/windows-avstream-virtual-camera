@@ -59,20 +59,27 @@ jobs:
             Select-Object -First 1
           if (-not $stampInf) { throw 'x64 stampinf.exe was not found in restored WDK packages.' }
 
-          $x64ToolDir = $stampInf.Directory.FullName
-          $binRoot = Split-Path $x64ToolDir -Parent
-          $infVerifDll = Join-Path $binRoot 'x86\InfVerif.dll'
-
-          if (-not (Test-Path $infVerifDll)) {
-            throw "Expected InfVerif.dll was not found: $infVerifDll"
+          $infVerifDll = Get-ChildItem packages -Recurse -Filter InfVerif.dll -File |
+            Where-Object { $_.FullName -match '\\x86\\InfVerif\.dll$' } |
+            Select-Object -First 1
+          if (-not $infVerifDll) {
+            Write-Host 'Available InfVerif files:'
+            Get-ChildItem packages -Recurse -File |
+              Where-Object { $_.Name -like 'InfVerif*' } |
+              ForEach-Object { Write-Host $_.FullName }
+            throw 'x86 InfVerif.dll was not found in restored SDK/WDK packages.'
           }
 
+          $x64ToolDir = $stampInf.Directory.FullName
+          $infVerifX86Dir = $infVerifDll.Directory.FullName
+          $infVerifRoot = Split-Path $infVerifX86Dir -Parent
+
           Write-Host "x64 stampinf.exe: $($stampInf.FullName)"
-          Write-Host "WDK bin root: $binRoot"
-          Write-Host "InfVerif.dll: $infVerifDll"
+          Write-Host "InfVerif root: $infVerifRoot"
+          Write-Host "InfVerif.dll: $($infVerifDll.FullName)"
 
           "StampInfToolPath=$x64ToolDir\" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "WDKBinRoot=$binRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "WDKBinRoot=$infVerifRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $x64ToolDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build AVStream driver
