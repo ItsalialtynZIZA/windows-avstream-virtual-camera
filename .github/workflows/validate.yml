@@ -108,3 +108,7 @@ jobs:
             scripts/uninstall-driver.ps1
             scripts/verify-camera.ps1
             docs/local-test.md
+
+      - name: Analyze AVStream driver with PREfast
+        shell: pwsh
+        run: msbuild driver/AvCam.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath" /p:RunCodeAnalysis=true /p:EnablePREfast=true
