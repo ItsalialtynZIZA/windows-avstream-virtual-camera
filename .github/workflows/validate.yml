@@ -41,7 +41,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: packages
-          key: wdk-sdk-x64-10.0.26100.6584
+          key: wdk-sdk-x64-10.0.26100.6584-v2
 
       - name: Restore WDK and SDK packages
         run: nuget restore packages.config -PackagesDirectory packages -NonInteractive
@@ -51,9 +51,9 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: packages
-          key: wdk-sdk-x64-10.0.26100.6584
+          key: wdk-sdk-x64-10.0.26100.6584-v2
 
-      - name: Locate and stage WDK build tools
+      - name: Locate WDK build tools
         shell: pwsh
         run: |
           $stampInf = Get-ChildItem packages -Recurse -Filter stampinf.exe -File |
@@ -61,51 +61,28 @@ jobs:
             Select-Object -First 1
           if (-not $stampInf) { throw 'x64 stampinf.exe was not found in restored WDK packages.' }
 
-          $apiValidator = Get-ChildItem packages -Recurse -Filter ApiValidator.exe -File |
-            Where-Object { $_.FullName -match '\\x64\\ApiValidator\.exe$' } |
-            Select-Object -First 1
-          if (-not $apiValidator) { throw 'x64 ApiValidator.exe was not found in restored WDK packages.' }
-
-          $apiExtractor = Get-ChildItem packages -Recurse -Filter ApiExtractor.exe -File |
-            Where-Object { $_.FullName -match '\\x64\\ApiExtractor\.exe$' } |
-            Select-Object -First 1
-          if (-not $apiExtractor) { throw 'x64 ApiExtractor.exe was not found in restored WDK packages.' }
-
           $infVerifDll = Get-ChildItem packages -Recurse -Filter InfVerif.dll -File |
             Where-Object { $_.FullName -match '\\build\\[^\\]+\\bin\\x64\\InfVerif\.dll$' } |
             Select-Object -First 1
-          if (-not $infVerifDll) { throw 'x64 InfVerif.dll was not found in restored WDK packages.' }
 
-          $targetToolDir = $infVerifDll.Directory.FullName
-          $wdkBinRoot = Split-Path $targetToolDir -Parent
-
-          $toolsToStage = @($stampInf, $apiValidator, $apiExtractor)
-          foreach ($tool in $toolsToStage) {
-            $destination = Join-Path $targetToolDir $tool.Name
-            Copy-Item $tool.FullName $destination -Force
-            if (-not (Test-Path $destination)) {
-              throw "WDK tool staging failed: $destination"
-            }
-            Write-Host "Staged $($tool.Name): $destination"
+          $targetToolDir = $stampInf.Directory.FullName
+          if ($infVerifDll) {
+            $targetToolDir = $infVerifDll.Directory.FullName
+            $stagedStampInf = Join-Path $targetToolDir 'stampinf.exe'
+            Copy-Item $stampInf.FullName $stagedStampInf -Force
+            Write-Host "Staged stampinf.exe: $stagedStampInf"
+            Write-Host "InfVerif.dll: $($infVerifDll.FullName)"
           }
 
-          Write-Host "x64 InfVerif.dll: $($infVerifDll.FullName)"
-          Write-Host "WDK bin root: $wdkBinRoot"
+          Write-Host "stampinf.exe: $($stampInf.FullName)"
+          Write-Host "WDK tool directory: $targetToolDir"
 
           "StampInfToolPath=$targetToolDir\" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "WDKBinRoot=$wdkBinRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $targetToolDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build AVStream driver
         shell: pwsh
-        run: |
-          Push-Location $env:WDKBinRoot
-          try {
-            msbuild "$env:GITHUB_WORKSPACE\driver\AvCam.vcxproj" /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath"
-          }
-          finally {
-            Pop-Location
-          }
+        run: msbuild driver/AvCam.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath"
 
       - name: Show driver outputs
         shell: pwsh
