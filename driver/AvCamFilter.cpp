@@ -9,11 +9,6 @@ static const GUID g_AvCamFilterCategories[] =
     STATICGUIDOF(KSCATEGORY_CAPTURE)
 };
 
-static const KSPIN_DESCRIPTOR_EX g_AvCamPins[] =
-{
-    g_AvCamCapturePinDescriptor
-};
-
 const KSFILTER_DESCRIPTOR g_AvCamFilterDescriptor =
 {
     nullptr,
@@ -21,9 +16,9 @@ const KSFILTER_DESCRIPTOR g_AvCamFilterDescriptor =
     KSFILTER_DESCRIPTOR_VERSION,
     0,
     nullptr,
-    RTL_NUMBER_OF(g_AvCamPins),
+    1,
     sizeof(KSPIN_DESCRIPTOR_EX),
-    g_AvCamPins,
+    &g_AvCamCapturePinDescriptor,
     RTL_NUMBER_OF(g_AvCamFilterCategories),
     g_AvCamFilterCategories,
     0,
