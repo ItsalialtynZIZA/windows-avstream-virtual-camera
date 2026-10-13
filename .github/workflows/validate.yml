@@ -69,21 +69,28 @@ jobs:
           $x64ToolDir = $stampInf.Directory.FullName
           $infVerifX64Dir = $infVerifDll.Directory.FullName
           $infVerifRoot = Split-Path $infVerifX64Dir -Parent
+          $expectedStampInf = Join-Path $infVerifX64Dir 'stampinf.exe'
 
-          Write-Host "x64 stampinf.exe: $($stampInf.FullName)"
+          Copy-Item $stampInf.FullName $expectedStampInf -Force
+          if (-not (Test-Path $expectedStampInf)) {
+            throw "stampinf.exe staging failed: $expectedStampInf"
+          }
+
+          Write-Host "Source stampinf.exe: $($stampInf.FullName)"
+          Write-Host "Staged stampinf.exe: $expectedStampInf"
           Write-Host "x64 InfVerif.dll: $($infVerifDll.FullName)"
           Write-Host "InfVerif root: $infVerifRoot"
 
-          "StampInfToolPath=$x64ToolDir\" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "StampInfToolPath=$infVerifX64Dir\" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "WDKBinRoot=$infVerifRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          $x64ToolDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          $infVerifX64Dir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
 
       - name: Build AVStream driver
         shell: pwsh
         run: |
           Push-Location $env:WDKBinRoot
           try {
-            msbuild "$env:GITHUB_WORKSPACE\driver\AvCam.vcxproj" /m /p:Configuration=Release /p:Platform=x64
+            msbuild "$env:GITHUB_WORKSPACE\driver\AvCam.vcxproj" /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath"
           }
           finally {
             Pop-Location
