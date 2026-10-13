@@ -43,9 +43,6 @@ bool CopyRgb32BufferTopDown(
         return false;
     }
 
-    // Prefer IMF2DBuffer because it exposes the real scanline pitch and
-    // normalizes access around scanline 0. This handles padded/negative pitch
-    // without assuming that a contiguous RGB32 buffer is tightly packed.
     ComPtr<IMF2DBuffer> buffer2d;
     if (SUCCEEDED(buffer->QueryInterface(IID_PPV_ARGS(&buffer2d))))
     {
@@ -81,9 +78,6 @@ bool CopyRgb32BufferTopDown(
         }
     }
 
-    // Conservative fallback for buffers that do not expose IMF2DBuffer.
-    // RGB32 at 1280 pixels is naturally DWORD-aligned, so a tightly packed
-    // contiguous frame has exactly AVCAM_FRAME_BYTES_BGRA32 bytes.
     BYTE* bytes = nullptr;
     DWORD maxLength = 0;
     DWORD currentLength = 0;
@@ -104,7 +98,68 @@ bool CopyRgb32BufferTopDown(
     buffer->Unlock();
     return valid;
 }
+
+std::vector<std::wstring> EnumerateVideoSourceNamesInternal()
+{
+    std::vector<std::wstring> names;
+
+    ComPtr<IMFAttributes> attributes;
+    if (FAILED(MFCreateAttributes(&attributes, 1)) ||
+        FAILED(attributes->SetGUID(
+            MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
+            MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID)))
+    {
+        return names;
+    }
+
+    IMFActivate** devices = nullptr;
+    UINT32 deviceCount = 0;
+
+    if (FAILED(MFEnumDeviceSources(attributes.Get(), &devices, &deviceCount)))
+    {
+        return names;
+    }
+
+    for (UINT32 index = 0; index < deviceCount; ++index)
+    {
+        WCHAR* friendlyName = nullptr;
+        UINT32 nameLength = 0;
+
+        if (SUCCEEDED(devices[index]->GetAllocatedString(
+                MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
+                &friendlyName,
+                &nameLength)) &&
+            friendlyName != nullptr)
+        {
+            names.emplace_back(friendlyName, nameLength);
+            CoTaskMemFree(friendlyName);
+        }
+    }
+
+    for (UINT32 index = 0; index < deviceCount; ++index)
+    {
+        if (devices[index] != nullptr)
+        {
+            devices[index]->Release();
+        }
+    }
+    CoTaskMemFree(devices);
+
+    return names;
+}
 } // namespace
+
+std::vector<std::wstring> EnumerateMediaFoundationVideoSources()
+{
+    if (FAILED(MFStartup(MF_VERSION, MFSTARTUP_FULL)))
+    {
+        return {};
+    }
+
+    auto names = EnumerateVideoSourceNamesInternal();
+    MFShutdown();
+    return names;
+}
 
 MediaFoundationFrameSource::MediaFoundationFrameSource(std::wstring friendlyNameContains)
     : friendlyNameContains_(std::move(friendlyNameContains))
@@ -243,7 +298,6 @@ bool MediaFoundationFrameSource::ConfigureReader()
         return false;
     }
 
-    // Windows 11 XVP path: color conversion + resize + frame-rate conversion.
     if (FAILED(readerAttributes->SetUINT32(
             MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING,
             TRUE)))
