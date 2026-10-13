@@ -33,7 +33,8 @@ bool ContainsInsensitive(const std::wstring& value, const std::wstring& fragment
 bool CopyRgb32BufferTopDown(
     IMFMediaBuffer* buffer,
     unsigned char* destination,
-    std::size_t destinationBytes)
+    std::size_t destinationBytes,
+    LONG defaultStride)
 {
     if (buffer == nullptr || destination == nullptr ||
         destinationBytes < AVCAM_FRAME_BYTES_BGRA32)
@@ -83,11 +84,41 @@ bool CopyRgb32BufferTopDown(
         return false;
     }
 
+    const LONG stride =
+        (defaultStride != 0)
+            ? defaultStride
+            : static_cast<LONG>(AVCAM_FRAME_STRIDE_BGRA32);
+    const LONG absoluteStride = (stride < 0) ? -stride : stride;
+    const std::size_t requiredBytes =
+        static_cast<std::size_t>(absoluteStride) * AVCAM_FRAME_HEIGHT;
+
     const bool valid =
-        bytes != nullptr && currentLength >= AVCAM_FRAME_BYTES_BGRA32;
+        bytes != nullptr &&
+        absoluteStride >= static_cast<LONG>(AVCAM_FRAME_STRIDE_BGRA32) &&
+        currentLength >= requiredBytes;
+
     if (valid)
     {
-        std::memcpy(destination, bytes, AVCAM_FRAME_BYTES_BGRA32);
+        const BYTE* scanline0 = bytes;
+        if (stride < 0)
+        {
+            scanline0 +=
+                static_cast<std::size_t>(AVCAM_FRAME_HEIGHT - 1u) *
+                static_cast<std::size_t>(absoluteStride);
+        }
+
+        for (unsigned long y = 0; y < AVCAM_FRAME_HEIGHT; ++y)
+        {
+            const BYTE* sourceRow =
+                scanline0 + static_cast<std::ptrdiff_t>(y) * stride;
+            unsigned char* destinationRow =
+                destination + static_cast<std::size_t>(y) *
+                    AVCAM_FRAME_STRIDE_BGRA32;
+            std::memcpy(
+                destinationRow,
+                sourceRow,
+                AVCAM_FRAME_STRIDE_BGRA32);
+        }
     }
 
     buffer->Unlock();
@@ -192,6 +223,7 @@ bool MediaFoundationFrameSource::Start()
 void MediaFoundationFrameSource::Stop() noexcept
 {
     reader_.Reset();
+    defaultStride_ = 0;
 
     if (mediaSource_)
     {
@@ -380,12 +412,28 @@ bool MediaFoundationFrameSource::ValidateCurrentOutputType()
         FAILED(frameRateResult) || frameRateDenominator == 0 ||
         (frameRateNumerator == 30u * frameRateDenominator);
 
-    return
-        IsEqualGUID(majorType, MFMediaType_Video) &&
-        IsEqualGUID(subtype, MFVideoFormat_RGB32) &&
-        width == AVCAM_FRAME_WIDTH &&
-        height == AVCAM_FRAME_HEIGHT &&
-        frameRateAcceptable;
+    if (!IsEqualGUID(majorType, MFMediaType_Video) ||
+        !IsEqualGUID(subtype, MFVideoFormat_RGB32) ||
+        width != AVCAM_FRAME_WIDTH ||
+        height != AVCAM_FRAME_HEIGHT ||
+        !frameRateAcceptable)
+    {
+        return false;
+    }
+
+    UINT32 strideValue = 0;
+    if (SUCCEEDED(currentType->GetUINT32(MF_MT_DEFAULT_STRIDE, &strideValue)))
+    {
+        defaultStride_ = static_cast<LONG>(strideValue);
+    }
+    else
+    {
+        defaultStride_ = static_cast<LONG>(AVCAM_FRAME_STRIDE_BGRA32);
+    }
+
+    const LONG absoluteStride =
+        (defaultStride_ < 0) ? -defaultStride_ : defaultStride_;
+    return absoluteStride >= static_cast<LONG>(AVCAM_FRAME_STRIDE_BGRA32);
 }
 
 bool MediaFoundationFrameSource::ReadFrame(
@@ -417,7 +465,13 @@ bool MediaFoundationFrameSource::ReadFrame(
         if (FAILED(readResult) ||
             (flags & MF_SOURCE_READERF_ENDOFSTREAM) != 0 ||
             (flags & MF_SOURCE_READERF_ERROR) != 0)
-    {
+        {
+            return false;
+        }
+
+        if ((flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) != 0 &&
+            !ValidateCurrentOutputType())
+        {
             return false;
         }
 
@@ -432,7 +486,11 @@ bool MediaFoundationFrameSource::ReadFrame(
             return false;
         }
 
-        if (!CopyRgb32BufferTopDown(buffer.Get(), Destination, DestinationBytes))
+        if (!CopyRgb32BufferTopDown(
+                buffer.Get(),
+                Destination,
+                DestinationBytes,
+                defaultStride_))
         {
             return false;
         }
