@@ -8,6 +8,16 @@ const wchar_t* TestPatternFrameSource::Name() const noexcept
     return L"moving-test-pattern";
 }
 
+bool TestPatternFrameSource::Start()
+{
+    frameIndex_ = 0;
+    return true;
+}
+
+void TestPatternFrameSource::Stop() noexcept
+{
+}
+
 bool TestPatternFrameSource::ReadFrame(
     unsigned char* Destination,
     std::size_t DestinationBytes,
