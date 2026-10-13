@@ -29,6 +29,7 @@ public:
 private:
     bool FindAndActivateDevice();
     bool ConfigureReader();
+    bool ValidateCurrentOutputType();
 
     std::wstring friendlyNameContains_;
     std::wstring selectedName_;
