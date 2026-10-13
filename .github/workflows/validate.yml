@@ -38,6 +38,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate PowerShell helper syntax
+        shell: pwsh
+        run: |
+          $scripts = Get-ChildItem scripts -Filter '*.ps1' -File
+          if (-not $scripts) { throw 'No PowerShell helper scripts were found.' }
+          foreach ($script in $scripts) {
+            try {
+              [void][scriptblock]::Create((Get-Content $script.FullName -Raw))
+              Write-Host "Syntax OK: $($script.FullName)"
+            }
+            catch {
+              throw "PowerShell syntax validation failed for '$($script.FullName)': $($_.Exception.Message)"
+            }
+          }
+
       - name: Add x64 MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
         with:
