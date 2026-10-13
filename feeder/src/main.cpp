@@ -226,6 +226,46 @@ bool SubmitFrame(HANDLE filter, std::vector<std::byte>& packet, DWORD* errorCode
     return ok != FALSE;
 }
 
+bool QueryStats(HANDLE filter, AvCamTransportStats& stats)
+{
+    KSMETHOD method{};
+    method.Set = KSMETHODSETID_AVCAM_FRAME_TRANSPORT;
+    method.Id = AVCAM_METHOD_GET_STATS;
+    method.Flags = KSMETHOD_TYPE_SEND;
+
+    DWORD bytesReturned = 0;
+    AvCamTransportStats result{};
+
+    const BOOL ok = DeviceIoControl(
+        filter,
+        IOCTL_KS_METHOD,
+        &method,
+        sizeof(method),
+        &result,
+        sizeof(result),
+        &bytesReturned,
+        nullptr);
+
+    if (!ok || bytesReturned < sizeof(result) ||
+        result.Version != AVCAM_PROTOCOL_VERSION)
+    {
+        return false;
+    }
+
+    stats = result;
+    return true;
+}
+
+void PrintStats(const AvCamTransportStats& stats)
+{
+    std::wcout
+        << L"stats: submitted=" << stats.SubmittedFrames
+        << L" replaced=" << stats.ReplacedFrames
+        << L" capture_reads=" << stats.CaptureReads
+        << L" fallback=" << stats.FallbackFrames
+        << L"\n";
+}
+
 WinHandle FindAvCamFilter(std::vector<std::byte>& probePacket)
 {
     const auto cameraFilters = FindDevicePaths(KSCATEGORY_VIDEO_CAMERA);
@@ -291,6 +331,8 @@ int wmain()
     std::wcout << L"Streaming 1280x720 BGRA32 test frames. Press Ctrl+C to stop.\n";
 
     unsigned long frameIndex = 1;
+    ULONGLONG nextStatsTick = GetTickCount64() + 1000ull;
+
     while (g_Running.load())
     {
         FillMovingTestPattern(packet, frameIndex++);
@@ -301,6 +343,21 @@ int wmain()
             std::wcerr << L"Frame submission failed. Win32 error: "
                        << errorCode << L"\n";
             return 4;
+        }
+
+        const ULONGLONG now = GetTickCount64();
+        if (now >= nextStatsTick)
+        {
+            AvCamTransportStats stats{};
+            if (QueryStats(filter.value, stats))
+            {
+                PrintStats(stats);
+            }
+            else
+            {
+                std::wcerr << L"Transport stats query failed.\n";
+            }
+            nextStatsTick = now + 1000ull;
         }
 
         Sleep(33);
