@@ -10,6 +10,11 @@ constexpr ULONG kFrameBytes = static_cast<ULONG>(kWidth * kHeight * kBytesPerPix
 constexpr REFERENCE_TIME kFrameInterval100ns = 333333; // ~30 fps
 
 GUID g_AvCamCapturePinName = { STATIC_PINNAME_VIDEO_CAPTURE };
+GUID g_AvCamCapturePinCategory =
+{
+    0xfb6c4281, 0x0353, 0x11d1,
+    { 0x90, 0x5f, 0x00, 0x00, 0xc0, 0xcc, 0x16, 0xba }
+};
 
 const KSDATARANGE g_AvCamVideoRange =
 {
@@ -106,7 +111,7 @@ const KSPIN_DESCRIPTOR_EX g_AvCamCapturePinDescriptor =
         g_AvCamVideoRanges,
         KSPIN_DATAFLOW_OUT,
         KSPIN_COMMUNICATION_BOTH,
-        &PIN_CATEGORY_CAPTURE,
+        &g_AvCamCapturePinCategory,
         &g_AvCamCapturePinName,
         0
     },
