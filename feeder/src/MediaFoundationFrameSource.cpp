@@ -23,12 +23,10 @@ bool ContainsInsensitive(const std::wstring& value, const std::wstring& fragment
 
     std::wstring lhs = value;
     std::wstring rhs = fragment;
-
     std::transform(lhs.begin(), lhs.end(), lhs.begin(),
         [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
     std::transform(rhs.begin(), rhs.end(), rhs.begin(),
         [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
-
     return lhs.find(rhs) != std::wstring::npos;
 }
 
@@ -65,7 +63,6 @@ bool CopyRgb32BufferTopDown(
                     unsigned char* destinationRow =
                         destination + static_cast<std::size_t>(y) *
                             AVCAM_FRAME_STRIDE_BGRA32;
-
                     std::memcpy(
                         destinationRow,
                         sourceRow,
@@ -81,7 +78,6 @@ bool CopyRgb32BufferTopDown(
     BYTE* bytes = nullptr;
     DWORD maxLength = 0;
     DWORD currentLength = 0;
-
     if (FAILED(buffer->Lock(&bytes, &maxLength, &currentLength)))
     {
         return false;
@@ -89,7 +85,6 @@ bool CopyRgb32BufferTopDown(
 
     const bool valid =
         bytes != nullptr && currentLength >= AVCAM_FRAME_BYTES_BGRA32;
-
     if (valid)
     {
         std::memcpy(destination, bytes, AVCAM_FRAME_BYTES_BGRA32);
@@ -114,7 +109,6 @@ std::vector<std::wstring> EnumerateVideoSourceNamesInternal()
 
     IMFActivate** devices = nullptr;
     UINT32 deviceCount = 0;
-
     if (FAILED(MFEnumDeviceSources(attributes.Get(), &devices, &deviceCount)))
     {
         return names;
@@ -124,7 +118,6 @@ std::vector<std::wstring> EnumerateVideoSourceNamesInternal()
     {
         WCHAR* friendlyName = nullptr;
         UINT32 nameLength = 0;
-
         if (SUCCEEDED(devices[index]->GetAllocatedString(
                 MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
                 &friendlyName,
@@ -144,7 +137,6 @@ std::vector<std::wstring> EnumerateVideoSourceNamesInternal()
         }
     }
     CoTaskMemFree(devices);
-
     return names;
 }
 } // namespace
@@ -219,12 +211,8 @@ void MediaFoundationFrameSource::Stop() noexcept
 bool MediaFoundationFrameSource::FindAndActivateDevice()
 {
     ComPtr<IMFAttributes> attributes;
-    if (FAILED(MFCreateAttributes(&attributes, 1)))
-    {
-        return false;
-    }
-
-    if (FAILED(attributes->SetGUID(
+    if (FAILED(MFCreateAttributes(&attributes, 1)) ||
+        FAILED(attributes->SetGUID(
             MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
             MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID)))
     {
@@ -233,10 +221,7 @@ bool MediaFoundationFrameSource::FindAndActivateDevice()
 
     IMFActivate** devices = nullptr;
     UINT32 deviceCount = 0;
-    const HRESULT enumResult =
-        MFEnumDeviceSources(attributes.Get(), &devices, &deviceCount);
-
-    if (FAILED(enumResult))
+    if (FAILED(MFEnumDeviceSources(attributes.Get(), &devices, &deviceCount)))
     {
         return false;
     }
@@ -281,7 +266,6 @@ bool MediaFoundationFrameSource::FindAndActivateDevice()
         }
     }
     CoTaskMemFree(devices);
-
     return found;
 }
 
@@ -300,12 +284,8 @@ bool MediaFoundationFrameSource::ConfigureReader()
 
     if (FAILED(readerAttributes->SetUINT32(
             MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING,
-            TRUE)))
-    {
-        return false;
-    }
-
-    if (FAILED(readerAttributes->SetUINT32(
+            TRUE)) ||
+        FAILED(readerAttributes->SetUINT32(
             MF_READWRITE_DISABLE_CONVERTERS,
             FALSE)))
     {
@@ -346,10 +326,66 @@ bool MediaFoundationFrameSource::ConfigureReader()
         return false;
     }
 
-    return SUCCEEDED(reader_->SetCurrentMediaType(
-        MF_SOURCE_READER_FIRST_VIDEO_STREAM,
-        nullptr,
-        outputType.Get()));
+    if (FAILED(reader_->SetCurrentMediaType(
+            MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+            nullptr,
+            outputType.Get())))
+    {
+        return false;
+    }
+
+    return ValidateCurrentOutputType();
+}
+
+bool MediaFoundationFrameSource::ValidateCurrentOutputType()
+{
+    if (!reader_)
+    {
+        return false;
+    }
+
+    ComPtr<IMFMediaType> currentType;
+    if (FAILED(reader_->GetCurrentMediaType(
+            MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+            &currentType)))
+    {
+        return false;
+    }
+
+    GUID majorType{};
+    GUID subtype{};
+    UINT32 width = 0;
+    UINT32 height = 0;
+    UINT32 frameRateNumerator = 0;
+    UINT32 frameRateDenominator = 0;
+
+    if (FAILED(currentType->GetGUID(MF_MT_MAJOR_TYPE, &majorType)) ||
+        FAILED(currentType->GetGUID(MF_MT_SUBTYPE, &subtype)) ||
+        FAILED(MFGetAttributeSize(
+            currentType.Get(),
+            MF_MT_FRAME_SIZE,
+            &width,
+            &height)))
+    {
+        return false;
+    }
+
+    const HRESULT frameRateResult = MFGetAttributeRatio(
+        currentType.Get(),
+        MF_MT_FRAME_RATE,
+        &frameRateNumerator,
+        &frameRateDenominator);
+
+    const bool frameRateAcceptable =
+        FAILED(frameRateResult) || frameRateDenominator == 0 ||
+        (frameRateNumerator == 30u * frameRateDenominator);
+
+    return
+        IsEqualGUID(majorType, MFMediaType_Video) &&
+        IsEqualGUID(subtype, MFVideoFormat_RGB32) &&
+        width == AVCAM_FRAME_WIDTH &&
+        height == AVCAM_FRAME_HEIGHT &&
+        frameRateAcceptable;
 }
 
 bool MediaFoundationFrameSource::ReadFrame(
@@ -381,7 +417,7 @@ bool MediaFoundationFrameSource::ReadFrame(
         if (FAILED(readResult) ||
             (flags & MF_SOURCE_READERF_ENDOFSTREAM) != 0 ||
             (flags & MF_SOURCE_READERF_ERROR) != 0)
-        {
+    {
             return false;
         }
 
