@@ -64,7 +64,7 @@ DEFINE_KSMETHOD_TABLE(g_AvCamMethodItems)
 {
     DEFINE_KSMETHOD_ITEM(
         AVCAM_METHOD_SUBMIT_FRAME,
-        KSMETHOD_TYPE_SEND | KSMETHOD_TYPE_WRITE,
+        KSMETHOD_TYPE_WRITE,
         AvCamSubmitFrameMethod,
         sizeof(KSMETHOD),
         sizeof(AvCamFrameHeader) + AVCAM_FRAME_BYTES_BGRA32,
