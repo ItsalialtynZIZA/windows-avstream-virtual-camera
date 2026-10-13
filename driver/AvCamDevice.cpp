@@ -1,6 +1,4 @@
-#include <ntddk.h>
-#include <ks.h>
-
+#include "AvCamCommon.h"
 #include "AvCamFilter.h"
 
 static const KSFILTER_DESCRIPTOR* g_AvCamFilterDescriptors[] =
@@ -10,10 +8,8 @@ static const KSFILTER_DESCRIPTOR* g_AvCamFilterDescriptors[] =
 
 const KSDEVICE_DESCRIPTOR g_AvCamDeviceDescriptor =
 {
-    nullptr,                               // Dispatch (AVStream defaults)
+    nullptr,
     RTL_NUMBER_OF(g_AvCamFilterDescriptors),
     g_AvCamFilterDescriptors,
-    KSDEVICE_DESCRIPTOR_VERSION_2,
-    0,
-    nullptr
+    KSDEVICE_DESCRIPTOR_VERSION
 };
