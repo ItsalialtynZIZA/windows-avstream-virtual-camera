@@ -16,6 +16,24 @@ jobs:
       - name: Build feeder
         run: cmake --build build/feeder --config Release
 
-      - name: Show result
+      - name: Show feeder result
         shell: pwsh
         run: Get-ChildItem build/feeder -Recurse -Filter AvCamFeeder.exe
+
+  driver:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Add MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Restore WDK packages
+        run: msbuild driver/AvCam.vcxproj /t:Restore /p:Configuration=Release /p:Platform=x64
+
+      - name: Build AVStream driver
+        run: msbuild driver/AvCam.vcxproj /m /p:Configuration=Release /p:Platform=x64
+
+      - name: Show driver outputs
+        shell: pwsh
+        run: Get-ChildItem driver -Recurse -Include AvCam.sys,AvCam.inf,AvCam.cat
