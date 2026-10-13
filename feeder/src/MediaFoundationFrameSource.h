@@ -34,6 +34,7 @@ private:
     std::wstring friendlyNameContains_;
     std::wstring selectedName_;
     bool mediaFoundationStarted_ = false;
+    LONG defaultStride_ = 0;
 
     Microsoft::WRL::ComPtr<IMFMediaSource> mediaSource_;
     Microsoft::WRL::ComPtr<IMFSourceReader> reader_;
