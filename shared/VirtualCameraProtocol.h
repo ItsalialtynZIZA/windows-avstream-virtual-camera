@@ -45,6 +45,7 @@ struct AvCamTransportStats
     unsigned long Reserved;
     unsigned long long SubmittedFrames;
     unsigned long long ReplacedFrames;
+    unsigned long long DroppedFrames;
     unsigned long long CaptureReads;
     unsigned long long FallbackFrames;
 };
