@@ -8,6 +8,8 @@ constexpr LONG kHeight = 720;
 constexpr ULONG kBytesPerPixel = 4;
 constexpr ULONG kStride = static_cast<ULONG>(kWidth) * kBytesPerPixel;
 constexpr ULONG kFrameBytes = kStride * static_cast<ULONG>(kHeight);
+constexpr ULONG kFramesPerSecond = 30;
+constexpr ULONG kBitRate = kFrameBytes * 8u * kFramesPerSecond;
 constexpr REFERENCE_TIME kFrameInterval100ns = 333333; // ~30 fps
 
 GUID g_AvCamCapturePinName = { STATIC_PINNAME_VIDEO_CAPTURE };
@@ -17,20 +19,70 @@ GUID g_AvCamCapturePinCategory =
     { 0x90, 0x5f, 0x00, 0x00, 0xc0, 0xcc, 0x16, 0xba }
 };
 
-const KSDATARANGE g_AvCamVideoRange =
+// Advertise one exact camera mode. This follows the KS_DATARANGE_VIDEO shape
+// used by Microsoft's AVStream camera samples, but intentionally keeps the
+// capabilities deterministic for the first working prototype.
+const KS_DATARANGE_VIDEO g_AvCamVideoRange =
 {
-    sizeof(KSDATARANGE),
+    {
+        sizeof(KS_DATARANGE_VIDEO),
+        0,
+        kFrameBytes,
+        0,
+        STATICGUIDOF(KSDATAFORMAT_TYPE_VIDEO),
+        STATICGUIDOF(KSDATAFORMAT_SUBTYPE_RGB32),
+        STATICGUIDOF(KSDATAFORMAT_SPECIFIER_VIDEOINFO)
+    },
+    TRUE,
+    FALSE,
     0,
-    kFrameBytes,
     0,
-    STATICGUIDOF(KSDATAFORMAT_TYPE_VIDEO),
-    STATICGUIDOF(KSDATAFORMAT_SUBTYPE_RGB32),
-    STATICGUIDOF(KSDATAFORMAT_SPECIFIER_VIDEOINFO)
+    {
+        STATICGUIDOF(KSDATAFORMAT_SPECIFIER_VIDEOINFO),
+        KS_AnalogVideo_None,
+        kWidth, kHeight,
+        kWidth, kHeight,
+        kWidth, kHeight,
+        1,
+        1,
+        1,
+        1,
+        kWidth, kHeight,
+        kWidth, kHeight,
+        1,
+        1,
+        0,
+        0,
+        0,
+        0,
+        kFrameInterval100ns,
+        kFrameInterval100ns,
+        kBitRate,
+        kBitRate
+    },
+    {
+        0, 0, 0, 0,
+        0, 0, 0, 0,
+        kBitRate,
+        0,
+        kFrameInterval100ns,
+        sizeof(KS_BITMAPINFOHEADER),
+        kWidth,
+        kHeight,
+        1,
+        32,
+        KS_BI_RGB,
+        kFrameBytes,
+        0,
+        0,
+        0,
+        0
+    }
 };
 
 const PKSDATARANGE g_AvCamVideoRanges[] =
 {
-    const_cast<PKSDATARANGE>(&g_AvCamVideoRange)
+    const_cast<PKSDATARANGE>(&g_AvCamVideoRange.DataRange)
 };
 
 DECLARE_SIMPLE_FRAMING_EX(
@@ -43,6 +95,31 @@ DECLARE_SIMPLE_FRAMING_EX(
     kFrameBytes
 );
 
+bool IsExactAvCamFormat(_In_ const KS_DATAFORMAT_VIDEOINFOHEADER* format)
+{
+    if (format == nullptr)
+    {
+        return false;
+    }
+
+    const auto& dataFormat = format->DataFormat;
+    const auto& vih = format->VideoInfoHeader;
+    const auto& bmi = vih.bmiHeader;
+
+    return
+        IsEqualGUID(dataFormat.MajorFormat, KSDATAFORMAT_TYPE_VIDEO) &&
+        IsEqualGUID(dataFormat.SubFormat, KSDATAFORMAT_SUBTYPE_RGB32) &&
+        IsEqualGUID(dataFormat.Specifier, KSDATAFORMAT_SPECIFIER_VIDEOINFO) &&
+        bmi.biSize >= sizeof(KS_BITMAPINFOHEADER) &&
+        bmi.biWidth == kWidth &&
+        bmi.biHeight == kHeight &&
+        bmi.biPlanes == 1 &&
+        bmi.biBitCount == 32 &&
+        bmi.biCompression == KS_BI_RGB &&
+        bmi.biSizeImage >= kFrameBytes &&
+        vih.AvgTimePerFrame == kFrameInterval100ns;
+}
+
 NTSTATUS AvCamPinCreate(_In_ PKSPIN Pin, _In_ PIRP Irp)
 {
     UNREFERENCED_PARAMETER(Irp);
@@ -54,6 +131,38 @@ NTSTATUS AvCamPinCreate(_In_ PKSPIN Pin, _In_ PIRP Irp)
 
     Pin->StreamHeaderSize = sizeof(KSSTREAM_HEADER);
     return STATUS_SUCCESS;
+}
+
+NTSTATUS AvCamPinSetDataFormat(
+    _In_ PKSPIN Pin,
+    _In_opt_ PKSDATAFORMAT OldFormat,
+    _In_opt_ PKSMULTIPLE_ITEM OldAttributeList,
+    _In_ const KSDATARANGE* DataRange,
+    _In_opt_ const KSATTRIBUTE_LIST* AttributeRange)
+{
+    UNREFERENCED_PARAMETER(OldAttributeList);
+    UNREFERENCED_PARAMETER(AttributeRange);
+
+    if (Pin == nullptr || DataRange == nullptr || Pin->ConnectionFormat == nullptr)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (OldFormat != nullptr && Pin->DeviceState != KSSTATE_STOP)
+    {
+        return STATUS_INVALID_DEVICE_STATE;
+    }
+
+    if (DataRange->FormatSize < sizeof(KS_DATARANGE_VIDEO) ||
+        Pin->ConnectionFormat->FormatSize < sizeof(KS_DATAFORMAT_VIDEOINFOHEADER))
+    {
+        return STATUS_NO_MATCH;
+    }
+
+    const auto* format =
+        reinterpret_cast<const KS_DATAFORMAT_VIDEOINFOHEADER*>(Pin->ConnectionFormat);
+
+    return IsExactAvCamFormat(format) ? STATUS_SUCCESS : STATUS_NO_MATCH;
 }
 
 NTSTATUS AvCamPinSetState(
@@ -69,8 +178,6 @@ NTSTATUS AvCamPinSetState(
 
 void FillSyntheticFrame(_Out_writes_bytes_(kFrameBytes) UCHAR* destination)
 {
-    // Deterministic diagnostic pattern. Keeping synthesis in-kernel for M2
-    // lets us prove AVStream negotiation and delivery before adding IPC/OBS.
     for (LONG y = 0; y < kHeight; ++y)
     {
         auto* row = destination + static_cast<ULONG>(y) * kStride;
@@ -81,7 +188,7 @@ void FillSyntheticFrame(_Out_writes_bytes_(kFrameBytes) UCHAR* destination)
             const UCHAR vertical = static_cast<UCHAR>((y * 255) / (kHeight - 1));
             const bool checker = (((x / 80) + (y / 80)) & 1) != 0;
 
-            // Windows RGB32/DIB memory is B,G,R,X.
+            // Windows RGB32/DIB memory order is B,G,R,X.
             row[offset + 0] = checker ? horizontal : 0x20;
             row[offset + 1] = vertical;
             row[offset + 2] = checker ? 0xE0 : horizontal;
@@ -134,12 +241,16 @@ NTSTATUS AvCamIntersectHandler(
     UNREFERENCED_PARAMETER(Filter);
     UNREFERENCED_PARAMETER(Irp);
     UNREFERENCED_PARAMETER(PinInstance);
-    UNREFERENCED_PARAMETER(CallerDataRange);
-    UNREFERENCED_PARAMETER(DescriptorDataRange);
 
-    if (DataSize == nullptr)
+    if (CallerDataRange == nullptr || DescriptorDataRange == nullptr || DataSize == nullptr)
     {
         return STATUS_INVALID_PARAMETER;
+    }
+
+    if (CallerDataRange->FormatSize < sizeof(KS_DATARANGE_VIDEO) ||
+        DescriptorDataRange->FormatSize < sizeof(KS_DATARANGE_VIDEO))
+    {
+        return STATUS_NO_MATCH;
     }
 
     constexpr ULONG required = sizeof(KS_DATAFORMAT_VIDEOINFOHEADER);
@@ -155,38 +266,15 @@ NTSTATUS AvCamIntersectHandler(
         return STATUS_BUFFER_TOO_SMALL;
     }
 
+    const auto* descriptorVideo =
+        reinterpret_cast<const KS_DATARANGE_VIDEO*>(DescriptorDataRange);
     auto* format = static_cast<PKS_DATAFORMAT_VIDEOINFOHEADER>(Data);
+
     RtlZeroMemory(format, required);
-
+    RtlCopyMemory(&format->DataFormat, &descriptorVideo->DataRange, sizeof(KSDATAFORMAT));
     format->DataFormat.FormatSize = required;
-    format->DataFormat.Flags = 0;
     format->DataFormat.SampleSize = kFrameBytes;
-    format->DataFormat.Reserved = 0;
-    format->DataFormat.MajorFormat = KSDATAFORMAT_TYPE_VIDEO;
-    format->DataFormat.SubFormat = KSDATAFORMAT_SUBTYPE_RGB32;
-    format->DataFormat.Specifier = KSDATAFORMAT_SPECIFIER_VIDEOINFO;
-
-    auto& vih = format->VideoInfoHeader;
-    vih.rcSource.left = 0;
-    vih.rcSource.top = 0;
-    vih.rcSource.right = kWidth;
-    vih.rcSource.bottom = kHeight;
-    vih.rcTarget = vih.rcSource;
-    vih.dwBitRate = kFrameBytes * 8u * 30u;
-    vih.dwBitErrorRate = 0;
-    vih.AvgTimePerFrame = kFrameInterval100ns;
-
-    vih.bmiHeader.biSize = sizeof(KS_BITMAPINFOHEADER);
-    vih.bmiHeader.biWidth = kWidth;
-    vih.bmiHeader.biHeight = kHeight;
-    vih.bmiHeader.biPlanes = 1;
-    vih.bmiHeader.biBitCount = 32;
-    vih.bmiHeader.biCompression = KS_BI_RGB;
-    vih.bmiHeader.biSizeImage = kFrameBytes;
-    vih.bmiHeader.biXPelsPerMeter = 0;
-    vih.bmiHeader.biYPelsPerMeter = 0;
-    vih.bmiHeader.biClrUsed = 0;
-    vih.bmiHeader.biClrImportant = 0;
+    format->VideoInfoHeader = descriptorVideo->VideoInfoHeader;
 
     return STATUS_SUCCESS;
 }
@@ -197,7 +285,7 @@ const KSPIN_DISPATCH g_AvCamPinDispatch =
     nullptr,
     AvCamPinProcess,
     nullptr,
-    nullptr,
+    AvCamPinSetDataFormat,
     AvCamPinSetState,
     nullptr,
     nullptr,
