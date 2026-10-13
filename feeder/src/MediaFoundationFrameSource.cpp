@@ -5,6 +5,7 @@
 #include <mferror.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <cwctype>
 #include <cstring>
 #include <vector>
@@ -29,6 +30,79 @@ bool ContainsInsensitive(const std::wstring& value, const std::wstring& fragment
         [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
 
     return lhs.find(rhs) != std::wstring::npos;
+}
+
+bool CopyRgb32BufferTopDown(
+    IMFMediaBuffer* buffer,
+    unsigned char* destination,
+    std::size_t destinationBytes)
+{
+    if (buffer == nullptr || destination == nullptr ||
+        destinationBytes < AVCAM_FRAME_BYTES_BGRA32)
+    {
+        return false;
+    }
+
+    // Prefer IMF2DBuffer because it exposes the real scanline pitch and
+    // normalizes access around scanline 0. This handles padded/negative pitch
+    // without assuming that a contiguous RGB32 buffer is tightly packed.
+    ComPtr<IMF2DBuffer> buffer2d;
+    if (SUCCEEDED(buffer->QueryInterface(IID_PPV_ARGS(&buffer2d))))
+    {
+        BYTE* scanline0 = nullptr;
+        LONG pitch = 0;
+
+        if (SUCCEEDED(buffer2d->Lock2D(&scanline0, &pitch)))
+        {
+            const LONG absolutePitch = (pitch < 0) ? -pitch : pitch;
+            const bool valid =
+                scanline0 != nullptr &&
+                absolutePitch >= static_cast<LONG>(AVCAM_FRAME_STRIDE_BGRA32);
+
+            if (valid)
+            {
+                for (unsigned long y = 0; y < AVCAM_FRAME_HEIGHT; ++y)
+                {
+                    const BYTE* sourceRow =
+                        scanline0 + static_cast<std::ptrdiff_t>(y) * pitch;
+                    unsigned char* destinationRow =
+                        destination + static_cast<std::size_t>(y) *
+                            AVCAM_FRAME_STRIDE_BGRA32;
+
+                    std::memcpy(
+                        destinationRow,
+                        sourceRow,
+                        AVCAM_FRAME_STRIDE_BGRA32);
+                }
+            }
+
+            buffer2d->Unlock2D();
+            return valid;
+        }
+    }
+
+    // Conservative fallback for buffers that do not expose IMF2DBuffer.
+    // RGB32 at 1280 pixels is naturally DWORD-aligned, so a tightly packed
+    // contiguous frame has exactly AVCAM_FRAME_BYTES_BGRA32 bytes.
+    BYTE* bytes = nullptr;
+    DWORD maxLength = 0;
+    DWORD currentLength = 0;
+
+    if (FAILED(buffer->Lock(&bytes, &maxLength, &currentLength)))
+    {
+        return false;
+    }
+
+    const bool valid =
+        bytes != nullptr && currentLength >= AVCAM_FRAME_BYTES_BGRA32;
+
+    if (valid)
+    {
+        std::memcpy(destination, bytes, AVCAM_FRAME_BYTES_BGRA32);
+    }
+
+    buffer->Unlock();
+    return valid;
 }
 } // namespace
 
@@ -268,25 +342,13 @@ bool MediaFoundationFrameSource::ReadFrame(
             return false;
         }
 
-        BYTE* bytes = nullptr;
-        DWORD maxLength = 0;
-        DWORD currentLength = 0;
-        if (FAILED(buffer->Lock(&bytes, &maxLength, &currentLength)))
+        if (!CopyRgb32BufferTopDown(buffer.Get(), Destination, DestinationBytes))
         {
             return false;
         }
 
-        const bool valid =
-            bytes != nullptr && currentLength >= AVCAM_FRAME_BYTES_BGRA32;
-
-        if (valid)
-        {
-            std::memcpy(Destination, bytes, AVCAM_FRAME_BYTES_BGRA32);
-            Timestamp100ns = static_cast<std::uint64_t>(timestamp);
-        }
-
-        buffer->Unlock();
-        return valid;
+        Timestamp100ns = static_cast<std::uint64_t>(timestamp);
+        return true;
     }
 
     return false;
