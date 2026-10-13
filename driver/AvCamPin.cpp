@@ -1,13 +1,15 @@
 #include "AvCamCommon.h"
+#include "AvCamFrameStore.h"
 #include "AvCamPin.h"
+#include "../shared/VirtualCameraProtocol.h"
 
 namespace
 {
-constexpr LONG kWidth = 1280;
-constexpr LONG kHeight = 720;
+constexpr LONG kWidth = static_cast<LONG>(AVCAM_FRAME_WIDTH);
+constexpr LONG kHeight = static_cast<LONG>(AVCAM_FRAME_HEIGHT);
 constexpr ULONG kBytesPerPixel = 4;
-constexpr ULONG kStride = static_cast<ULONG>(kWidth) * kBytesPerPixel;
-constexpr ULONG kFrameBytes = kStride * static_cast<ULONG>(kHeight);
+constexpr ULONG kStride = AVCAM_FRAME_STRIDE_BGRA32;
+constexpr ULONG kFrameBytes = AVCAM_FRAME_BYTES_BGRA32;
 constexpr ULONG kFramesPerSecond = 30;
 constexpr ULONG kBitRate = kFrameBytes * 8u * kFramesPerSecond;
 constexpr REFERENCE_TIME kFrameInterval100ns = 333333; // ~30 fps
@@ -19,9 +21,6 @@ GUID g_AvCamCapturePinCategory =
     { 0x90, 0x5f, 0x00, 0x00, 0xc0, 0xcc, 0x16, 0xba }
 };
 
-// Advertise one exact camera mode. This follows the KS_DATARANGE_VIDEO shape
-// used by Microsoft's AVStream camera samples, but intentionally keeps the
-// capabilities deterministic for the first working prototype.
 const KS_DATARANGE_VIDEO g_AvCamVideoRange =
 {
     {
@@ -188,7 +187,6 @@ void FillSyntheticFrame(_Out_writes_bytes_(kFrameBytes) UCHAR* destination)
             const UCHAR vertical = static_cast<UCHAR>((y * 255) / (kHeight - 1));
             const bool checker = (((x / 80) + (y / 80)) & 1) != 0;
 
-            // Windows RGB32/DIB memory order is B,G,R,X.
             row[offset + 0] = checker ? horizontal : 0x20;
             row[offset + 1] = vertical;
             row[offset + 2] = checker ? 0xE0 : horizontal;
@@ -219,10 +217,25 @@ NTSTATUS AvCamPinProcess(_In_ PKSPIN Pin)
         return STATUS_BUFFER_TOO_SMALL;
     }
 
-    FillSyntheticFrame(static_cast<UCHAR*>(header->Data));
+    auto* destination = static_cast<UCHAR*>(header->Data);
+    ULONGLONG producerTimestamp100ns = 0;
+
+    if (!AvCamCopyLatestFrame(destination, kFrameBytes, &producerTimestamp100ns))
+    {
+        FillSyntheticFrame(destination);
+    }
+
     header->DataUsed = kFrameBytes;
     header->Duration = kFrameInterval100ns;
     header->OptionsFlags |= KSSTREAM_HEADER_OPTIONSF_DURATIONVALID;
+
+    if (producerTimestamp100ns != 0)
+    {
+        header->PresentationTime.Time = static_cast<LONGLONG>(producerTimestamp100ns);
+        header->PresentationTime.Numerator = 1;
+        header->PresentationTime.Denominator = 1;
+        header->OptionsFlags |= KSSTREAM_HEADER_OPTIONSF_TIMEVALID;
+    }
 
     KsStreamPointerUnlock(leading, TRUE);
     return STATUS_PENDING;
