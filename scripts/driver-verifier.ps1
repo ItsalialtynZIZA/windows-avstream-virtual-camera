@@ -16,7 +16,7 @@ function Test-IsAdministrator {
 function Invoke-Verifier([string[]]$Arguments) {
     & "$env:WINDIR\System32\verifier.exe" @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "verifier.exe failed with exit code $LASTEXITCODE: $($Arguments -join ' ')"
+        throw "verifier.exe failed with exit code ${LASTEXITCODE}: $($Arguments -join ' ')"
     }
 }
 
