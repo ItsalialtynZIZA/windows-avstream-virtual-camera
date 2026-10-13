@@ -11,6 +11,7 @@ NTSTATUS AvCamSubmitFrame(
     _In_ ULONG FrameBytes,
     _In_ ULONGLONG Timestamp100ns);
 
+_Success_(return != FALSE)
 BOOLEAN AvCamCopyLatestFrame(
     _Out_writes_bytes_(DestinationBytes) UCHAR* Destination,
     _In_ ULONG DestinationBytes,
