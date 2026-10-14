@@ -44,12 +44,14 @@ NTSTATUS AvCamDeviceAdd(_In_ PKSDEVICE Device)
         return STATUS_INVALID_PARAMETER;
     }
 
-    NTSTATUS status = AvCamFrameStoreInitialize();
-    if (!NT_SUCCESS(status))
-    {
-        return status;
-    }
-
+    // Keep AddDevice lightweight. The previous implementation allocated the
+    // complete multi-frame nonpaged transport pool before the PnP device could
+    // finish starting. Runtime testing showed the device failing to load with
+    // ERROR_NO_SYSTEM_RESOURCES/STATUS_INSUFFICIENT_RESOURCES on a real
+    // Windows 11 host. Transport storage is therefore not a prerequisite for
+    // device enumeration; until it is initialized later, capture simply uses
+    // the deterministic synthetic fallback and producer submissions report
+    // STATUS_DEVICE_NOT_READY.
     auto* context = static_cast<AvCamDeviceContext*>(
         ExAllocatePool2(
             POOL_FLAG_NON_PAGED,
@@ -58,13 +60,12 @@ NTSTATUS AvCamDeviceAdd(_In_ PKSDEVICE Device)
 
     if (context == nullptr)
     {
-        AvCamFrameStoreShutdown();
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
     RtlZeroMemory(context, sizeof(*context));
 
-    status = IoRegisterDeviceInterface(
+    NTSTATUS status = IoRegisterDeviceInterface(
         Device->PhysicalDeviceObject,
         &GUID_DEVINTERFACE_AVCAM_FRAME_SINK,
         nullptr,
@@ -73,7 +74,6 @@ NTSTATUS AvCamDeviceAdd(_In_ PKSDEVICE Device)
     if (!NT_SUCCESS(status))
     {
         ExFreePoolWithTag(context, kAvCamDeviceContextTag);
-        AvCamFrameStoreShutdown();
         return status;
     }
 
@@ -88,7 +88,6 @@ NTSTATUS AvCamDeviceAdd(_In_ PKSDEVICE Device)
     {
         RtlFreeUnicodeString(&context->ProducerInterfaceLink);
         ExFreePoolWithTag(context, kAvCamDeviceContextTag);
-        AvCamFrameStoreShutdown();
         return status;
     }
 
