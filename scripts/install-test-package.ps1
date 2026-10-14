@@ -57,15 +57,18 @@ if ($TrustTestCertificate) {
     Write-Host 'Re-run with -TrustTestCertificate only on a dedicated development/test machine if required.'
 }
 
+$programFilesX86 = ${env:ProgramFiles(x86)}
+$toolsRoot = Join-Path $programFilesX86 'Windows Kits\10\Tools'
 $devconCandidates = @(
-    "$env:ProgramFiles(x86)\Windows Kits\10\Tools\x64\devcon.exe",
-    "$env:ProgramFiles(x86)\Windows Kits\10\Tools\10.0.26100.0\x64\devcon.exe"
+    (Join-Path $toolsRoot 'x64\devcon.exe'),
+    (Join-Path $toolsRoot '10.0.26100.0\x64\devcon.exe')
 )
 
 $devcon = $devconCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $devcon) {
-    $devcon = Get-ChildItem "$env:ProgramFiles(x86)\Windows Kits\10\Tools" -Recurse -Filter devcon.exe -ErrorAction SilentlyContinue |
+if (-not $devcon -and (Test-Path $toolsRoot)) {
+    $devcon = Get-ChildItem $toolsRoot -Recurse -Filter devcon.exe -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -match '\\x64\\devcon\.exe$' } |
+        Sort-Object FullName -Descending |
         Select-Object -First 1 -ExpandProperty FullName
 }
 
