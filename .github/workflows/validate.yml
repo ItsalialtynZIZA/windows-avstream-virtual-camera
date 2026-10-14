@@ -1,0 +1,180 @@
+name: Validate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  feeder:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure feeder
+        run: cmake -S feeder -B build/feeder -A x64
+
+      - name: Build feeder
+        run: cmake --build build/feeder --config Release
+
+      - name: Show feeder result
+        shell: pwsh
+        run: Get-ChildItem build/feeder -Recurse -Filter AvCamFeeder.exe
+
+      - name: Upload feeder executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: AvCamFeeder-x64
+          if-no-files-found: error
+          path: build/feeder/Release/AvCamFeeder.exe
+
+  driver:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate PowerShell helper syntax
+        shell: pwsh
+        run: |
+          $scripts = Get-ChildItem scripts -Filter '*.ps1' -File
+          if (-not $scripts) { throw 'No PowerShell helper scripts were found.' }
+          foreach ($script in $scripts) {
+            try {
+              [void][scriptblock]::Create((Get-Content $script.FullName -Raw))
+              Write-Host "Syntax OK: $($script.FullName)"
+            }
+            catch {
+              throw "PowerShell syntax validation failed for '$($script.FullName)': $($_.Exception.Message)"
+            }
+          }
+
+      - name: Add x64 MSBuild to PATH
+        uses: microsoft/setup-msbuild@v2
+        with:
+          msbuild-architecture: x64
+
+      - name: Restore WDK package cache
+        id: wdk-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: packages
+          key: wdk-sdk-x64-10.0.26100.6584-v2
+
+      - name: Restore WDK and SDK packages
+        run: nuget restore packages.config -PackagesDirectory packages -NonInteractive
+
+      - name: Save WDK package cache
+        if: steps.wdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: packages
+          key: wdk-sdk-x64-10.0.26100.6584-v2
+
+      - name: Locate WDK build tools
+        shell: pwsh
+        run: |
+          $stampInf = Get-ChildItem packages -Recurse -Filter stampinf.exe -File |
+            Where-Object { $_.FullName -match '\\x64\\stampinf\.exe$' } |
+            Select-Object -First 1
+          if (-not $stampInf) { throw 'x64 stampinf.exe was not found in restored WDK packages.' }
+
+          $infVerifDll = Get-ChildItem packages -Recurse -Filter InfVerif.dll -File |
+            Where-Object { $_.FullName -match '\\build\\[^\\]+\\bin\\x64\\InfVerif\.dll$' } |
+            Select-Object -First 1
+
+          $targetToolDir = $stampInf.Directory.FullName
+          if ($infVerifDll) {
+            $targetToolDir = $infVerifDll.Directory.FullName
+            $stagedStampInf = Join-Path $targetToolDir 'stampinf.exe'
+            Copy-Item $stampInf.FullName $stagedStampInf -Force
+            Write-Host "Staged stampinf.exe: $stagedStampInf"
+            Write-Host "InfVerif.dll: $($infVerifDll.FullName)"
+          }
+
+          Write-Host "stampinf.exe: $($stampInf.FullName)"
+          Write-Host "WDK tool directory: $targetToolDir"
+
+          "StampInfToolPath=$targetToolDir\" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $targetToolDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Build AVStream driver
+        shell: pwsh
+        run: msbuild driver/AvCam.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath"
+
+      - name: Show driver outputs
+        shell: pwsh
+        run: Get-ChildItem driver -Recurse -Include AvCam.sys,AvCam.inf,AvCam.cat,AvCam.cer
+
+      - name: Upload test-signed driver package
+        uses: actions/upload-artifact@v4
+        with:
+          name: AvCam-test-package-x64
+          if-no-files-found: error
+          path: |
+            driver/x64/Release/AvCam/**
+            driver/x64/Release/AvCam.cer
+            scripts/install-test-package.ps1
+            scripts/install-driver.ps1
+            scripts/uninstall-driver.ps1
+            scripts/verify-camera.ps1
+            scripts/runtime-smoke-check.ps1
+            scripts/driver-verifier.ps1
+            scripts/enable-test-signing.ps1
+            scripts/disable-test-signing.ps1
+            docs/local-test.md
+            docs/hardening.md
+            docs/production-signing.md
+
+      - name: Analyze AVStream driver with PREfast
+        shell: pwsh
+        run: |
+          $output = & msbuild driver/AvCam.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath" /p:RunCodeAnalysis=true /p:EnablePREfast=true 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+
+          if ($exitCode -ne 0) {
+            throw "PREfast MSBuild failed with exit code $exitCode."
+          }
+
+          $warnings = @($output | Select-String -Pattern '\bwarning\s+(C|CA|MSB)\d{4,5}\s*:' -CaseSensitive:$false)
+          if ($warnings.Count -gt 0) {
+            Write-Host 'PREfast warnings detected:'
+            $warnings | ForEach-Object { Write-Host $_.Line }
+            throw "PREfast emitted $($warnings.Count) warning(s)."
+          }
+
+          Write-Host 'PREfast completed with zero detected warnings.'
+
+  runtime-bundle:
+    needs:
+      - driver
+      - feeder
+    runs-on: windows-2022
+    steps:
+      - name: Download driver artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: AvCam-test-package-x64
+          path: runtime/driver
+
+      - name: Download feeder artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: AvCamFeeder-x64
+          path: runtime/feeder
+
+      - name: Show runtime bundle contents
+        shell: pwsh
+        run: Get-ChildItem runtime -Recurse | Select-Object FullName, Length
+
+      - name: Upload combined runtime bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: AvCam-runtime-test-x64
+          if-no-files-found: error
+          path: runtime/**

@@ -1,0 +1,63 @@
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = Camera
+ClassGuid   = {ca3e7ab9-b4c3-4ae6-8251-579ef933890f}
+Provider    = %ProviderName%
+DriverVer   = 10/13/2026,0.2.0.0
+CatalogFile = AvCam.cat
+PnpLockdown = 1
+
+[DestinationDirs]
+AvCam.CopyFiles = 13
+
+[SourceDisksNames]
+1 = %DiskName%,,,
+
+[SourceDisksFiles]
+AvCam.sys = 1
+
+[Manufacturer]
+%ProviderName% = AvCamModels,NTamd64.10.0...22000
+
+[AvCamModels.NTamd64.10.0...22000]
+%DeviceName% = AvCam.Install, Root\AvCamVirtualCamera
+
+[AvCam.Install]
+Include   = ks.inf,KSCAPTUR.inf
+Needs     = KS.Registration,KSCAPTUR.Registration.NT
+CopyFiles = AvCam.CopyFiles
+
+[AvCam.Install.Services]
+AddService = AvCam,0x00000002,AvCam.Service
+
+[AvCam.Install.Interfaces]
+AddInterface = %KSCATEGORY_VIDEO_CAMERA%,"GLOBAL",AvCam.CaptureInterface
+AddInterface = %KSCATEGORY_CAPTURE%,"GLOBAL",AvCam.CaptureInterface
+AddInterface = %KSCATEGORY_VIDEO%,"GLOBAL",AvCam.CaptureInterface
+
+[AvCam.CaptureInterface]
+AddReg = AvCam.CaptureInterface.AddReg
+
+[AvCam.CaptureInterface.AddReg]
+HKR,,CLSID,,%ProxyVCap.CLSID%
+HKR,,FriendlyName,,%DeviceName%
+HKR,,RTCFlags,0x00010001,0x00000010
+
+[AvCam.CopyFiles]
+AvCam.sys
+
+[AvCam.Service]
+DisplayName   = %DeviceName%
+ServiceType   = 1
+StartType     = 3
+ErrorControl  = 1
+ServiceBinary = %13%\AvCam.sys
+
+[Strings]
+ProviderName            = "AvCam Project"
+DeviceName              = "AvCam Virtual Camera"
+DiskName                = "AvCam Virtual Camera Installation Media"
+ProxyVCap.CLSID         = "{17CCA71B-ECD7-11D0-B908-00A0C9223196}"
+KSCATEGORY_VIDEO_CAMERA = "{E5323777-F976-4F5B-9B55-B94699C46E44}"
+KSCATEGORY_CAPTURE      = "{65E8773D-8F56-11D0-A3B9-00A0C9223196}"
+KSCATEGORY_VIDEO        = "{6994AD05-93EF-11D0-A3CC-00A0C9223196}"

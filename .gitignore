@@ -1,0 +1,17 @@
+.vs/
+*.user
+*.suo
+*.VC.db
+*.VC.VC.opendb
+x64/
+Debug/
+Release/
+build/
+out/
+bin/
+obj/
+*.sys
+*.cat
+*.cer
+*.pfx
+*.log
