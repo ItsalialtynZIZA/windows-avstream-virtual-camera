@@ -57,7 +57,7 @@ AvCamCompleteDescriptorRequest(
     const UCHAR* source;
     ULONG sourceLength;
     ULONG bytesToCopy;
-    PURB_CONTROL_DESCRIPTOR_REQUEST descriptorRequest;
+    struct _URB_CONTROL_DESCRIPTOR_REQUEST* descriptorRequest;
 
     if (Urb == NULL ||
         Urb->UrbHeader.Length < sizeof(struct _URB_CONTROL_DESCRIPTOR_REQUEST)) {
