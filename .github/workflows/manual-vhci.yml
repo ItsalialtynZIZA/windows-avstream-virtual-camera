@@ -34,6 +34,15 @@ jobs:
         with:
           msbuild-architecture: x64
 
+      - name: Build control utility
+        shell: pwsh
+        run: |
+          cmake -S research/manual-vhci/tools -B build/manual-vhci-tools -A x64
+          cmake --build build/manual-vhci-tools --config Release
+          $ctl = Get-ChildItem build/manual-vhci-tools -Recurse -Filter AvCamBusCtl.exe -File | Select-Object -First 1
+          if (-not $ctl -or $ctl.Length -le 0) { throw 'AvCamBusCtl.exe was not produced.' }
+          Get-Item $ctl.FullName | Select-Object FullName,Length
+
       - name: Restore WDK package cache
         id: wdk-cache
         uses: actions/cache/restore@v4
@@ -115,5 +124,6 @@ jobs:
           path: |
             research/manual-vhci/driver/x64/Release/AvCamBus/**
             research/manual-vhci/driver/x64/Release/AvCamBus.cer
+            build/manual-vhci-tools/Release/AvCamBusCtl.exe
             research/manual-vhci/README.md
             research/manual-vhci/tests/static-contract-tests.ps1
