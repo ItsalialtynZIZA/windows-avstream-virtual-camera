@@ -92,4 +92,22 @@
           DestinationFolder="$(OutDir)AvCamBus\WdmProbe"
           SkipUnchangedFiles="true" />
   </Target>
+
+  <Target Name="BuildLegacyLoaderProbe" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <MSBuild Projects="$(ProjectDir)..\legacy-probe\AvCamLegacyProbe.vcxproj"
+             Targets="Build"
+             Properties="Configuration=Release;Platform=x64"
+             RemoveProperties="RunCodeAnalysis;EnablePREfast" />
+    <ItemGroup>
+      <LegacyProbeDriver Include="$(ProjectDir)..\legacy-probe\x64\Release\AvCamLegacyProbe.sys" Condition="Exists('$(ProjectDir)..\legacy-probe\x64\Release\AvCamLegacyProbe.sys')" />
+      <LegacyProbeCertificate Include="$(ProjectDir)..\legacy-probe\x64\Release\AvCamLegacyProbe.cer" Condition="Exists('$(ProjectDir)..\legacy-probe\x64\Release\AvCamLegacyProbe.cer')" />
+    </ItemGroup>
+    <MakeDir Directories="$(OutDir)AvCamBus\LegacyProbe" />
+    <Copy SourceFiles="@(LegacyProbeDriver)"
+          DestinationFolder="$(OutDir)AvCamBus\LegacyProbe"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(LegacyProbeCertificate)"
+          DestinationFolder="$(OutDir)AvCamBus\LegacyProbe"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>
