@@ -134,3 +134,4 @@ jobs:
             build/manual-vhci-tools/Release/AvCamBusCtl.exe
             research/manual-vhci/README.md
             research/manual-vhci/tests/static-contract-tests.ps1
+            research/manual-vhci/tests/runtime-smoke.ps1
