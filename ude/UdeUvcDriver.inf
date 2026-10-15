@@ -1,0 +1,45 @@
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = USB
+ClassGuid   = {36FC9E60-C465-11CF-8056-444553540000}
+Provider    = %ProviderName%
+DriverVer   = 10/15/2026,0.1.0.0
+CatalogFile = AvUde.cat
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir = 13
+
+[Manufacturer]
+%ProviderName% = Models,NTamd64
+
+[Models.NTamd64]
+%ControllerName% = AvUde.Install,Root\AvCamUdeController
+
+[AvUde.Install]
+CopyFiles = AvUde.CopyFiles
+
+[AvUde.Install.Services]
+AddService = AvUde,0x00000002,AvUde.Service
+
+[AvUde.Service]
+DisplayName   = %ControllerName%
+ServiceType   = 1
+StartType     = 3
+ErrorControl  = 1
+ServiceBinary = %13%\AvUde.sys
+Dependencies  = ucx01000,udecx
+
+[AvUde.CopyFiles]
+AvUde.sys
+
+[SourceDisksNames]
+1 = %DiskName%,,,
+
+[SourceDisksFiles]
+AvUde.sys = 1
+
+[Strings]
+ProviderName   = "AvCam Project"
+ControllerName = "AvCam UDE USB Controller"
+DiskName       = "AvCam UDE Driver Package"
