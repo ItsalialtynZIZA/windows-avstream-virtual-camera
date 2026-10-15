@@ -35,6 +35,12 @@ Assert-NotContains $source 'Class_0[eE]&SubClass_03' 'UVC function collection mu
 Assert-Contains $source 'IOCTL_INTERNAL_USB_SUBMIT_URB' 'Child queue must classify USB submit-URB requests.'
 Assert-Contains $source 'URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE' 'Descriptor URB handler is missing.'
 Assert-Contains $source 'USB_CONFIGURATION_DESCRIPTOR_TYPE' 'Configuration descriptor handling is missing.'
+Assert-Contains $source 'URB_FUNCTION_SELECT_CONFIGURATION' 'Select-configuration URB handling is missing.'
+Assert-Contains $source 'URB_FUNCTION_SELECT_INTERFACE' 'Select-interface URB handling is missing.'
+Assert-Contains $source 'UsbdPipeTypeIsochronous' 'Streaming interface must expose an isochronous pipe.'
+Assert-Contains $source 'EndpointAddress\s*=\s*0x81' 'Streaming pipe endpoint must be 0x81 IN.'
+Assert-Contains $source 'MaximumPacketSize\s*=\s*3072' 'High-bandwidth streaming pipe size is missing.'
+Assert-Contains $source 'WdfIoQueueDispatchSequential' 'Control URB queue should serialize configuration state transitions.'
 Assert-Contains $source 'WdfChildListAddOrUpdateChildDescriptionAsPresent' 'Plug path must mark the child present.'
 Assert-Contains $source 'WdfChildListUpdateChildDescriptionAsMissing' 'Unplug path must mark the child missing.'
 
