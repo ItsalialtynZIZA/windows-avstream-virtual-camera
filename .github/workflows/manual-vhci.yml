@@ -25,6 +25,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Run static contract tests
+        shell: pwsh
+        run: ./research/manual-vhci/tests/static-contract-tests.ps1
+
       - name: Add x64 MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
         with:
@@ -74,11 +78,18 @@ jobs:
         run: |
           msbuild research/manual-vhci/driver/AvCamBus.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath"
 
-      - name: Show outputs
+      - name: Validate package outputs
         shell: pwsh
         run: |
-          Get-ChildItem research/manual-vhci/driver -Recurse -Include AvCamBus.sys,AvCamBus.inf,AvCamBus.cat,AvCamBus.cer |
-            Select-Object FullName,Length
+          $release = 'research/manual-vhci/driver/x64/Release'
+          $sys = Get-ChildItem $release -Recurse -Filter AvCamBus.sys -File | Select-Object -First 1
+          $inf = Get-ChildItem $release -Recurse -Filter AvCamBus.inf -File | Select-Object -First 1
+          $cat = Get-ChildItem $release -Recurse -Filter AvCamBus.cat -File | Select-Object -First 1
+          if (-not $sys) { throw 'AvCamBus.sys was not produced.' }
+          if (-not $inf) { throw 'AvCamBus.inf was not produced.' }
+          if (-not $cat) { throw 'AvCamBus.cat was not produced.' }
+          if ($sys.Length -le 0 -or $inf.Length -le 0 -or $cat.Length -le 0) { throw 'One or more driver package outputs are empty.' }
+          Get-Item $sys.FullName,$inf.FullName,$cat.FullName | Select-Object FullName,Length
 
       - name: Analyze with PREfast
         shell: pwsh
@@ -105,3 +116,4 @@ jobs:
             research/manual-vhci/driver/x64/Release/AvCamBus/**
             research/manual-vhci/driver/x64/Release/AvCamBus.cer
             research/manual-vhci/README.md
+            research/manual-vhci/tests/static-contract-tests.ps1
