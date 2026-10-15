@@ -268,7 +268,7 @@ NTSTATUS
 AvCamEvtChildListCreateDevice(
     _In_ WDFCHILDLIST ChildList,
     _In_ PWDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER IdentificationDescription,
-    _Inout_ PWDFDEVICE_INIT ChildInit
+    _In_ PWDFDEVICE_INIT ChildInit
     )
 {
     NTSTATUS status;
