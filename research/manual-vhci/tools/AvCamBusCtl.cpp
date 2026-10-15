@@ -2,6 +2,7 @@
 #include <SetupAPI.h>
 #include <devguid.h>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
