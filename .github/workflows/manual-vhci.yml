@@ -29,6 +29,13 @@ jobs:
         shell: pwsh
         run: ./research/manual-vhci/tests/static-contract-tests.ps1
 
+      - name: Build and run descriptor tests
+        shell: pwsh
+        run: |
+          cmake -S research/manual-vhci/tests -B build/manual-vhci-tests -A x64
+          cmake --build build/manual-vhci-tests --config Release
+          ctest --test-dir build/manual-vhci-tests -C Release --output-on-failure
+
       - name: Add x64 MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
         with:
