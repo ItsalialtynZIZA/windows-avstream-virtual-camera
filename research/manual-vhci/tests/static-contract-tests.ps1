@@ -23,6 +23,8 @@ Assert-Contains $inf 'Root\\AvCamVirtualUsbHost' 'INF must install the root bus 
 Assert-Contains $inf 'DefaultDestDir\s*=\s*13' 'INF must use Driver Store isolation (DIRID 13).'
 Assert-Contains $inf 'ServiceBinary\s*=\s*%13%\\AvCamBus\.sys' 'ServiceBinary must point to DIRID 13.'
 Assert-Contains $inf '\[SourceDisksFiles\][\s\S]*AvCamBus\.sys\s*=\s*1' 'INF must list AvCamBus.sys in SourceDisksFiles.'
+Assert-Contains $inf 'NTamd64\.10\.0\.\.\.16299' 'DIRID 13 models must be restricted to Windows 10 build 16299 or newer.'
+Assert-NotContains $inf '(?m)^\[Standard\.NTamd64\]\s*$' 'Undecorated x64 model section must not bypass the TargetOSVersion restriction.'
 
 Assert-Contains $source 'USB\\\\VID_1234&PID_5678&MI_00' 'UVC function PDO hardware ID is missing.'
 Assert-Contains $source 'USB\\\\VID_1234&PID_5678' 'Base VID/PID hardware ID is missing.'
