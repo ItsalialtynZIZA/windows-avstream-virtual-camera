@@ -1,6 +1,11 @@
 #pragma once
 
+#ifdef _KERNEL_MODE
+#include <devioctl.h>
+#else
+#include <Windows.h>
 #include <winioctl.h>
+#endif
 
 #define FILE_DEVICE_AVCAM_BUS 0x00008010u
 
