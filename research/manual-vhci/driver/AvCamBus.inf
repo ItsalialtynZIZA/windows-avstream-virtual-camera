@@ -3,12 +3,19 @@ Signature   = "$WINDOWS NT$"
 Class       = System
 ClassGuid   = {4d36e97d-e325-11ce-bfc1-08002be10318}
 Provider    = %ProviderName%
-DriverVer   = 10/15/2026,0.1.0.0
+DriverVer   = 10/15/2026,0.1.0.1
 CatalogFile = AvCamBus.cat
 PnpLockdown = 1
 
 [DestinationDirs]
-DefaultDestDir = 12
+DefaultDestDir = 13
+AvCamBus_CopyFiles = 13
+
+[SourceDisksNames]
+1 = %DiskName%,,,
+
+[SourceDisksFiles]
+AvCamBus.sys = 1
 
 [Manufacturer]
 %ManufacturerName% = Standard,NTamd64
@@ -30,7 +37,7 @@ DisplayName    = %AvCamBus.SvcDesc%
 ServiceType    = 1
 StartType      = 3
 ErrorControl   = 1
-ServiceBinary  = %12%\AvCamBus.sys
+ServiceBinary  = %13%\AvCamBus.sys
 
 [AvCamBus_Install.NT.Wdf]
 KmdfService = AvCamBus,AvCamBus_WdfSection
@@ -42,5 +49,6 @@ KmdfLibraryVersion = 1.33
 SPSVCINST_ASSOCSERVICE = 0x00000002
 ProviderName            = "AvCam Research"
 ManufacturerName        = "AvCam Research"
+DiskName                = "AvCam Manual vHCI Research Driver"
 AvCamBus.DeviceDesc     = "AvCam Manual Virtual USB Host"
 AvCamBus.SvcDesc        = "AvCam Manual Virtual USB Host Driver"
