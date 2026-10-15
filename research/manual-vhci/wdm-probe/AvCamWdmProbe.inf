@@ -29,11 +29,18 @@ ServiceBinary=%13%\AvCamWdmProbe.sys
 [AvCamWdmProbe_CopyFiles]
 AvCamWdmProbe.sys
 
+[SourceDisksNames]
+1=%DiskName%
+
+[SourceDisksFiles]
+AvCamWdmProbe.sys=1
+
 [DestinationDirs]
 AvCamWdmProbe_CopyFiles=13
 
 [Strings]
 ProviderName="AvCam Research"
 ManufacturerName="AvCam Research"
+DiskName="AvCam WDM Probe Installation Media"
 AvCamWdmProbe.DeviceDesc="AvCam Minimal WDM Loader Probe"
 AvCamWdmProbe.SvcDesc="AvCam Minimal WDM Loader Probe Driver"
