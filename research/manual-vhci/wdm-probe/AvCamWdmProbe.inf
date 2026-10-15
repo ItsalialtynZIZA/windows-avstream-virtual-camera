@@ -1,0 +1,39 @@
+[Version]
+Signature="$WINDOWS NT$"
+Class=System
+ClassGuid={4d36e97d-e325-11ce-bfc1-08002be10318}
+Provider=%ProviderName%
+DriverVer=10/16/2026,0.1.0.0
+CatalogFile=AvCamWdmProbe.cat
+PnpLockdown=1
+
+[Manufacturer]
+%ManufacturerName%=Standard,NTamd64.10.0...16299
+
+[Standard.NTamd64.10.0...16299]
+%AvCamWdmProbe.DeviceDesc%=AvCamWdmProbe_Install,Root\AvCamWdmProbe
+
+[AvCamWdmProbe_Install.NT]
+CopyFiles=AvCamWdmProbe_CopyFiles
+
+[AvCamWdmProbe_Install.NT.Services]
+AddService=AvCamWdmProbe,0x00000002,AvCamWdmProbe_Service
+
+[AvCamWdmProbe_Service]
+DisplayName=%AvCamWdmProbe.SvcDesc%
+ServiceType=1
+StartType=3
+ErrorControl=1
+ServiceBinary=%13%\AvCamWdmProbe.sys
+
+[AvCamWdmProbe_CopyFiles]
+AvCamWdmProbe.sys
+
+[DestinationDirs]
+AvCamWdmProbe_CopyFiles=13
+
+[Strings]
+ProviderName="AvCam Research"
+ManufacturerName="AvCam Research"
+AvCamWdmProbe.DeviceDesc="AvCam Minimal WDM Loader Probe"
+AvCamWdmProbe.SvcDesc="AvCam Minimal WDM Loader Probe Driver"
