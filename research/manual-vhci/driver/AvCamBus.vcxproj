@@ -76,10 +76,11 @@
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 
-  <Target Name="BuildWdmLoaderProbe" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)'=='Release|x64' and '$(RunCodeAnalysis)'!='true'">
+  <Target Name="BuildWdmLoaderProbe" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <MSBuild Projects="$(ProjectDir)..\wdm-probe\AvCamWdmProbe.vcxproj"
              Targets="Build"
-             Properties="Configuration=Release;Platform=x64;StampInfToolPath=$(StampInfToolPath)" />
+             Properties="Configuration=Release;Platform=x64;StampInfToolPath=$(StampInfToolPath)"
+             RemoveProperties="RunCodeAnalysis;EnablePREfast" />
     <ItemGroup>
       <WdmProbePackage Include="$(ProjectDir)..\wdm-probe\x64\Release\AvCamWdmProbe\**\*" />
       <WdmProbeCertificate Include="$(ProjectDir)..\wdm-probe\x64\Release\AvCamWdmProbe.cer" Condition="Exists('$(ProjectDir)..\wdm-probe\x64\Release\AvCamWdmProbe.cer')" />
