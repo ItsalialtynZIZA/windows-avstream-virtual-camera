@@ -24,9 +24,15 @@ Assert-Contains $inf 'DefaultDestDir\s*=\s*13' 'INF must use Driver Store isolat
 Assert-Contains $inf 'ServiceBinary\s*=\s*%13%\\AvCamBus\.sys' 'ServiceBinary must point to DIRID 13.'
 Assert-Contains $inf '\[SourceDisksFiles\][\s\S]*AvCamBus\.sys\s*=\s*1' 'INF must list AvCamBus.sys in SourceDisksFiles.'
 
-Assert-Contains $source 'USB\\\\VID_1234&PID_5678' 'Child PDO hardware ID is missing.'
-Assert-Contains $source 'USB\\\\Class_0e&SubClass_03&Prot_00' 'UVC-compatible ID is missing.'
+Assert-Contains $source 'USB\\\\VID_1234&PID_5678&MI_00' 'UVC function PDO hardware ID is missing.'
+Assert-Contains $source 'USB\\\\VID_1234&PID_5678' 'Base VID/PID hardware ID is missing.'
+Assert-Contains $source 'USB\\\\Class_0E&SubClass_01&Prot_00' 'UVC VideoControl compatible ID is missing.'
+Assert-Contains $source 'USB\\\\Class_0E&SubClass_01' 'UVC subclass-compatible ID is missing.'
+Assert-Contains $source 'USB\\\\Class_0E' 'UVC class-compatible ID is missing.'
+Assert-NotContains $source 'Class_0[eE]&SubClass_03' 'UVC function collection must not use the obsolete/incorrect subclass 03 identity.'
 Assert-Contains $source 'IOCTL_INTERNAL_USB_SUBMIT_URB' 'Child queue must classify USB submit-URB requests.'
+Assert-Contains $source 'URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE' 'Descriptor URB handler is missing.'
+Assert-Contains $source 'USB_CONFIGURATION_DESCRIPTOR_TYPE' 'Configuration descriptor handling is missing.'
 Assert-Contains $source 'WdfChildListAddOrUpdateChildDescriptionAsPresent' 'Plug path must mark the child present.'
 Assert-Contains $source 'WdfChildListUpdateChildDescriptionAsMissing' 'Unplug path must mark the child missing.'
 
