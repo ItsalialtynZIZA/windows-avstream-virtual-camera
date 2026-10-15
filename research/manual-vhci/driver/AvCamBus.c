@@ -16,6 +16,9 @@ EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL AvCamEvtIoInternalDeviceControl;
 static const GUID GUID_DEVINTERFACE_AVCAM_MANUAL_BUS =
 { 0x4ef708b4, 0x08c6, 0x4a21, { 0xa7, 0x48, 0xa1, 0x69, 0x64, 0x65, 0x88, 0x31 } };
 
+#define AVCAM_DIAGNOSTIC_BUILD_ID 0x20261016u
+#define AVCAM_DIAGNOSTIC_DRIVER_ENTRY_MARKER 0xA11C0001u
+
 typedef struct _AVCAM_CHILD_IDENTIFICATION_DESCRIPTION {
     WDF_CHILD_IDENTIFICATION_DESCRIPTION_HEADER Header;
     ULONG SerialNo;
@@ -38,6 +41,50 @@ typedef struct _AVCAM_CHILD_CONTEXT {
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(AVCAM_BUS_CONTEXT, AvCamGetBusContext);
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(AVCAM_CHILD_CONTEXT, AvCamGetChildContext);
+
+static
+VOID
+AvCamWriteDiagnosticDword(
+    _In_ PUNICODE_STRING RegistryPath,
+    _In_ PCWSTR ValueName,
+    _In_ ULONG Value
+    )
+{
+    OBJECT_ATTRIBUTES objectAttributes;
+    UNICODE_STRING valueName;
+    HANDLE keyHandle;
+    NTSTATUS status;
+
+    if (RegistryPath == NULL || ValueName == NULL) {
+        return;
+    }
+
+    InitializeObjectAttributes(
+        &objectAttributes,
+        RegistryPath,
+        OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE,
+        NULL,
+        NULL
+        );
+
+    keyHandle = NULL;
+    status = ZwOpenKey(&keyHandle, KEY_SET_VALUE, &objectAttributes);
+    if (!NT_SUCCESS(status)) {
+        return;
+    }
+
+    RtlInitUnicodeString(&valueName, ValueName);
+    (VOID)ZwSetValueKey(
+        keyHandle,
+        &valueName,
+        0,
+        REG_DWORD,
+        &Value,
+        sizeof(Value)
+        );
+
+    ZwClose(keyHandle);
+}
 
 static
 PVOID
@@ -827,15 +874,45 @@ DriverEntry(
     _In_ PUNICODE_STRING RegistryPath
     )
 {
+    NTSTATUS status;
     WDF_DRIVER_CONFIG config;
+
+    AvCamWriteDiagnosticDword(
+        RegistryPath,
+        L"DiagnosticBuildId",
+        AVCAM_DIAGNOSTIC_BUILD_ID
+        );
+    AvCamWriteDiagnosticDword(
+        RegistryPath,
+        L"DriverEntryReached",
+        AVCAM_DIAGNOSTIC_DRIVER_ENTRY_MARKER
+        );
+    AvCamWriteDiagnosticDword(
+        RegistryPath,
+        L"WdfDriverCreateReturned",
+        0
+        );
 
     WDF_DRIVER_CONFIG_INIT(&config, AvCamEvtDeviceAdd);
 
-    return WdfDriverCreate(
+    status = WdfDriverCreate(
         DriverObject,
         RegistryPath,
         WDF_NO_OBJECT_ATTRIBUTES,
         &config,
         WDF_NO_HANDLE
         );
+
+    AvCamWriteDiagnosticDword(
+        RegistryPath,
+        L"WdfDriverCreateStatus",
+        (ULONG)status
+        );
+    AvCamWriteDiagnosticDword(
+        RegistryPath,
+        L"WdfDriverCreateReturned",
+        1
+        );
+
+    return status;
 }
