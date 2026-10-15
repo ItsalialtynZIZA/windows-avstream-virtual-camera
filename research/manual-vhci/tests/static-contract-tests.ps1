@@ -37,6 +37,8 @@ Assert-Contains $source 'URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE' 'Descriptor UR
 Assert-Contains $source 'USB_CONFIGURATION_DESCRIPTOR_TYPE' 'Configuration descriptor handling is missing.'
 Assert-Contains $source 'URB_FUNCTION_SELECT_CONFIGURATION' 'Select-configuration URB handling is missing.'
 Assert-Contains $source 'URB_FUNCTION_SELECT_INTERFACE' 'Select-interface URB handling is missing.'
+Assert-Contains $source 'URB_FUNCTION_GET_CONFIGURATION' 'Get-configuration URB handling is missing.'
+Assert-Contains $source 'URB_FUNCTION_GET_INTERFACE' 'Get-interface URB handling is missing.'
 Assert-Contains $source 'UsbdPipeTypeIsochronous' 'Streaming interface must expose an isochronous pipe.'
 Assert-Contains $source 'EndpointAddress\s*=\s*0x81' 'Streaming pipe endpoint must be 0x81 IN.'
 Assert-Contains $source 'MaximumPacketSize\s*=\s*3072' 'High-bandwidth streaming pipe size is missing.'
