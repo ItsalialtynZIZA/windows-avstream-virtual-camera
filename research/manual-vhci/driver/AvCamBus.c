@@ -1,9 +1,11 @@
 #include <ntddk.h>
 #include <wdf.h>
 #include <wdm.h>
+#include <usb.h>
 #include <usbioctl.h>
 
 #include "../shared/AvCamManualIoctl.h"
+#include "../shared/AvCamUsbDescriptors.h"
 
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD AvCamEvtDeviceAdd;
@@ -26,6 +28,173 @@ typedef struct _AVCAM_BUS_CONTEXT {
 } AVCAM_BUS_CONTEXT, *PAVCAM_BUS_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(AVCAM_BUS_CONTEXT, AvCamGetBusContext);
+
+static
+PVOID
+AvCamMapTransferBuffer(
+    _In_opt_ PVOID TransferBuffer,
+    _In_opt_ PMDL TransferBufferMdl
+    )
+{
+    if (TransferBuffer != NULL) {
+        return TransferBuffer;
+    }
+
+    if (TransferBufferMdl != NULL) {
+        return MmGetSystemAddressForMdlSafe(TransferBufferMdl, NormalPagePriority);
+    }
+
+    return NULL;
+}
+
+static
+NTSTATUS
+AvCamCompleteDescriptorRequest(
+    _Inout_ PURB Urb
+    )
+{
+    PVOID destination;
+    const UCHAR* source;
+    ULONG sourceLength;
+    ULONG bytesToCopy;
+    PURB_CONTROL_DESCRIPTOR_REQUEST descriptorRequest;
+
+    if (Urb == NULL ||
+        Urb->UrbHeader.Length < sizeof(struct _URB_CONTROL_DESCRIPTOR_REQUEST)) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    descriptorRequest = &Urb->UrbControlDescriptorRequest;
+    source = NULL;
+    sourceLength = 0;
+
+    switch (descriptorRequest->DescriptorType) {
+    case USB_DEVICE_DESCRIPTOR_TYPE:
+        if (descriptorRequest->Index != 0) {
+            break;
+        }
+        source = g_AvCamUsbDeviceDescriptor;
+        sourceLength = AVCAM_USB_DEVICE_DESCRIPTOR_SIZE;
+        break;
+
+    case USB_CONFIGURATION_DESCRIPTOR_TYPE:
+        if (descriptorRequest->Index != 0) {
+            break;
+        }
+        source = g_AvCamUsbConfigurationDescriptor;
+        sourceLength = AVCAM_USB_CONFIGURATION_DESCRIPTOR_SIZE;
+        break;
+
+    case USB_DEVICE_QUALIFIER_DESCRIPTOR_TYPE:
+        if (descriptorRequest->Index != 0) {
+            break;
+        }
+        source = g_AvCamUsbDeviceQualifierDescriptor;
+        sourceLength = AVCAM_USB_DEVICE_QUALIFIER_DESCRIPTOR_SIZE;
+        break;
+
+    case USB_STRING_DESCRIPTOR_TYPE:
+        switch (descriptorRequest->Index) {
+        case 0:
+            source = g_AvCamUsbStringLangId;
+            sourceLength = (ULONG)sizeof(g_AvCamUsbStringLangId);
+            break;
+        case 1:
+            if (descriptorRequest->LanguageId == 0 || descriptorRequest->LanguageId == 0x0409) {
+                source = g_AvCamUsbStringManufacturer;
+                sourceLength = (ULONG)sizeof(g_AvCamUsbStringManufacturer);
+            }
+            break;
+        case 2:
+            if (descriptorRequest->LanguageId == 0 || descriptorRequest->LanguageId == 0x0409) {
+                source = g_AvCamUsbStringProduct;
+                sourceLength = (ULONG)sizeof(g_AvCamUsbStringProduct);
+            }
+            break;
+        case 3:
+            if (descriptorRequest->LanguageId == 0 || descriptorRequest->LanguageId == 0x0409) {
+                source = g_AvCamUsbStringSerial;
+                sourceLength = (ULONG)sizeof(g_AvCamUsbStringSerial);
+            }
+            break;
+        default:
+            break;
+        }
+        break;
+
+    default:
+        break;
+    }
+
+    if (source == NULL) {
+        Urb->UrbHeader.Status = USBD_STATUS_STALL_PID;
+        descriptorRequest->TransferBufferLength = 0;
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    bytesToCopy = descriptorRequest->TransferBufferLength;
+    if (bytesToCopy > sourceLength) {
+        bytesToCopy = sourceLength;
+    }
+
+    if (bytesToCopy == 0) {
+        descriptorRequest->TransferBufferLength = 0;
+        Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+        return STATUS_SUCCESS;
+    }
+
+    destination = AvCamMapTransferBuffer(
+        descriptorRequest->TransferBuffer,
+        descriptorRequest->TransferBufferMDL
+        );
+
+    if (destination == NULL) {
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        descriptorRequest->TransferBufferLength = 0;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    RtlCopyMemory(destination, source, bytesToCopy);
+    descriptorRequest->TransferBufferLength = bytesToCopy;
+    Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+
+    return STATUS_SUCCESS;
+}
+
+static
+NTSTATUS
+AvCamProcessUrb(
+    _In_ WDFREQUEST Request
+    )
+{
+    PIRP irp;
+    PIO_STACK_LOCATION irpStack;
+    PURB urb;
+
+    irp = WdfRequestWdmGetIrp(Request);
+    if (irp == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    irpStack = IoGetCurrentIrpStackLocation(irp);
+    if (irpStack == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    urb = (PURB)irpStack->Parameters.Others.Argument1;
+    if (urb == NULL || urb->UrbHeader.Length < sizeof(struct _URB_HEADER)) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    switch (urb->UrbHeader.Function) {
+    case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
+        return AvCamCompleteDescriptorRequest(urb);
+
+    default:
+        urb->UrbHeader.Status = USBD_STATUS_INVALID_URB_FUNCTION;
+        return STATUS_NOT_SUPPORTED;
+    }
+}
 
 static
 NTSTATUS
@@ -138,16 +307,19 @@ AvCamEvtIoInternalDeviceControl(
     _In_ ULONG IoControlCode
     )
 {
+    NTSTATUS status;
+
     UNREFERENCED_PARAMETER(Queue);
     UNREFERENCED_PARAMETER(OutputBufferLength);
     UNREFERENCED_PARAMETER(InputBufferLength);
 
-    if (IoControlCode == IOCTL_INTERNAL_USB_SUBMIT_URB) {
+    if (IoControlCode != IOCTL_INTERNAL_USB_SUBMIT_URB) {
         WdfRequestComplete(Request, STATUS_NOT_SUPPORTED);
         return;
     }
 
-    WdfRequestComplete(Request, STATUS_NOT_SUPPORTED);
+    status = AvCamProcessUrb(Request);
+    WdfRequestComplete(Request, status);
 }
 
 static
