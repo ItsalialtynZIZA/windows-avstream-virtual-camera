@@ -28,6 +28,11 @@
       <TreatWarningAsError>true</TreatWarningAsError>
       <BufferSecurityCheck>false</BufferSecurityCheck>
     </ClCompile>
+    <!-- Diagnostic probe only: /GS- alone still leaves the WDK GsDriverEntry wrapper. -->
+    <Link>
+      <EntryPointSymbol>DriverEntry</EntryPointSymbol>
+      <GenerateMapFile>true</GenerateMapFile>
+    </Link>
     <DriverSign>
       <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
     </DriverSign>
