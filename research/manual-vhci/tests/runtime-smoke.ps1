@@ -54,17 +54,24 @@ Invoke-Checked $controller @('plug')
 Start-Sleep -Seconds 2
 
 $child = Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -like 'USB\VID_1234&PID_5678*' } | Select-Object -First 1
-if (-not $child) { throw 'Virtual USB child USB\VID_1234&PID_5678 was not enumerated.' }
+if (-not $child) { throw 'Virtual UVC function child USB\VID_1234&PID_5678* was not enumerated.' }
 Write-Host "Child enumerated: $($child.InstanceId) Status=$($child.Status) Class=$($child.Class)"
 
+if ($child.InstanceId -notlike 'USB\VID_1234&PID_5678&MI_00\*') {
+    throw "Child instance path is not the expected UVC interface collection identity. Actual: $($child.InstanceId)"
+}
+
 $hardwareIds = (Get-PnpDeviceProperty -InstanceId $child.InstanceId -KeyName 'DEVPKEY_Device_HardwareIds' -ErrorAction Stop).Data
+if ($hardwareIds -notcontains 'USB\VID_1234&PID_5678&MI_00') {
+    throw "Child hardware IDs do not contain USB\VID_1234&PID_5678&MI_00. Actual: $($hardwareIds -join ', ')"
+}
 if ($hardwareIds -notcontains 'USB\VID_1234&PID_5678') {
-    throw "Child hardware IDs do not contain USB\VID_1234&PID_5678. Actual: $($hardwareIds -join ', ')"
+    throw "Child hardware IDs do not contain base USB\VID_1234&PID_5678. Actual: $($hardwareIds -join ', ')"
 }
 
 $compatibleIds = (Get-PnpDeviceProperty -InstanceId $child.InstanceId -KeyName 'DEVPKEY_Device_CompatibleIds' -ErrorAction Stop).Data
-if ($compatibleIds -notcontains 'USB\Class_0e&SubClass_03&Prot_00') {
-    throw "Child compatible IDs are unexpected. Actual: $($compatibleIds -join ', ')"
+if ($compatibleIds -notcontains 'USB\Class_0E&SubClass_01&Prot_00') {
+    throw "Child compatible IDs do not contain the UVC VideoControl collection ID. Actual: $($compatibleIds -join ', ')"
 }
 
 Invoke-Checked $controller @('unplug')
@@ -73,4 +80,4 @@ Start-Sleep -Seconds 2
 $remainingChild = Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -like 'USB\VID_1234&PID_5678*' } | Select-Object -First 1
 if ($remainingChild) { throw "Child remained present after unplug: $($remainingChild.InstanceId)" }
 
-Write-Host 'Runtime smoke test passed: root bus start, interface open, child plug, ID validation, and child unplug.'
+Write-Host 'Runtime smoke test passed: root bus start, interface open, UVC function plug, PnP identity validation, and child unplug.'
