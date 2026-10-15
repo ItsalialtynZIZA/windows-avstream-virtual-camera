@@ -27,7 +27,17 @@ typedef struct _AVCAM_BUS_CONTEXT {
     BOOLEAN ChildPresent;
 } AVCAM_BUS_CONTEXT, *PAVCAM_BUS_CONTEXT;
 
+typedef struct _AVCAM_CHILD_CONTEXT {
+    BOOLEAN Configured;
+    UCHAR StreamingAlternateSetting;
+    ULONG ConfigurationToken;
+    ULONG VideoControlInterfaceToken;
+    ULONG VideoStreamingInterfaceToken;
+    ULONG StreamPipeToken;
+} AVCAM_CHILD_CONTEXT, *PAVCAM_CHILD_CONTEXT;
+
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(AVCAM_BUS_CONTEXT, AvCamGetBusContext);
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(AVCAM_CHILD_CONTEXT, AvCamGetChildContext);
 
 static
 PVOID
@@ -163,8 +173,198 @@ AvCamCompleteDescriptorRequest(
 
 static
 NTSTATUS
+AvCamPopulateInterfaceInformation(
+    _In_ PAVCAM_CHILD_CONTEXT ChildContext,
+    _Inout_ PUSBD_INTERFACE_INFORMATION Interface
+    )
+{
+    ULONG requiredLength;
+    const ULONG baseLength = FIELD_OFFSET(USBD_INTERFACE_INFORMATION, Pipes);
+
+    if (ChildContext == NULL || Interface == NULL || Interface->Length < baseLength) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    requiredLength = baseLength;
+
+    if (Interface->InterfaceNumber == 0 && Interface->AlternateSetting == 0) {
+        Interface->Class = 0x0E;
+        Interface->SubClass = 0x01;
+        Interface->Protocol = 0x00;
+        Interface->Reserved = 0;
+        Interface->InterfaceHandle =
+            (USBD_INTERFACE_HANDLE)&ChildContext->VideoControlInterfaceToken;
+        Interface->NumberOfPipes = 0;
+    }
+    else if (Interface->InterfaceNumber == 1 && Interface->AlternateSetting == 0) {
+        Interface->Class = 0x0E;
+        Interface->SubClass = 0x02;
+        Interface->Protocol = 0x00;
+        Interface->Reserved = 0;
+        Interface->InterfaceHandle =
+            (USBD_INTERFACE_HANDLE)&ChildContext->VideoStreamingInterfaceToken;
+        Interface->NumberOfPipes = 0;
+    }
+    else if (Interface->InterfaceNumber == 1 && Interface->AlternateSetting == 1) {
+        requiredLength += sizeof(USBD_PIPE_INFORMATION);
+        if (Interface->Length < requiredLength) {
+            return STATUS_BUFFER_TOO_SMALL;
+        }
+
+        Interface->Class = 0x0E;
+        Interface->SubClass = 0x02;
+        Interface->Protocol = 0x00;
+        Interface->Reserved = 0;
+        Interface->InterfaceHandle =
+            (USBD_INTERFACE_HANDLE)&ChildContext->VideoStreamingInterfaceToken;
+        Interface->NumberOfPipes = 1;
+
+        Interface->Pipes[0].MaximumPacketSize = 3072;
+        Interface->Pipes[0].EndpointAddress = 0x81;
+        Interface->Pipes[0].Interval = 1;
+        Interface->Pipes[0].PipeType = UsbdPipeTypeIsochronous;
+        Interface->Pipes[0].PipeHandle =
+            (USBD_PIPE_HANDLE)&ChildContext->StreamPipeToken;
+        Interface->Pipes[0].MaximumTransferSize = 0;
+        Interface->Pipes[0].PipeFlags = 0;
+    }
+    else {
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    Interface->Length = (USHORT)requiredLength;
+    return STATUS_SUCCESS;
+}
+
+static
+NTSTATUS
+AvCamSelectConfiguration(
+    _Inout_ PURB Urb,
+    _Inout_ PAVCAM_CHILD_CONTEXT ChildContext
+    )
+{
+    NTSTATUS status;
+    ULONG remaining;
+    PUCHAR cursor;
+    struct _URB_SELECT_CONFIGURATION* selectConfiguration;
+    const ULONG interfaceOffset = FIELD_OFFSET(struct _URB_SELECT_CONFIGURATION, Interface);
+    const ULONG interfaceBaseLength = FIELD_OFFSET(USBD_INTERFACE_INFORMATION, Pipes);
+
+    if (Urb == NULL || ChildContext == NULL || Urb->UrbHeader.Length < interfaceOffset) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    selectConfiguration = &Urb->UrbSelectConfiguration;
+
+    if (selectConfiguration->ConfigurationDescriptor == NULL) {
+        ChildContext->Configured = FALSE;
+        ChildContext->StreamingAlternateSetting = 0;
+        selectConfiguration->ConfigurationHandle = NULL;
+        Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+        return STATUS_SUCCESS;
+    }
+
+    if (selectConfiguration->ConfigurationDescriptor->bDescriptorType != USB_CONFIGURATION_DESCRIPTOR_TYPE ||
+        selectConfiguration->ConfigurationDescriptor->bConfigurationValue != 1) {
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    remaining = Urb->UrbHeader.Length - interfaceOffset;
+    cursor = (PUCHAR)&selectConfiguration->Interface;
+
+    while (remaining != 0) {
+        PUSBD_INTERFACE_INFORMATION interfaceInformation;
+        USHORT suppliedLength;
+
+        if (remaining < interfaceBaseLength) {
+            Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        interfaceInformation = (PUSBD_INTERFACE_INFORMATION)cursor;
+        suppliedLength = interfaceInformation->Length;
+        if (suppliedLength < interfaceBaseLength || suppliedLength > remaining) {
+            Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+            return STATUS_INVALID_PARAMETER;
+        }
+
+        status = AvCamPopulateInterfaceInformation(ChildContext, interfaceInformation);
+        if (!NT_SUCCESS(status)) {
+            Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+            return status;
+        }
+
+        if (interfaceInformation->InterfaceNumber == 1) {
+            ChildContext->StreamingAlternateSetting = interfaceInformation->AlternateSetting;
+        }
+
+        cursor += suppliedLength;
+        remaining -= suppliedLength;
+    }
+
+    ChildContext->Configured = TRUE;
+    selectConfiguration->ConfigurationHandle =
+        (USBD_CONFIGURATION_HANDLE)&ChildContext->ConfigurationToken;
+    Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+
+    return STATUS_SUCCESS;
+}
+
+static
+NTSTATUS
+AvCamSelectInterface(
+    _Inout_ PURB Urb,
+    _Inout_ PAVCAM_CHILD_CONTEXT ChildContext
+    )
+{
+    NTSTATUS status;
+    struct _URB_SELECT_INTERFACE* selectInterface;
+    const ULONG interfaceOffset = FIELD_OFFSET(struct _URB_SELECT_INTERFACE, Interface);
+    const ULONG interfaceBaseLength = FIELD_OFFSET(USBD_INTERFACE_INFORMATION, Pipes);
+
+    if (Urb == NULL || ChildContext == NULL ||
+        Urb->UrbHeader.Length < interfaceOffset + interfaceBaseLength) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    selectInterface = &Urb->UrbSelectInterface;
+    if (!ChildContext->Configured ||
+        selectInterface->ConfigurationHandle !=
+            (USBD_CONFIGURATION_HANDLE)&ChildContext->ConfigurationToken) {
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (selectInterface->Interface.Length < interfaceBaseLength ||
+        interfaceOffset + selectInterface->Interface.Length > Urb->UrbHeader.Length) {
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    status = AvCamPopulateInterfaceInformation(
+        ChildContext,
+        &selectInterface->Interface
+        );
+    if (!NT_SUCCESS(status)) {
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        return status;
+    }
+
+    if (selectInterface->Interface.InterfaceNumber == 1) {
+        ChildContext->StreamingAlternateSetting =
+            selectInterface->Interface.AlternateSetting;
+    }
+
+    Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+    return STATUS_SUCCESS;
+}
+
+static
+NTSTATUS
 AvCamProcessUrb(
-    _In_ WDFREQUEST Request
+    _In_ WDFREQUEST Request,
+    _Inout_ PAVCAM_CHILD_CONTEXT ChildContext
     )
 {
     PIRP irp;
@@ -189,6 +389,12 @@ AvCamProcessUrb(
     switch (urb->UrbHeader.Function) {
     case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
         return AvCamCompleteDescriptorRequest(urb);
+
+    case URB_FUNCTION_SELECT_CONFIGURATION:
+        return AvCamSelectConfiguration(urb, ChildContext);
+
+    case URB_FUNCTION_SELECT_INTERFACE:
+        return AvCamSelectInterface(urb, ChildContext);
 
     default:
         urb->UrbHeader.Status = USBD_STATUS_INVALID_URB_FUNCTION;
@@ -275,6 +481,7 @@ AvCamEvtChildListCreateDevice(
     WDFDEVICE childDevice;
     WDF_OBJECT_ATTRIBUTES attributes;
     WDF_IO_QUEUE_CONFIG queueConfig;
+    PAVCAM_CHILD_CONTEXT childContext;
     PAVCAM_CHILD_IDENTIFICATION_DESCRIPTION childDescription;
 
     UNREFERENCED_PARAMETER(ChildList);
@@ -294,15 +501,22 @@ AvCamEvtChildListCreateDevice(
         return status;
     }
 
-    WDF_OBJECT_ATTRIBUTES_INIT(&attributes);
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes, AVCAM_CHILD_CONTEXT);
     status = WdfDeviceCreate(&ChildInit, &attributes, &childDevice);
     if (!NT_SUCCESS(status)) {
         return status;
     }
 
+    childContext = AvCamGetChildContext(childDevice);
+    RtlZeroMemory(childContext, sizeof(*childContext));
+    childContext->ConfigurationToken = 0x43464731;
+    childContext->VideoControlInterfaceToken = 0x56433030;
+    childContext->VideoStreamingInterfaceToken = 0x56533031;
+    childContext->StreamPipeToken = 0x45503831;
+
     WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(
         &queueConfig,
-        WdfIoQueueDispatchParallel
+        WdfIoQueueDispatchSequential
         );
     queueConfig.EvtIoInternalDeviceControl = AvCamEvtIoInternalDeviceControl;
 
@@ -326,8 +540,9 @@ AvCamEvtIoInternalDeviceControl(
     )
 {
     NTSTATUS status;
+    WDFDEVICE device;
+    PAVCAM_CHILD_CONTEXT childContext;
 
-    UNREFERENCED_PARAMETER(Queue);
     UNREFERENCED_PARAMETER(OutputBufferLength);
     UNREFERENCED_PARAMETER(InputBufferLength);
 
@@ -336,7 +551,9 @@ AvCamEvtIoInternalDeviceControl(
         return;
     }
 
-    status = AvCamProcessUrb(Request);
+    device = WdfIoQueueGetDevice(Queue);
+    childContext = AvCamGetChildContext(device);
+    status = AvCamProcessUrb(Request, childContext);
     WdfRequestComplete(Request, status);
 }
 
