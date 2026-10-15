@@ -75,4 +75,20 @@
   </ItemGroup>
 
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+
+  <Target Name="BuildWdmLoaderProbe" AfterTargets="Build" Condition="'$(Configuration)|$(Platform)'=='Release|x64' and '$(RunCodeAnalysis)'!='true'">
+    <MSBuild Projects="$(ProjectDir)..\wdm-probe\AvCamWdmProbe.vcxproj"
+             Targets="Build"
+             Properties="Configuration=Release;Platform=x64;StampInfToolPath=$(StampInfToolPath)" />
+    <ItemGroup>
+      <WdmProbePackage Include="$(ProjectDir)..\wdm-probe\x64\Release\AvCamWdmProbe\**\*" />
+      <WdmProbeCertificate Include="$(ProjectDir)..\wdm-probe\x64\Release\AvCamWdmProbe.cer" Condition="Exists('$(ProjectDir)..\wdm-probe\x64\Release\AvCamWdmProbe.cer')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WdmProbePackage)"
+          DestinationFiles="@(WdmProbePackage->'$(OutDir)AvCamBus\WdmProbe\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(WdmProbeCertificate)"
+          DestinationFolder="$(OutDir)AvCamBus\WdmProbe"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>
