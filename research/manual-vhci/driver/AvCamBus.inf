@@ -1,0 +1,46 @@
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = System
+ClassGuid   = {4d36e97d-e325-11ce-bfc1-08002be10318}
+Provider    = %ProviderName%
+DriverVer   = 10/15/2026,0.1.0.0
+CatalogFile = AvCamBus.cat
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir = 12
+
+[Manufacturer]
+%ManufacturerName% = Standard,NTamd64
+
+[Standard.NTamd64]
+%AvCamBus.DeviceDesc% = AvCamBus_Install,Root\AvCamVirtualUsbHost
+
+[AvCamBus_Install.NT]
+CopyFiles = AvCamBus_CopyFiles
+
+[AvCamBus_CopyFiles]
+AvCamBus.sys
+
+[AvCamBus_Install.NT.Services]
+AddService = AvCamBus,%SPSVCINST_ASSOCSERVICE%,AvCamBus_Service
+
+[AvCamBus_Service]
+DisplayName    = %AvCamBus.SvcDesc%
+ServiceType    = 1
+StartType      = 3
+ErrorControl   = 1
+ServiceBinary  = %12%\AvCamBus.sys
+
+[AvCamBus_Install.NT.Wdf]
+KmdfService = AvCamBus,AvCamBus_WdfSection
+
+[AvCamBus_WdfSection]
+KmdfLibraryVersion = 1.33
+
+[Strings]
+SPSVCINST_ASSOCSERVICE = 0x00000002
+ProviderName            = "AvCam Research"
+ManufacturerName        = "AvCam Research"
+AvCamBus.DeviceDesc     = "AvCam Manual Virtual USB Host"
+AvCamBus.SvcDesc        = "AvCam Manual Virtual USB Host Driver"
