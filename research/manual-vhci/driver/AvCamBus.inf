@@ -3,7 +3,7 @@ Signature   = "$WINDOWS NT$"
 Class       = System
 ClassGuid   = {4d36e97d-e325-11ce-bfc1-08002be10318}
 Provider    = %ProviderName%
-DriverVer   = 10/15/2026,0.1.0.1
+DriverVer   = 10/15/2026,0.1.0.2
 CatalogFile = AvCamBus.cat
 PnpLockdown = 1
 
@@ -18,9 +18,9 @@ AvCamBus_CopyFiles = 13
 AvCamBus.sys = 1
 
 [Manufacturer]
-%ManufacturerName% = Standard,NTamd64
+%ManufacturerName% = Standard,NTamd64.10.0...16299
 
-[Standard.NTamd64]
+[Standard.NTamd64.10.0...16299]
 %AvCamBus.DeviceDesc% = AvCamBus_Install,Root\AvCamVirtualUsbHost
 
 [AvCamBus_Install.NT]
