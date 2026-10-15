@@ -203,9 +203,12 @@ AvCamSetChildIds(
     )
 {
     NTSTATUS status;
-    DECLARE_CONST_UNICODE_STRING(deviceId, L"USB\\VID_1234&PID_5678");
-    DECLARE_CONST_UNICODE_STRING(hardwareId, L"USB\\VID_1234&PID_5678");
-    DECLARE_CONST_UNICODE_STRING(compatibleId, L"USB\\Class_0e&SubClass_03&Prot_00");
+    DECLARE_CONST_UNICODE_STRING(deviceId, L"USB\\VID_1234&PID_5678&MI_00");
+    DECLARE_CONST_UNICODE_STRING(hardwareIdInterface, L"USB\\VID_1234&PID_5678&MI_00");
+    DECLARE_CONST_UNICODE_STRING(hardwareIdDevice, L"USB\\VID_1234&PID_5678");
+    DECLARE_CONST_UNICODE_STRING(compatibleIdFull, L"USB\\Class_0E&SubClass_01&Prot_00");
+    DECLARE_CONST_UNICODE_STRING(compatibleIdSubclass, L"USB\\Class_0E&SubClass_01");
+    DECLARE_CONST_UNICODE_STRING(compatibleIdClass, L"USB\\Class_0E");
     DECLARE_CONST_UNICODE_STRING(instanceId, L"0001");
     DECLARE_CONST_UNICODE_STRING(description, L"AvCam Research Virtual USB Camera");
 
@@ -214,12 +217,27 @@ AvCamSetChildIds(
         return status;
     }
 
-    status = WdfPdoInitAddHardwareID(ChildInit, &hardwareId);
+    status = WdfPdoInitAddHardwareID(ChildInit, &hardwareIdInterface);
     if (!NT_SUCCESS(status)) {
         return status;
     }
 
-    status = WdfPdoInitAddCompatibleID(ChildInit, &compatibleId);
+    status = WdfPdoInitAddHardwareID(ChildInit, &hardwareIdDevice);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    status = WdfPdoInitAddCompatibleID(ChildInit, &compatibleIdFull);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    status = WdfPdoInitAddCompatibleID(ChildInit, &compatibleIdSubclass);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    status = WdfPdoInitAddCompatibleID(ChildInit, &compatibleIdClass);
     if (!NT_SUCCESS(status)) {
         return status;
     }
