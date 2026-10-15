@@ -362,6 +362,93 @@ AvCamSelectInterface(
 
 static
 NTSTATUS
+AvCamGetConfiguration(
+    _Inout_ PURB Urb,
+    _In_ PAVCAM_CHILD_CONTEXT ChildContext
+    )
+{
+    PUCHAR destination;
+    struct _URB_CONTROL_GET_CONFIGURATION_REQUEST* request;
+
+    if (Urb == NULL || ChildContext == NULL ||
+        Urb->UrbHeader.Length < sizeof(struct _URB_CONTROL_GET_CONFIGURATION_REQUEST)) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    request = &Urb->UrbControlGetConfigurationRequest;
+    if (request->TransferBufferLength < 1) {
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+
+    destination = (PUCHAR)AvCamMapTransferBuffer(
+        request->TransferBuffer,
+        request->TransferBufferMDL
+        );
+    if (destination == NULL) {
+        request->TransferBufferLength = 0;
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    destination[0] = ChildContext->Configured ? 1 : 0;
+    request->TransferBufferLength = 1;
+    Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+    return STATUS_SUCCESS;
+}
+
+static
+NTSTATUS
+AvCamGetInterface(
+    _Inout_ PURB Urb,
+    _In_ PAVCAM_CHILD_CONTEXT ChildContext
+    )
+{
+    UCHAR alternateSetting;
+    PUCHAR destination;
+    struct _URB_CONTROL_GET_INTERFACE_REQUEST* request;
+
+    if (Urb == NULL || ChildContext == NULL ||
+        Urb->UrbHeader.Length < sizeof(struct _URB_CONTROL_GET_INTERFACE_REQUEST)) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    request = &Urb->UrbControlGetInterfaceRequest;
+    if (!ChildContext->Configured || request->TransferBufferLength < 1) {
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (request->Interface == 0) {
+        alternateSetting = 0;
+    }
+    else if (request->Interface == 1) {
+        alternateSetting = ChildContext->StreamingAlternateSetting;
+    }
+    else {
+        request->TransferBufferLength = 0;
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    destination = (PUCHAR)AvCamMapTransferBuffer(
+        request->TransferBuffer,
+        request->TransferBufferMDL
+        );
+    if (destination == NULL) {
+        request->TransferBufferLength = 0;
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    destination[0] = alternateSetting;
+    request->TransferBufferLength = 1;
+    Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+    return STATUS_SUCCESS;
+}
+
+static
+NTSTATUS
 AvCamProcessUrb(
     _In_ WDFREQUEST Request,
     _Inout_ PAVCAM_CHILD_CONTEXT ChildContext
@@ -395,6 +482,12 @@ AvCamProcessUrb(
 
     case URB_FUNCTION_SELECT_INTERFACE:
         return AvCamSelectInterface(urb, ChildContext);
+
+    case URB_FUNCTION_GET_CONFIGURATION:
+        return AvCamGetConfiguration(urb, ChildContext);
+
+    case URB_FUNCTION_GET_INTERFACE:
+        return AvCamGetInterface(urb, ChildContext);
 
     default:
         urb->UrbHeader.Status = USBD_STATUS_INVALID_URB_FUNCTION;
