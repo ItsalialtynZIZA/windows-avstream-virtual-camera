@@ -94,7 +94,7 @@ public:
     LONGLONG Timestamp() const { return timestamp_; }
 
 private:
-    ~SampleCallback() override
+    ~SampleCallback()
     {
         if (event_) CloseHandle(event_);
     }
@@ -211,7 +211,7 @@ int wmain()
     unsigned int types = 0;
     for (DWORD index = 0; index < 32; ++index) {
         ComPtr<IMFMediaType> native;
-        hr = reader->GetNativeMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+        hr = reader->GetNativeMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
                                         index, &native);
         if (hr == MF_E_NO_MORE_TYPES) break;
         if (FAILED(hr)) {
@@ -235,20 +235,20 @@ int wmain()
         return 11;
     }
 
-    hr = reader->SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS, FALSE);
+    hr = reader->SetStreamSelection(static_cast<DWORD>(MF_SOURCE_READER_ALL_STREAMS), FALSE);
     PrintResult(L"Deselect streams", hr);
     if (FAILED(hr)) return 12;
-    hr = reader->SetStreamSelection(MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE);
+    hr = reader->SetStreamSelection(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), TRUE);
     PrintResult(L"Select video stream", hr);
     if (FAILED(hr)) return 13;
 
-    hr = reader->SetCurrentMediaType(MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+    hr = reader->SetCurrentMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
                                      nullptr, firstNative.Get());
     PrintResult(L"Select first native format", hr);
     if (FAILED(hr)) return 14;
 
     std::wcout << L"Requesting one video sample (8-second timeout)..." << std::endl;
-    hr = reader->ReadSample(MF_SOURCE_READER_FIRST_VIDEO_STREAM, 0,
+    hr = reader->ReadSample(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), 0,
                              nullptr, nullptr, nullptr, nullptr);
     PrintResult(L"Queue asynchronous ReadSample", hr);
     if (FAILED(hr)) return 15;
