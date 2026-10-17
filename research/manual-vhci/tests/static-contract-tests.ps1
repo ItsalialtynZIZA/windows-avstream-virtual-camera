@@ -62,6 +62,9 @@ Assert-Contains $source 'URB_FUNCTION_CLASS_INTERFACE' 'Class-interface URBs mus
 Assert-Contains $source 'AvCamProcessUvcClassInterface' 'UVC streaming class request handler is missing.'
 Assert-Contains $source 'AVCAM_DIAG_EVENT_UVC_CONTROL' 'UVC request-level tracing is missing.'
 Assert-Contains $source 'AvCamUvcInitState' 'Per-device UVC streaming state is missing.'
+Assert-Contains $source 'URB_FUNCTION_ISOCH_TRANSFER' 'ISO stream URBs must be classified.'
+Assert-Contains $source 'AvCamTraceIsochRequest' 'ISO stream diagnostics are missing.'
+Assert-Contains $ioctl 'AVCAM_DIAG_EVENT_ISOCH_STATE' 'ISO state telemetry event definition is missing.'
 Assert-NotContains $ioctl 'METHOD_NEITHER' 'Research IOCTLs must not use METHOD_NEITHER.'
 
 $functionNumbers = [regex]::Matches($ioctl, 'CTL_CODE\([^,]+,\s*(0x[0-9A-Fa-f]+)') | ForEach-Object { $_.Groups[1].Value }

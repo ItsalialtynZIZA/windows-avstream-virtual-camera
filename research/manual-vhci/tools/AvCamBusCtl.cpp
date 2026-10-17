@@ -168,7 +168,9 @@ static DWORD PrintDiagnostics()
                   L" 2=URB handler return, 3=PnP QUERY_INTERFACE observed,"
                   L" 4=PnP QUERY_INTERFACE requested Version/Size," 
                   L" 5=USB_BUS_INTERFACE_USBDI_V1 callback," 
-                  L" 6=UVC control status, 7=UVC request length/direction.\n"
+                  L" 6=UVC control status, 7=UVC request length/direction,\n"
+                  L" 8=ISO packet count/capacity, 9=ISO flags/start frame,\n"
+                  L" 10=ISO state/available packet descriptors, 11=ISO offsets.\n"
                   L"Type 3 status=0x00000103 means entry was observed;"
                   L" it is not the framework's completion result.\n";
     for (unsigned long i = 0; i < output.Count; ++i) {
@@ -190,6 +192,26 @@ static DWORD PrintDiagnostics()
         }
         if (event.EventType == AVCAM_DIAG_EVENT_USB_BUS_CALLBACK) {
             std::wcout << L" Callback=" << BusCallbackName(event.Code);
+        }
+        if (event.EventType == AVCAM_DIAG_EVENT_ISOCH_REQUEST) {
+            std::wcout << L" Packets=" << event.Code
+                       << L" BufferBytes=" << static_cast<unsigned long>(event.Status);
+        } else if (event.EventType == AVCAM_DIAG_EVENT_ISOCH_FLAGS) {
+            std::wcout << L" Flags=0x" << std::hex << event.Code
+                       << std::dec << L" StartFrame=" << static_cast<unsigned long>(event.Status);
+        } else if (event.EventType == AVCAM_DIAG_EVENT_ISOCH_STATE) {
+            std::wcout << L" Configured=" << ((event.Code & 0x01u) != 0)
+                       << L" Alt1=" << ((event.Code & 0x02u) != 0)
+                       << L" Committed=" << ((event.Code & 0x04u) != 0)
+                       << L" PipeMatches=" << ((event.Code & 0x08u) != 0)
+                       << L" DirectionIn=" << ((event.Code & 0x10u) != 0)
+                       << L" HasMDL=" << ((event.Code & 0x20u) != 0)
+                       << L" HasBuffer=" << ((event.Code & 0x40u) != 0)
+                       << L" PacketCountFits=" << ((event.Code & 0x80u) != 0)
+                       << L" AvailableDescriptors=" << static_cast<unsigned long>(event.Status);
+        } else if (event.EventType == AVCAM_DIAG_EVENT_ISOCH_OFFSETS) {
+            std::wcout << L" FirstOffset=" << event.Code
+                       << L" LastOffset=" << static_cast<unsigned long>(event.Status);
         }
         if (event.EventType == AVCAM_DIAG_EVENT_UVC_CONTROL ||
             event.EventType == AVCAM_DIAG_EVENT_UVC_REQUEST_LENGTH) {

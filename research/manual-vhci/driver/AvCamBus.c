@@ -55,6 +55,7 @@ static KSPIN_LOCK g_AvCamTraceLock;
 static AVCAM_DIAG_EVENT g_AvCamTrace[AVCAM_DIAG_TRACE_CAPACITY];
 static ULONG g_AvCamTraceNextSequence;
 static ULONG g_AvCamTraceCount;
+static volatile LONG g_AvCamIsochSampleCount;
 
 static
 VOID
@@ -790,6 +791,73 @@ AvCamProcessUvcClassInterface(
     return status;
 }
 
+
+/*
+ * Sample only the first four ISO URBs so the diagnostic ring retains the
+ * successful UVC Probe/Commit sequence. Observation only: this milestone
+ * deliberately does not manufacture successful streaming transfers.
+ */
+static
+VOID
+AvCamTraceIsochRequest(
+    _Inout_ PURB Urb,
+    _In_ PAVCAM_CHILD_CONTEXT ChildContext
+    )
+{
+    struct _URB_ISOCH_TRANSFER* transfer;
+    ULONG headerBytes;
+    ULONG availablePackets;
+    ULONG stateFlags;
+    ULONG sample;
+    LONG sampleNo;
+
+    sampleNo = InterlockedIncrement(&g_AvCamIsochSampleCount);
+    if (sampleNo > 4) {
+        return;
+    }
+
+    headerBytes = FIELD_OFFSET(struct _URB_ISOCH_TRANSFER, IsoPacket);
+    if (Urb->UrbHeader.Length < headerBytes) {
+        AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_ISOCH_REQUEST, 0,
+                             STATUS_INVALID_PARAMETER);
+        return;
+    }
+
+    transfer = &Urb->UrbIsochronousTransfer;
+    availablePackets = (Urb->UrbHeader.Length - headerBytes) /
+                       sizeof(USBD_ISO_PACKET_DESCRIPTOR);
+
+    AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_ISOCH_REQUEST,
+                         transfer->NumberOfPackets,
+                         (NTSTATUS)transfer->TransferBufferLength);
+    AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_ISOCH_FLAGS,
+                         transfer->TransferFlags,
+                         (NTSTATUS)transfer->StartFrame);
+
+    stateFlags = 0;
+    if (ChildContext->Configured) stateFlags |= 0x01u;
+    if (ChildContext->StreamingAlternateSetting == 1) stateFlags |= 0x02u;
+    if (ChildContext->Uvc.Committed) stateFlags |= 0x04u;
+    if (transfer->PipeHandle ==
+        (USBD_PIPE_HANDLE)&ChildContext->StreamPipeToken) stateFlags |= 0x08u;
+    if ((transfer->TransferFlags & USBD_TRANSFER_DIRECTION_IN) != 0) stateFlags |= 0x10u;
+    if (transfer->TransferBufferMDL != NULL) stateFlags |= 0x20u;
+    if (transfer->TransferBuffer != NULL) stateFlags |= 0x40u;
+    if (transfer->NumberOfPackets > 0 &&
+        transfer->NumberOfPackets <= availablePackets) stateFlags |= 0x80u;
+
+    AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_ISOCH_STATE,
+                         stateFlags, (NTSTATUS)availablePackets);
+
+    if (transfer->NumberOfPackets > 0 &&
+        transfer->NumberOfPackets <= availablePackets) {
+        sample = transfer->NumberOfPackets - 1;
+        AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_ISOCH_OFFSETS,
+                             transfer->IsoPacket[0].Offset,
+                             (NTSTATUS)transfer->IsoPacket[sample].Offset);
+    }
+}
+
 static
 NTSTATUS
 AvCamProcessUrb(
@@ -834,6 +902,11 @@ AvCamProcessUrb(
 
     case URB_FUNCTION_CLASS_INTERFACE:
         return AvCamProcessUvcClassInterface(urb, ChildContext);
+
+    case URB_FUNCTION_ISOCH_TRANSFER:
+        AvCamTraceIsochRequest(urb, ChildContext);
+        urb->UrbHeader.Status = USBD_STATUS_INVALID_URB_FUNCTION;
+        return STATUS_NOT_SUPPORTED;
 
     default:
         urb->UrbHeader.Status = USBD_STATUS_INVALID_URB_FUNCTION;
