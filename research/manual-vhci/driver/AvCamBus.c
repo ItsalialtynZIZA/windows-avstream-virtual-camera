@@ -7,6 +7,7 @@
 
 #include "../shared/AvCamManualIoctl.h"
 #include "../shared/AvCamUsbDescriptors.h"
+#include "../shared/AvCamUvcControls.h"
 
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD AvCamEvtDeviceAdd;
@@ -43,6 +44,7 @@ typedef struct _AVCAM_CHILD_CONTEXT {
     ULONG VideoControlInterfaceToken;
     ULONG VideoStreamingInterfaceToken;
     ULONG StreamPipeToken;
+    AVCAM_UVC_STREAM_STATE Uvc;
 } AVCAM_CHILD_CONTEXT, *PAVCAM_CHILD_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(AVCAM_BUS_CONTEXT, AvCamGetBusContext);
@@ -529,6 +531,7 @@ AvCamSelectConfiguration(
     if (selectConfiguration->ConfigurationDescriptor == NULL) {
         ChildContext->Configured = FALSE;
         ChildContext->StreamingAlternateSetting = 0;
+        AvCamUvcInitState(&ChildContext->Uvc);
         selectConfiguration->ConfigurationHandle = NULL;
         Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
         return STATUS_SUCCESS;
@@ -717,6 +720,76 @@ AvCamGetInterface(
     return STATUS_SUCCESS;
 }
 
+/*
+ * UVC 1.10 class-specific requests to the VideoStreaming interface.
+ * They use URB_FUNCTION_CLASS_INTERFACE and a USB control transfer buffer.
+ */
+static NTSTATUS
+AvCamProcessUvcClassInterface(
+    _Inout_ PURB Urb,
+    _Inout_ PAVCAM_CHILD_CONTEXT ChildContext
+    )
+{
+    struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST* request;
+    PUCHAR buffer;
+    ULONG controlCode;
+    ULONG originalLength;
+    ULONG actualLength;
+    int result;
+    NTSTATUS status;
+
+    if (Urb == NULL || ChildContext == NULL ||
+        Urb->UrbHeader.Length < sizeof(struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST)) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    request = &Urb->UrbControlVendorClassRequest;
+    originalLength = request->TransferBufferLength;
+    controlCode = ((ULONG)request->Request << 24) |
+        ((ULONG)(request->Value >> 8) << 16) |
+        (ULONG)request->Index;
+
+    AvCamRecordDiagnostic(
+        AVCAM_DIAG_EVENT_UVC_REQUEST_LENGTH,
+        controlCode,
+        (NTSTATUS)((originalLength & 0x00FFFFFFu) |
+            ((request->TransferFlags & USBD_TRANSFER_DIRECTION_IN) != 0 ?
+                0x40000000u : 0))
+        );
+
+    buffer = (PUCHAR)AvCamMapTransferBuffer(
+        request->TransferBuffer,
+        request->TransferBufferMDL
+        );
+    actualLength = 0;
+    result = AvCamUvcProcessClassInterface(
+        &ChildContext->Uvc,
+        request->Request,
+        request->Value,
+        request->Index,
+        (request->TransferFlags & USBD_TRANSFER_DIRECTION_IN) != 0,
+        buffer,
+        originalLength,
+        &actualLength
+        );
+
+    if (result == AVCAM_UVC_RESULT_OK) {
+        request->TransferBufferLength = actualLength;
+        Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+        status = STATUS_SUCCESS;
+    } else if (result == AVCAM_UVC_RESULT_STALL) {
+        request->TransferBufferLength = 0;
+        Urb->UrbHeader.Status = USBD_STATUS_STALL_PID;
+        status = STATUS_NOT_SUPPORTED;
+    } else {
+        request->TransferBufferLength = 0;
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        status = STATUS_INVALID_PARAMETER;
+    }
+    AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_UVC_CONTROL, controlCode, status);
+    return status;
+}
+
 static
 NTSTATUS
 AvCamProcessUrb(
@@ -758,6 +831,9 @@ AvCamProcessUrb(
 
     case URB_FUNCTION_GET_INTERFACE:
         return AvCamGetInterface(urb, ChildContext);
+
+    case URB_FUNCTION_CLASS_INTERFACE:
+        return AvCamProcessUvcClassInterface(urb, ChildContext);
 
     default:
         urb->UrbHeader.Status = USBD_STATUS_INVALID_URB_FUNCTION;
@@ -895,6 +971,7 @@ AvCamEvtChildListCreateDevice(
     childContext->VideoControlInterfaceToken = 0x56433030;
     childContext->VideoStreamingInterfaceToken = 0x56533031;
     childContext->StreamPipeToken = 0x45503831;
+    AvCamUvcInitState(&childContext->Uvc);
 
     WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(
         &queueConfig,
