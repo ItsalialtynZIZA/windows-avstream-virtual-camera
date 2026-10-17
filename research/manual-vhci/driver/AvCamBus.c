@@ -3,6 +3,7 @@
 #include <wdm.h>
 #include <usb.h>
 #include <usbioctl.h>
+#include <usbbusif.h>
 
 #include "../shared/AvCamManualIoctl.h"
 #include "../shared/AvCamUsbDescriptors.h"
@@ -13,6 +14,10 @@ EVT_WDF_CHILD_LIST_CREATE_DEVICE AvCamEvtChildListCreateDevice;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL AvCamEvtIoDeviceControl;
 EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL AvCamEvtIoInternalDeviceControl;
 EVT_WDFDEVICE_WDM_IRP_PREPROCESS AvCamEvtQueryInterfacePreprocess;
+
+/* Well-known USB hub PnP interface GUID, from Windows usbbusif.h. */
+static const GUID AVCAM_USB_BUS_INTERFACE_USBDI_GUID =
+{ 0xb1a96a13, 0x3de0, 0x4574, { 0x9b, 0x01, 0xc0, 0x8f, 0xea, 0xb3, 0x18, 0xd6 } };
 
 static const GUID GUID_DEVINTERFACE_AVCAM_MANUAL_BUS =
 { 0x4ef708b4, 0x08c6, 0x4a21, { 0xa7, 0x48, 0xa1, 0x69, 0x64, 0x65, 0x88, 0x31 } };
@@ -72,6 +77,116 @@ AvCamRecordDiagnostic(
         ++g_AvCamTraceCount;
     }
     KeReleaseSpinLock(&g_AvCamTraceLock, oldIrql);
+}
+
+/*
+ * Minimal, conservative USB 2.0 hub interface experiment (version 1).
+ * Do not advertise success for unimplemented bus services.
+ */
+static VOID USB_BUSIFFN
+AvCamGetUsbdiVersion(
+    _In_opt_ PVOID BusContext,
+    _Out_opt_ PUSBD_VERSION_INFORMATION VersionInformation,
+    _Out_opt_ PULONG HcdCapabilities
+    )
+{
+    UNREFERENCED_PARAMETER(BusContext);
+    if (VersionInformation != NULL) {
+        VersionInformation->USBDI_Version = 0x00000600;
+        VersionInformation->Supported_USB_Version = 0x00000200;
+    }
+    if (HcdCapabilities != NULL) {
+        *HcdCapabilities = 0;
+    }
+    AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_USB_BUS_CALLBACK, 1, STATUS_SUCCESS);
+}
+
+static NTSTATUS USB_BUSIFFN
+AvCamQueryBusTime(
+    _In_opt_ PVOID BusContext,
+    _Out_opt_ PULONG FrameNumber
+    )
+{
+    UNREFERENCED_PARAMETER(BusContext);
+    if (FrameNumber == NULL) {
+        AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_USB_BUS_CALLBACK, 2, STATUS_INVALID_PARAMETER);
+        return STATUS_INVALID_PARAMETER;
+    }
+    /* USB frames are 1ms. The value wraps on the 2048-frame boundary. */
+    *FrameNumber = (ULONG)((KeQueryInterruptTime() / 10000ull) % 2048ull);
+    AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_USB_BUS_CALLBACK, 2, STATUS_SUCCESS);
+    return STATUS_SUCCESS;
+}
+
+static NTSTATUS USB_BUSIFFN
+AvCamUnsupportedIsoOut(
+    _In_opt_ PVOID BusContext,
+    _In_opt_ PURB Urb
+    )
+{
+    UNREFERENCED_PARAMETER(BusContext);
+    UNREFERENCED_PARAMETER(Urb);
+    AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_USB_BUS_CALLBACK, 3, STATUS_NOT_SUPPORTED);
+    return STATUS_NOT_SUPPORTED;
+}
+
+static NTSTATUS USB_BUSIFFN
+AvCamUnsupportedBusInformation(
+    _In_opt_ PVOID BusContext,
+    _In_ ULONG Level,
+    _Inout_opt_ PVOID BusInformationBuffer,
+    _Inout_opt_ PULONG BusInformationBufferLength,
+    _Out_opt_ PULONG BusInformationActualLength
+    )
+{
+    UNREFERENCED_PARAMETER(BusContext);
+    UNREFERENCED_PARAMETER(Level);
+    UNREFERENCED_PARAMETER(BusInformationBuffer);
+    UNREFERENCED_PARAMETER(BusInformationBufferLength);
+    if (BusInformationActualLength != NULL) {
+        *BusInformationActualLength = 0;
+    }
+    AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_USB_BUS_CALLBACK, 4, STATUS_NOT_SUPPORTED);
+    return STATUS_NOT_SUPPORTED;
+}
+
+static BOOLEAN USB_BUSIFFN
+AvCamIsDeviceHighSpeed(
+    _In_opt_ PVOID BusContext
+    )
+{
+    UNREFERENCED_PARAMETER(BusContext);
+    AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_USB_BUS_CALLBACK, 5, STATUS_SUCCESS);
+    return TRUE;
+}
+
+static NTSTATUS
+AvCamAddUsbdiV1QueryInterface(
+    _In_ WDFDEVICE ChildDevice
+    )
+{
+    USB_BUS_INTERFACE_USBDI_V1 busInterface;
+    WDF_QUERY_INTERFACE_CONFIG queryConfig;
+
+    RtlZeroMemory(&busInterface, sizeof(busInterface));
+    busInterface.Size = sizeof(busInterface);
+    busInterface.Version = USB_BUSIF_USBDI_VERSION_1;
+    busInterface.BusContext = ChildDevice;
+    busInterface.InterfaceReference = WdfDeviceInterfaceReferenceNoOp;
+    busInterface.InterfaceDereference = WdfDeviceInterfaceDereferenceNoOp;
+    busInterface.GetUSBDIVersion = AvCamGetUsbdiVersion;
+    busInterface.QueryBusTime = AvCamQueryBusTime;
+    busInterface.SubmitIsoOutUrb = AvCamUnsupportedIsoOut;
+    busInterface.QueryBusInformation = AvCamUnsupportedBusInformation;
+    busInterface.IsDeviceHighSpeed = AvCamIsDeviceHighSpeed;
+
+    WDF_QUERY_INTERFACE_CONFIG_INIT(
+        &queryConfig,
+        (PINTERFACE)&busInterface,
+        &AVCAM_USB_BUS_INTERFACE_USBDI_GUID,
+        NULL
+        );
+    return WdfDeviceAddQueryInterface(ChildDevice, &queryConfig);
 }
 
 static
@@ -765,6 +880,11 @@ AvCamEvtChildListCreateDevice(
     }
 
     status = WdfDeviceCreate(&ChildInit, &attributes, &childDevice);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    status = AvCamAddUsbdiV1QueryInterface(childDevice);
     if (!NT_SUCCESS(status)) {
         return status;
     }
