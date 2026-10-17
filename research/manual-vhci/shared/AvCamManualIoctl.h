@@ -37,6 +37,7 @@ typedef struct _AVCAM_FRAME_HEADER {
 #define AVCAM_DIAG_EVENT_INTERNAL_IOCTL 1u
 #define AVCAM_DIAG_EVENT_URB 2u
 #define AVCAM_DIAG_EVENT_QUERY_INTERFACE 3u
+#define AVCAM_DIAG_EVENT_QUERY_INTERFACE_DETAILS 4u
 
 typedef struct _AVCAM_DIAG_EVENT {
     unsigned long Sequence;
