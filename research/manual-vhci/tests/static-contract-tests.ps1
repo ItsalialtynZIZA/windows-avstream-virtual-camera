@@ -53,6 +53,7 @@ Assert-Contains $ioctl 'IOCTL_AVCAM_READ_DIAGNOSTICS' 'Diagnostic trace IOCTL is
 Assert-Contains $source 'WdfDeviceInitAssignWdmIrpPreprocessCallback' 'PnP query-interface instrumentation is missing.'
 Assert-Contains $source 'AVCAM_DIAG_EVENT_URB' 'URB status instrumentation is missing.'
 Assert-Contains $source 'AVCAM_DIAG_EVENT_INTERNAL_IOCTL' 'Internal IOCTL instrumentation is missing.'
+Assert-Contains $source 'AVCAM_DIAG_EVENT_QUERY_INTERFACE_DETAILS' 'PnP query version and size instrumentation is missing.'
 Assert-NotContains $ioctl 'METHOD_NEITHER' 'Research IOCTLs must not use METHOD_NEITHER.'
 
 $functionNumbers = [regex]::Matches($ioctl, 'CTL_CODE\([^,]+,\s*(0x[0-9A-Fa-f]+)') | ForEach-Object { $_.Groups[1].Value }
