@@ -8,6 +8,7 @@
 #include "../shared/AvCamManualIoctl.h"
 #include "../shared/AvCamUsbDescriptors.h"
 #include "../shared/AvCamUvcControls.h"
+#include "../shared/AvCamUvcPayload.h"
 
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD AvCamEvtDeviceAdd;
@@ -15,6 +16,7 @@ EVT_WDF_CHILD_LIST_CREATE_DEVICE AvCamEvtChildListCreateDevice;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL AvCamEvtIoDeviceControl;
 EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL AvCamEvtIoInternalDeviceControl;
 EVT_WDFDEVICE_WDM_IRP_PREPROCESS AvCamEvtQueryInterfacePreprocess;
+EVT_WDF_DRIVER_UNLOAD AvCamEvtDriverUnload;
 
 /* Well-known USB hub PnP interface GUID, from Windows usbbusif.h. */
 static const GUID AVCAM_USB_BUS_INTERFACE_USBDI_GUID =
@@ -45,6 +47,8 @@ typedef struct _AVCAM_CHILD_CONTEXT {
     ULONG VideoStreamingInterfaceToken;
     ULONG StreamPipeToken;
     AVCAM_UVC_STREAM_STATE Uvc;
+    AVCAM_UVC_PACKETIZER Packetizer;
+    ULONGLONG NextFrameDue100ns;
 } AVCAM_CHILD_CONTEXT, *PAVCAM_CHILD_CONTEXT;
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(AVCAM_BUS_CONTEXT, AvCamGetBusContext);
@@ -56,6 +60,13 @@ static AVCAM_DIAG_EVENT g_AvCamTrace[AVCAM_DIAG_TRACE_CAPACITY];
 static ULONG g_AvCamTraceNextSequence;
 static ULONG g_AvCamTraceCount;
 static volatile LONG g_AvCamIsochSampleCount;
+/* Two nonpaged slots; writes go to pending, readers use active until EOF. */
+static FAST_MUTEX g_AvCamFrameLock;
+static PUCHAR g_AvCamActiveFrame;
+static PUCHAR g_AvCamPendingFrame;
+static ULONG g_AvCamActiveBytes;
+static ULONG g_AvCamPendingBytes;
+static BOOLEAN g_AvCamPendingReady;
 
 static
 VOID
@@ -533,6 +544,8 @@ AvCamSelectConfiguration(
         ChildContext->Configured = FALSE;
         ChildContext->StreamingAlternateSetting = 0;
         AvCamUvcInitState(&ChildContext->Uvc);
+        AvCamUvcPacketizerReset(&ChildContext->Packetizer);
+        ChildContext->NextFrameDue100ns = 0;
         selectConfiguration->ConfigurationHandle = NULL;
         Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
         return STATUS_SUCCESS;
@@ -628,6 +641,8 @@ AvCamSelectInterface(
     if (selectInterface->Interface.InterfaceNumber == 1) {
         ChildContext->StreamingAlternateSetting =
             selectInterface->Interface.AlternateSetting;
+        AvCamUvcPacketizerReset(&ChildContext->Packetizer);
+        ChildContext->NextFrameDue100ns = 0;
     }
 
     Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
@@ -787,6 +802,11 @@ AvCamProcessUvcClassInterface(
         Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
         status = STATUS_INVALID_PARAMETER;
     }
+    if (NT_SUCCESS(status) && request->Request == AVCAM_UVC_SET_CUR &&
+        (request->Value >> 8) == AVCAM_UVC_VS_COMMIT_CONTROL) {
+        AvCamUvcPacketizerReset(&ChildContext->Packetizer);
+        ChildContext->NextFrameDue100ns = 0;
+    }
     AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_UVC_CONTROL, controlCode, status);
     return status;
 }
@@ -858,6 +878,127 @@ AvCamTraceIsochRequest(
     }
 }
 
+
+/* Validate an isochronous IN URB before touching any packet buffer.
+ * Pacing is experimental: one microframe costs 125us at high speed.
+ * Device callbacks explicitly run at PASSIVE_LEVEL to permit the wait.
+ */
+static
+NTSTATUS
+AvCamProcessIsochTransfer(
+    _Inout_ PURB Urb,
+    _Inout_ PAVCAM_CHILD_CONTEXT ChildContext
+    )
+{
+    struct _URB_ISOCH_TRANSFER* transfer;
+    ULONG base = FIELD_OFFSET(struct _URB_ISOCH_TRANSFER, IsoPacket);
+    ULONG packets;
+    ULONG supplied;
+    ULONG originalBytes;
+    PUCHAR buffer;
+    ULONG i;
+    ULONG filled = 0;
+    ULONG actualBytes = 0;
+    BOOLEAN eof = FALSE;
+    ULONGLONG now;
+    LARGE_INTEGER delay;
+
+    if (Urb->UrbHeader.Length < base) {
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER;
+    }
+    transfer = &Urb->UrbIsochronousTransfer;
+    packets = transfer->NumberOfPackets;
+    supplied = (Urb->UrbHeader.Length - base) /
+        sizeof(USBD_ISO_PACKET_DESCRIPTOR);
+    originalBytes = transfer->TransferBufferLength;
+    if (!ChildContext->Configured ||
+        ChildContext->StreamingAlternateSetting != 1 ||
+        !ChildContext->Uvc.Committed ||
+        transfer->PipeHandle != (USBD_PIPE_HANDLE)&ChildContext->StreamPipeToken ||
+        (transfer->TransferFlags & USBD_TRANSFER_DIRECTION_IN) == 0 ||
+        packets == 0 || packets > 1024 || packets > supplied ||
+        originalBytes == 0 || originalBytes > AVCAM_MAX_FRAME_BYTES) {
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    for (i = 0; i < packets; ++i) {
+        ULONG start = transfer->IsoPacket[i].Offset;
+        ULONG end = i + 1 < packets ?
+            transfer->IsoPacket[i + 1].Offset : originalBytes;
+        if (end < start || end > originalBytes ||
+            end - start <= AVCAM_UVC_PAYLOAD_HEADER_BYTES ||
+            end - start > AVCAM_UVC_PAYLOAD_MAX_BYTES) {
+            Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+            return STATUS_INVALID_PARAMETER;
+        }
+    }
+    buffer = (PUCHAR)AvCamMapTransferBuffer(
+        transfer->TransferBuffer, transfer->TransferBufferMDL);
+    if (buffer == NULL) {
+        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    ExAcquireFastMutex(&g_AvCamFrameLock);
+    now = KeQueryInterruptTime();
+    if (ChildContext->Packetizer.Offset == 0 &&
+        now >= ChildContext->NextFrameDue100ns &&
+        g_AvCamPendingReady) {
+        PUCHAR swap = g_AvCamActiveFrame;
+        g_AvCamActiveFrame = g_AvCamPendingFrame;
+        g_AvCamPendingFrame = swap;
+        g_AvCamActiveBytes = g_AvCamPendingBytes;
+        g_AvCamPendingReady = FALSE;
+    }
+
+    for (i = 0; i < packets; ++i) {
+        PUSBD_ISO_PACKET_DESCRIPTOR packet = &transfer->IsoPacket[i];
+        packet->Length = 0;
+        packet->Status = USBD_STATUS_SUCCESS;
+        if (g_AvCamActiveBytes > 0 && !eof &&
+            (ChildContext->Packetizer.Offset != 0 ||
+             now >= ChildContext->NextFrameDue100ns)) {
+            ULONG capacity = i + 1 < packets ?
+                transfer->IsoPacket[i + 1].Offset - packet->Offset :
+                originalBytes - packet->Offset;
+            unsigned int written = 0;
+            int result = AvCamUvcPacketizeMjpeg(
+                &ChildContext->Packetizer, g_AvCamActiveFrame,
+                g_AvCamActiveBytes, buffer + packet->Offset,
+                capacity, &written);
+            if (result == AVCAM_UVC_PACKET_OK) {
+                packet->Length = written;
+                actualBytes += written;
+                ++filled;
+                if (ChildContext->Packetizer.Offset == 0) {
+                    eof = TRUE;
+                    ChildContext->NextFrameDue100ns =
+                        now + AVCAM_UVC_FRAME_INTERVAL_100NS;
+                }
+            }
+        }
+    }
+    ExReleaseFastMutex(&g_AvCamFrameLock);
+
+    transfer->ErrorCount = 0;
+    transfer->TransferBufferLength = actualBytes;
+    if ((transfer->TransferFlags & USBD_START_ISO_TRANSFER_ASAP) != 0) {
+        transfer->StartFrame =
+            (ULONG)((KeQueryInterruptTime() / 10000ull) % 2048ull);
+    }
+    Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+    if (g_AvCamIsochSampleCount <= 4) {
+        AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_ISOCH_COMPLETION,
+                              filled, (NTSTATUS)actualBytes);
+    }
+
+    delay.QuadPart = -((LONGLONG)packets * 1250ll);
+    (VOID)KeDelayExecutionThread(KernelMode, FALSE, &delay);
+    return STATUS_SUCCESS;
+}
+
 static
 NTSTATUS
 AvCamProcessUrb(
@@ -905,8 +1046,7 @@ AvCamProcessUrb(
 
     case URB_FUNCTION_ISOCH_TRANSFER:
         AvCamTraceIsochRequest(urb, ChildContext);
-        urb->UrbHeader.Status = USBD_STATUS_INVALID_URB_FUNCTION;
-        return STATUS_NOT_SUPPORTED;
+        return AvCamProcessIsochTransfer(urb, ChildContext);
 
     default:
         urb->UrbHeader.Status = USBD_STATUS_INVALID_URB_FUNCTION;
@@ -1014,6 +1154,7 @@ AvCamEvtChildListCreateDevice(
     }
 
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes, AVCAM_CHILD_CONTEXT);
+    attributes.ExecutionLevel = WdfExecutionLevelPassive;
     {
         UCHAR queryInterfaceMinor = IRP_MN_QUERY_INTERFACE;
         status = WdfDeviceInitAssignWdmIrpPreprocessCallback(
@@ -1045,6 +1186,7 @@ AvCamEvtChildListCreateDevice(
     childContext->VideoStreamingInterfaceToken = 0x56533031;
     childContext->StreamPipeToken = 0x45503831;
     AvCamUvcInitState(&childContext->Uvc);
+    AvCamUvcPacketizerReset(&childContext->Packetizer);
 
     WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(
         &queueConfig,
@@ -1176,6 +1318,54 @@ AvCamUnplugChild(
     return status;
 }
 
+
+static
+NTSTATUS
+AvCamWriteMjpegFrame(
+    _In_ WDFREQUEST Request,
+    _In_ size_t OutputBufferLength
+    )
+{
+    PAVCAM_FRAME_HEADER header;
+    PIRP irp;
+    PUCHAR data;
+    NTSTATUS status;
+
+    status = WdfRequestRetrieveInputBuffer(
+        Request, sizeof(AVCAM_FRAME_HEADER), (PVOID*)&header, NULL);
+    if (!NT_SUCCESS(status)) return status;
+    if (header->Width != AVCAM_UVC_WIDTH ||
+        header->Height != AVCAM_UVC_HEIGHT ||
+        header->FourCC != 0x47504A4Du ||
+        header->PayloadBytes < 4 ||
+        header->PayloadBytes > AVCAM_UVC_FRAME_MAX_BYTES ||
+        OutputBufferLength < header->PayloadBytes) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    irp = WdfRequestWdmGetIrp(Request);
+    if (irp == NULL || irp->MdlAddress == NULL ||
+        MmGetMdlByteCount(irp->MdlAddress) < header->PayloadBytes) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    data = (PUCHAR)MmGetSystemAddressForMdlSafe(
+        irp->MdlAddress, NormalPagePriority);
+    if (data == NULL) return STATUS_INSUFFICIENT_RESOURCES;
+    if (data[0] != 0xFF || data[1] != 0xD8 ||
+        data[header->PayloadBytes - 2] != 0xFF ||
+        data[header->PayloadBytes - 1] != 0xD9) {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    ExAcquireFastMutex(&g_AvCamFrameLock);
+    RtlCopyMemory(g_AvCamPendingFrame, data, header->PayloadBytes);
+    g_AvCamPendingBytes = header->PayloadBytes;
+    g_AvCamPendingReady = TRUE;
+    ExReleaseFastMutex(&g_AvCamFrameLock);
+    AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_FRAME_WRITE,
+                          header->PayloadBytes, STATUS_SUCCESS);
+    return STATUS_SUCCESS;
+}
+
 VOID
 AvCamEvtIoDeviceControl(
     _In_ WDFQUEUE Queue,
@@ -1203,7 +1393,7 @@ AvCamEvtIoDeviceControl(
         break;
 
     case IOCTL_AVCAM_WRITE_FRAME:
-        status = STATUS_NOT_SUPPORTED;
+        status = AvCamWriteMjpegFrame(Request, OutputBufferLength);
         break;
 
     case IOCTL_AVCAM_READ_DIAGNOSTICS:
@@ -1254,6 +1444,7 @@ AvCamEvtDeviceAdd(
         &attributes,
         AVCAM_BUS_CONTEXT
         );
+    attributes.ExecutionLevel = WdfExecutionLevelPassive;
 
     status = WdfDeviceCreate(&DeviceInit, &attributes, &device);
     if (!NT_SUCCESS(status)) {
@@ -1289,6 +1480,21 @@ AvCamEvtDeviceAdd(
     return status;
 }
 
+
+VOID
+AvCamEvtDriverUnload(_In_ WDFDRIVER Driver)
+{
+    UNREFERENCED_PARAMETER(Driver);
+    if (g_AvCamActiveFrame != NULL) {
+        ExFreePoolWithTag(g_AvCamActiveFrame, 'mcVA');
+        g_AvCamActiveFrame = NULL;
+    }
+    if (g_AvCamPendingFrame != NULL) {
+        ExFreePoolWithTag(g_AvCamPendingFrame, 'mcVA');
+        g_AvCamPendingFrame = NULL;
+    }
+}
+
 NTSTATUS
 DriverEntry(
     _In_ PDRIVER_OBJECT DriverObject,
@@ -1315,7 +1521,17 @@ DriverEntry(
         );
 
     KeInitializeSpinLock(&g_AvCamTraceLock);
+    ExInitializeFastMutex(&g_AvCamFrameLock);
+    g_AvCamActiveFrame = (PUCHAR)ExAllocatePool2(
+        POOL_FLAG_NON_PAGED, AVCAM_UVC_FRAME_MAX_BYTES, 'mcVA');
+    g_AvCamPendingFrame = (PUCHAR)ExAllocatePool2(
+        POOL_FLAG_NON_PAGED, AVCAM_UVC_FRAME_MAX_BYTES, 'mcVA');
+    if (g_AvCamActiveFrame == NULL || g_AvCamPendingFrame == NULL) {
+        AvCamEvtDriverUnload(NULL);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
     WDF_DRIVER_CONFIG_INIT(&config, AvCamEvtDeviceAdd);
+    config.EvtDriverUnload = AvCamEvtDriverUnload;
 
     status = WdfDriverCreate(
         DriverObject,
@@ -1325,6 +1541,9 @@ DriverEntry(
         WDF_NO_HANDLE
         );
 
+    if (!NT_SUCCESS(status)) {
+        AvCamEvtDriverUnload(NULL);
+    }
     AvCamWriteDiagnosticDword(
         RegistryPath,
         L"WdfDriverCreateStatus",
