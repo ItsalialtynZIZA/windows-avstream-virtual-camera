@@ -27,11 +27,13 @@
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
       <BufferSecurityCheck>false</BufferSecurityCheck>
+      <AdditionalOptions>/guard:cf- %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
-    <!-- Diagnostic probe only: /GS- alone still leaves the WDK GsDriverEntry wrapper. -->
+    <!-- Diagnostic probe only: remove WDK wrappers/mitigations to isolate kernel image loading. -->
     <Link>
       <EntryPointSymbol>DriverEntry</EntryPointSymbol>
       <GenerateMapFile>true</GenerateMapFile>
+      <AdditionalOptions>/guard:cf- %(AdditionalOptions)</AdditionalOptions>
     </Link>
     <DriverSign>
       <FileDigestAlgorithm>SHA256</FileDigestAlgorithm>
