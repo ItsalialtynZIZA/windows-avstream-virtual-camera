@@ -734,7 +734,7 @@ AvCamProcessUvcClassInterface(
     PUCHAR buffer;
     ULONG controlCode;
     ULONG originalLength;
-    ULONG actualLength;
+    unsigned int actualLength;
     int result;
     NTSTATUS status;
 
