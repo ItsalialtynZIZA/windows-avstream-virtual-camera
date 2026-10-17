@@ -6,6 +6,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <fstream>
 
 #include "../shared/AvCamManualIoctl.h"
 
@@ -137,6 +138,53 @@ static void PrintUvcInfo(unsigned long code)
                << L" Entity=" << (index >> 8);
 }
 
+
+static DWORD SendJpegFrame(const wchar_t* filename)
+{
+    std::ifstream input(filename, std::ios::binary | std::ios::ate);
+    if (!input) {
+        std::wcerr << L"Cannot open JPEG file.\n";
+        return ERROR_FILE_NOT_FOUND;
+    }
+    const std::streamoff size = input.tellg();
+    if (size < 4 || size > 2068480) {
+        std::wcerr << L"JPEG file must be between 4 and 2068480 bytes.\n";
+        return ERROR_INVALID_DATA;
+    }
+    input.seekg(0, std::ios::beg);
+    std::vector<unsigned char> bytes(static_cast<size_t>(size));
+    if (!input.read(reinterpret_cast<char*>(bytes.data()), size)) {
+        std::wcerr << L"Failed to read complete JPEG file.\n";
+        return ERROR_READ_FAULT;
+    }
+    AVCAM_FRAME_HEADER frame{};
+    frame.Width = 1920;
+    frame.Height = 1080;
+    frame.FourCC = 0x47504A4Du; // 'MJPG' little endian
+    frame.PayloadBytes = static_cast<unsigned long>(bytes.size());
+
+    const std::wstring path = GetBusInterfacePath();
+    HANDLE handle = CreateFileW(
+        path.c_str(), GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return GetLastError();
+    }
+    DWORD returned = 0;
+    const BOOL ok = DeviceIoControl(
+        handle, IOCTL_AVCAM_WRITE_FRAME,
+        &frame, sizeof(frame), bytes.data(),
+        static_cast<DWORD>(bytes.size()), &returned, nullptr);
+    const DWORD error = ok ? ERROR_SUCCESS : GetLastError();
+    CloseHandle(handle);
+    if (error == ERROR_SUCCESS) {
+        std::wcout << L"MJPEG frame accepted: " << bytes.size()
+                   << L" bytes (1920x1080)\n";
+    }
+    return error;
+}
+
 static DWORD PrintDiagnostics()
 {
     const std::wstring path = GetBusInterfacePath();
@@ -170,7 +218,8 @@ static DWORD PrintDiagnostics()
                   L" 5=USB_BUS_INTERFACE_USBDI_V1 callback," 
                   L" 6=UVC control status, 7=UVC request length/direction,\n"
                   L" 8=ISO packet count/capacity, 9=ISO flags/start frame,\n"
-                  L" 10=ISO state/available packet descriptors, 11=ISO offsets.\n"
+                  L" 10=ISO state/available packet descriptors, 11=ISO offsets,\n"
+                  L" 12=ISO completion packets/bytes, 13=accepted JPEG size.\n"
                   L"Type 3 status=0x00000103 means entry was observed;"
                   L" it is not the framework's completion result.\n";
     for (unsigned long i = 0; i < output.Count; ++i) {
@@ -212,6 +261,11 @@ static DWORD PrintDiagnostics()
         } else if (event.EventType == AVCAM_DIAG_EVENT_ISOCH_OFFSETS) {
             std::wcout << L" FirstOffset=" << event.Code
                        << L" LastOffset=" << static_cast<unsigned long>(event.Status);
+        } else if (event.EventType == AVCAM_DIAG_EVENT_ISOCH_COMPLETION) {
+            std::wcout << L" FilledPackets=" << event.Code
+                       << L" ActualBytes=" << static_cast<unsigned long>(event.Status);
+        } else if (event.EventType == AVCAM_DIAG_EVENT_FRAME_WRITE) {
+            std::wcout << L" AcceptedFrameBytes=" << event.Code;
         }
         if (event.EventType == AVCAM_DIAG_EVENT_UVC_CONTROL ||
             event.EventType == AVCAM_DIAG_EVENT_UVC_REQUEST_LENGTH) {
@@ -229,8 +283,8 @@ static DWORD PrintDiagnostics()
 
 int wmain(int argc, wchar_t** argv)
 {
-    if (argc != 2) {
-        std::wcerr << L"Usage: AvCamBusCtl.exe plug|unplug|path|trace\n";
+    if (argc != 2 && !(argc == 3 && wcscmp(argv[1], L"frame") == 0)) {
+        std::wcerr << L"Usage: AvCamBusCtl.exe plug|unplug|path|trace|frame <jpeg-file>\n";
         return 2;
     }
 
@@ -240,6 +294,14 @@ int wmain(int argc, wchar_t** argv)
         if (command == L"path") {
             std::wcout << GetBusInterfacePath() << L"\n";
             return 0;
+        }
+
+        if (command == L"frame") {
+            const DWORD error = SendJpegFrame(argv[2]);
+            if (error != ERROR_SUCCESS) {
+                std::wcerr << L"Frame upload failed with Win32 error " << error << L"\n";
+            }
+            return static_cast<int>(error);
         }
 
         if (command == L"trace") {

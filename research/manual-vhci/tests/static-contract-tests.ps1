@@ -64,6 +64,10 @@ Assert-Contains $source 'AVCAM_DIAG_EVENT_UVC_CONTROL' 'UVC request-level tracin
 Assert-Contains $source 'AvCamUvcInitState' 'Per-device UVC streaming state is missing.'
 Assert-Contains $source 'URB_FUNCTION_ISOCH_TRANSFER' 'ISO stream URBs must be classified.'
 Assert-Contains $source 'AvCamTraceIsochRequest' 'ISO stream diagnostics are missing.'
+Assert-Contains $source 'AvCamProcessIsochTransfer' 'ISO IN transfer handler missing.'
+Assert-Contains $source 'AvCamUvcPacketizeMjpeg' 'ISO MJPEG packetizer is not used.'
+Assert-Contains $source 'AvCamWriteMjpegFrame' 'MJPEG upload handler missing.'
+Assert-Contains $source 'KeDelayExecutionThread' 'ISO pacing implementation missing.'
 Assert-Contains $ioctl 'AVCAM_DIAG_EVENT_ISOCH_STATE' 'ISO state telemetry event definition is missing.'
 Assert-NotContains $ioctl 'METHOD_NEITHER' 'Research IOCTLs must not use METHOD_NEITHER.'
 
