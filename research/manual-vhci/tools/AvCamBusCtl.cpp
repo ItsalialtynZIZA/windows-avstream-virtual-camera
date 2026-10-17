@@ -88,6 +88,17 @@ static DWORD SendSimpleIoctl(DWORD code)
     return error;
 }
 
+static const wchar_t* QueryInterfaceName(unsigned long code)
+{
+    switch (code) {
+    case 0xB1A96A13u: return L"USB_BUS_INTERFACE_USBDI_GUID";
+    case 0xDEEE98EAu: return L"GUID_USBD_CLIENT_INTERFACE";
+    case 0x496B8280u: return L"GUID_BUS_INTERFACE_STANDARD";
+    case 0xB8E992ECu: return L"GUID_PNP_EXTENDED_ADDRESS_INTERFACE";
+    default: return L"Unknown interface";
+    }
+}
+
 static DWORD PrintDiagnostics()
 {
     const std::wstring path = GetBusInterfacePath();
@@ -116,7 +127,8 @@ static DWORD PrintDiagnostics()
     std::wcout << L"Recorded=" << output.Count
                << L" TotalSinceDriverLoad=" << output.TotalEvents << L"\n";
     std::wcout << L"Type: 1=unsupported internal USB IOCTL,"
-                  L" 2=URB handler return, 3=PnP QUERY_INTERFACE observed.\n"
+                  L" 2=URB handler return, 3=PnP QUERY_INTERFACE observed,"
+                  L" 4=PnP QUERY_INTERFACE requested Version/Size.\n"
                   L"Type 3 status=0x00000103 means entry was observed;"
                   L" it is not the framework's completion result.\n";
     for (unsigned long i = 0; i < output.Count; ++i) {
@@ -127,7 +139,16 @@ static DWORD PrintDiagnostics()
                    << event.Code
                    << L" Status=0x" << std::setw(8)
                    << static_cast<unsigned long>(event.Status)
-                   << std::dec << std::setfill(L' ') << L"\n";
+                   << std::dec << std::setfill(L' ');
+        if (event.EventType == AVCAM_DIAG_EVENT_QUERY_INTERFACE) {
+            std::wcout << L" GUID=" << QueryInterfaceName(event.Code);
+        } else if (event.EventType == AVCAM_DIAG_EVENT_QUERY_INTERFACE_DETAILS) {
+            const unsigned long packed = static_cast<unsigned long>(event.Status);
+            std::wcout << L" GUID=" << QueryInterfaceName(event.Code)
+                       << L" Version=" << (packed & 0xFFFFu)
+                       << L" Size=" << (packed >> 16);
+        }
+        std::wcout << L"\n";
     }
     return ERROR_SUCCESS;
 }
