@@ -111,6 +111,32 @@ static const wchar_t* BusCallbackName(unsigned long code)
     }
 }
 
+static const wchar_t* UvcRequestName(unsigned long request)
+{
+    switch (request) {
+    case 0x01: return L"SET_CUR";
+    case 0x81: return L"GET_CUR";
+    case 0x82: return L"GET_MIN";
+    case 0x83: return L"GET_MAX";
+    case 0x84: return L"GET_RES";
+    case 0x85: return L"GET_LEN";
+    case 0x86: return L"GET_INFO";
+    case 0x87: return L"GET_DEF";
+    default: return L"Unknown UVC request";
+    }
+}
+
+static void PrintUvcInfo(unsigned long code)
+{
+    const unsigned long request = code >> 24;
+    const unsigned long selector = (code >> 16) & 0xFF;
+    const unsigned long index = code & 0xFFFF;
+    std::wcout << L" Request=" << UvcRequestName(request)
+               << L" Selector=" << selector
+               << L" Interface=" << (index & 0xFF)
+               << L" Entity=" << (index >> 8);
+}
+
 static DWORD PrintDiagnostics()
 {
     const std::wstring path = GetBusInterfacePath();
@@ -141,7 +167,8 @@ static DWORD PrintDiagnostics()
     std::wcout << L"Type: 1=unsupported internal USB IOCTL,"
                   L" 2=URB handler return, 3=PnP QUERY_INTERFACE observed,"
                   L" 4=PnP QUERY_INTERFACE requested Version/Size," 
-                  L" 5=USB_BUS_INTERFACE_USBDI_V1 callback.\n"
+                  L" 5=USB_BUS_INTERFACE_USBDI_V1 callback," 
+                  L" 6=UVC control status, 7=UVC request length/direction.\n"
                   L"Type 3 status=0x00000103 means entry was observed;"
                   L" it is not the framework's completion result.\n";
     for (unsigned long i = 0; i < output.Count; ++i) {
@@ -163,6 +190,15 @@ static DWORD PrintDiagnostics()
         }
         if (event.EventType == AVCAM_DIAG_EVENT_USB_BUS_CALLBACK) {
             std::wcout << L" Callback=" << BusCallbackName(event.Code);
+        }
+        if (event.EventType == AVCAM_DIAG_EVENT_UVC_CONTROL ||
+            event.EventType == AVCAM_DIAG_EVENT_UVC_REQUEST_LENGTH) {
+            PrintUvcInfo(event.Code);
+            if (event.EventType == AVCAM_DIAG_EVENT_UVC_REQUEST_LENGTH) {
+                const unsigned long value = static_cast<unsigned long>(event.Status);
+                std::wcout << L" Length=" << (value & 0x00FFFFFF)
+                           << L" Direction=" << ((value & 0x40000000) ? L"IN" : L"OUT");
+            }
         }
         std::wcout << L"\n";
     }
