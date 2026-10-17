@@ -12,6 +12,7 @@ EVT_WDF_DRIVER_DEVICE_ADD AvCamEvtDeviceAdd;
 EVT_WDF_CHILD_LIST_CREATE_DEVICE AvCamEvtChildListCreateDevice;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL AvCamEvtIoDeviceControl;
 EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL AvCamEvtIoInternalDeviceControl;
+EVT_WDFDEVICE_WDM_IRP_PREPROCESS AvCamEvtQueryInterfacePreprocess;
 
 static const GUID GUID_DEVINTERFACE_AVCAM_MANUAL_BUS =
 { 0x4ef708b4, 0x08c6, 0x4a21, { 0xa7, 0x48, 0xa1, 0x69, 0x64, 0x65, 0x88, 0x31 } };
@@ -41,6 +42,102 @@ typedef struct _AVCAM_CHILD_CONTEXT {
 
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(AVCAM_BUS_CONTEXT, AvCamGetBusContext);
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(AVCAM_CHILD_CONTEXT, AvCamGetChildContext);
+
+/* Observation-only trace: requests are handled exactly as before. */
+static KSPIN_LOCK g_AvCamTraceLock;
+static AVCAM_DIAG_EVENT g_AvCamTrace[AVCAM_DIAG_TRACE_CAPACITY];
+static ULONG g_AvCamTraceNextSequence;
+static ULONG g_AvCamTraceCount;
+
+static
+VOID
+AvCamRecordDiagnostic(
+    _In_ ULONG EventType,
+    _In_ ULONG Code,
+    _In_ NTSTATUS Status
+    )
+{
+    KIRQL oldIrql;
+    ULONG sequence;
+    ULONG slot;
+
+    KeAcquireSpinLock(&g_AvCamTraceLock, &oldIrql);
+    sequence = g_AvCamTraceNextSequence++;
+    slot = sequence % AVCAM_DIAG_TRACE_CAPACITY;
+    g_AvCamTrace[slot].Sequence = sequence;
+    g_AvCamTrace[slot].EventType = EventType;
+    g_AvCamTrace[slot].Code = Code;
+    g_AvCamTrace[slot].Status = (LONG)Status;
+    if (g_AvCamTraceCount < AVCAM_DIAG_TRACE_CAPACITY) {
+        ++g_AvCamTraceCount;
+    }
+    KeReleaseSpinLock(&g_AvCamTraceLock, oldIrql);
+}
+
+static
+NTSTATUS
+AvCamReadDiagnostics(
+    _In_ WDFREQUEST Request
+    )
+{
+    PAVCAM_DIAG_BUFFER output;
+    NTSTATUS status;
+    KIRQL oldIrql;
+    ULONG count;
+    ULONG first;
+    ULONG index;
+
+    status = WdfRequestRetrieveOutputBuffer(
+        Request,
+        sizeof(AVCAM_DIAG_BUFFER),
+        (PVOID*)&output,
+        NULL
+        );
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    RtlZeroMemory(output, sizeof(*output));
+    KeAcquireSpinLock(&g_AvCamTraceLock, &oldIrql);
+    count = g_AvCamTraceCount;
+    output->Count = count;
+    output->TotalEvents = g_AvCamTraceNextSequence;
+    first = (g_AvCamTraceNextSequence - count) % AVCAM_DIAG_TRACE_CAPACITY;
+    for (index = 0; index < count; ++index) {
+        output->Events[index] =
+            g_AvCamTrace[(first + index) % AVCAM_DIAG_TRACE_CAPACITY];
+    }
+    KeReleaseSpinLock(&g_AvCamTraceLock, oldIrql);
+    return STATUS_SUCCESS;
+}
+
+NTSTATUS
+AvCamEvtQueryInterfacePreprocess(
+    _In_ WDFDEVICE Device,
+    _Inout_ PIRP Irp
+    )
+{
+    PIO_STACK_LOCATION irpStack;
+    ULONG interfaceId;
+
+    irpStack = IoGetCurrentIrpStackLocation(Irp);
+    interfaceId = 0;
+    if (irpStack != NULL &&
+        irpStack->Parameters.QueryInterface.InterfaceType != NULL) {
+        interfaceId =
+            irpStack->Parameters.QueryInterface.InterfaceType->Data1;
+    }
+
+    /* STATUS_PENDING here means observed-before-framework, not a result. */
+    AvCamRecordDiagnostic(
+        AVCAM_DIAG_EVENT_QUERY_INTERFACE,
+        interfaceId,
+        STATUS_PENDING
+        );
+    IoSkipCurrentIrpStackLocation(Irp);
+    return WdfDeviceWdmDispatchPreprocessedIrp(Device, Irp);
+}
+
 
 static
 VOID
@@ -642,6 +739,20 @@ AvCamEvtChildListCreateDevice(
     }
 
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attributes, AVCAM_CHILD_CONTEXT);
+    {
+        UCHAR queryInterfaceMinor = IRP_MN_QUERY_INTERFACE;
+        status = WdfDeviceInitAssignWdmIrpPreprocessCallback(
+            ChildInit,
+            AvCamEvtQueryInterfacePreprocess,
+            IRP_MJ_PNP,
+            &queryInterfaceMinor,
+            1
+            );
+        if (!NT_SUCCESS(status)) {
+            return status;
+        }
+    }
+
     status = WdfDeviceCreate(&ChildInit, &attributes, &childDevice);
     if (!NT_SUCCESS(status)) {
         return status;
@@ -687,13 +798,33 @@ AvCamEvtIoInternalDeviceControl(
     UNREFERENCED_PARAMETER(InputBufferLength);
 
     if (IoControlCode != IOCTL_INTERNAL_USB_SUBMIT_URB) {
+        AvCamRecordDiagnostic(
+            AVCAM_DIAG_EVENT_INTERNAL_IOCTL,
+            IoControlCode,
+            STATUS_NOT_SUPPORTED
+            );
         WdfRequestComplete(Request, STATUS_NOT_SUPPORTED);
         return;
     }
 
     device = WdfIoQueueGetDevice(Queue);
     childContext = AvCamGetChildContext(device);
-    status = AvCamProcessUrb(Request, childContext);
+    {
+        ULONG function = (ULONG)-1;
+        PIRP irp = WdfRequestWdmGetIrp(Request);
+        if (irp != NULL) {
+            PIO_STACK_LOCATION irpStack = IoGetCurrentIrpStackLocation(irp);
+            if (irpStack != NULL) {
+                PURB urb = (PURB)irpStack->Parameters.Others.Argument1;
+                if (urb != NULL &&
+                    urb->UrbHeader.Length >= sizeof(struct _URB_HEADER)) {
+                    function = urb->UrbHeader.Function;
+                }
+            }
+        }
+        status = AvCamProcessUrb(Request, childContext);
+        AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_URB, function, status);
+    }
     WdfRequestComplete(Request, status);
 }
 
@@ -794,6 +925,15 @@ AvCamEvtIoDeviceControl(
         status = STATUS_NOT_SUPPORTED;
         break;
 
+    case IOCTL_AVCAM_READ_DIAGNOSTICS:
+        status = AvCamReadDiagnostics(Request);
+        WdfRequestCompleteWithInformation(
+            Request,
+            status,
+            NT_SUCCESS(status) ? sizeof(AVCAM_DIAG_BUFFER) : 0
+            );
+        return;
+
     default:
         status = STATUS_INVALID_DEVICE_REQUEST;
         break;
@@ -893,6 +1033,7 @@ DriverEntry(
         0
         );
 
+    KeInitializeSpinLock(&g_AvCamTraceLock);
     WDF_DRIVER_CONFIG_INIT(&config, AvCamEvtDeviceAdd);
 
     status = WdfDriverCreate(
