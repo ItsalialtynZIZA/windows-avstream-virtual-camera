@@ -10,3 +10,13 @@ target_link_libraries(AvCamBusCtl PRIVATE setupapi)
 if(MSVC)
     target_compile_options(AvCamBusCtl PRIVATE /W4 /WX /permissive-)
 endif()
+
+# Root-enumerated PnP device creator; replaces DevCon for fresh test machines.
+add_executable(AvCamBusInstall AvCamBusInstall.cpp)
+target_compile_features(AvCamBusInstall PRIVATE cxx_std_17)
+target_compile_definitions(AvCamBusInstall PRIVATE UNICODE _UNICODE)
+target_link_libraries(AvCamBusInstall PRIVATE setupapi newdev)
+
+if(MSVC)
+    target_compile_options(AvCamBusInstall PRIVATE /W4 /WX /permissive-)
+endif()
