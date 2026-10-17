@@ -2,6 +2,7 @@
 #include <SetupAPI.h>
 #include <devguid.h>
 #include <iostream>
+#include <iomanip>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -87,10 +88,54 @@ static DWORD SendSimpleIoctl(DWORD code)
     return error;
 }
 
+static DWORD PrintDiagnostics()
+{
+    const std::wstring path = GetBusInterfacePath();
+    HANDLE handle = CreateFileW(
+        path.c_str(), GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) {
+        return GetLastError();
+    }
+
+    AVCAM_DIAG_BUFFER output{};
+    DWORD bytes = 0;
+    const BOOL ok = DeviceIoControl(
+        handle, IOCTL_AVCAM_READ_DIAGNOSTICS,
+        nullptr, 0, &output, sizeof(output), &bytes, nullptr);
+    const DWORD error = ok ? ERROR_SUCCESS : GetLastError();
+    CloseHandle(handle);
+    if (error != ERROR_SUCCESS) {
+        return error;
+    }
+    if (bytes < sizeof(output) || output.Count > AVCAM_DIAG_TRACE_CAPACITY) {
+        return ERROR_INVALID_DATA;
+    }
+
+    std::wcout << L"Recorded=" << output.Count
+               << L" TotalSinceDriverLoad=" << output.TotalEvents << L"\n";
+    std::wcout << L"Type: 1=unsupported internal USB IOCTL,"
+                  L" 2=URB handler return, 3=PnP QUERY_INTERFACE observed.\n"
+                  L"Type 3 status=0x00000103 means entry was observed;"
+                  L" it is not the framework's completion result.\n";
+    for (unsigned long i = 0; i < output.Count; ++i) {
+        const auto& event = output.Events[i];
+        std::wcout << L"#" << std::dec << event.Sequence
+                   << L" Type=" << event.EventType
+                   << L" Code=0x" << std::hex << std::setw(8) << std::setfill(L'0')
+                   << event.Code
+                   << L" Status=0x" << std::setw(8)
+                   << static_cast<unsigned long>(event.Status)
+                   << std::dec << std::setfill(L' ') << L"\n";
+    }
+    return ERROR_SUCCESS;
+}
+
 int wmain(int argc, wchar_t** argv)
 {
     if (argc != 2) {
-        std::wcerr << L"Usage: AvCamBusCtl.exe plug|unplug|path\n";
+        std::wcerr << L"Usage: AvCamBusCtl.exe plug|unplug|path|trace\n";
         return 2;
     }
 
@@ -99,6 +144,16 @@ int wmain(int argc, wchar_t** argv)
 
         if (command == L"path") {
             std::wcout << GetBusInterfacePath() << L"\n";
+            return 0;
+        }
+
+        if (command == L"trace") {
+            const DWORD error = PrintDiagnostics();
+            if (error != ERROR_SUCCESS) {
+                std::wcerr << L"Diagnostic read failed with Win32 error "
+                           << error << L"\n";
+                return static_cast<int>(error);
+            }
             return 0;
         }
 
