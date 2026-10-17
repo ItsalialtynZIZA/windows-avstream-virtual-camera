@@ -49,6 +49,9 @@ jobs:
           $ctl = Get-ChildItem build/manual-vhci-tools -Recurse -Filter AvCamBusCtl.exe -File | Select-Object -First 1
           if (-not $ctl -or $ctl.Length -le 0) { throw 'AvCamBusCtl.exe was not produced.' }
           Get-Item $ctl.FullName | Select-Object FullName,Length
+          $installer = Get-ChildItem build/manual-vhci-tools -Recurse -Filter AvCamBusInstall.exe -File | Select-Object -First 1
+          if (-not $installer -or $installer.Length -le 0) { throw 'AvCamBusInstall.exe was not produced.' }
+          Get-Item $installer.FullName | Select-Object FullName,Length
 
       - name: Restore WDK package cache
         id: wdk-cache
@@ -132,6 +135,7 @@ jobs:
             research/manual-vhci/driver/x64/Release/AvCamBus/**
             research/manual-vhci/driver/x64/Release/AvCamBus.cer
             build/manual-vhci-tools/Release/AvCamBusCtl.exe
+            build/manual-vhci-tools/Release/AvCamBusInstall.exe
             research/manual-vhci/README.md
             research/manual-vhci/tests/static-contract-tests.ps1
             research/manual-vhci/tests/runtime-smoke.ps1
