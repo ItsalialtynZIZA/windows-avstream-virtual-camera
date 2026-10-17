@@ -1481,10 +1481,10 @@ AvCamEvtDeviceAdd(
 }
 
 
+static
 VOID
-AvCamEvtDriverUnload(_In_ WDFDRIVER Driver)
+AvCamFreeFrameBuffers(VOID)
 {
-    UNREFERENCED_PARAMETER(Driver);
     if (g_AvCamActiveFrame != NULL) {
         ExFreePoolWithTag(g_AvCamActiveFrame, 'mcVA');
         g_AvCamActiveFrame = NULL;
@@ -1493,6 +1493,13 @@ AvCamEvtDriverUnload(_In_ WDFDRIVER Driver)
         ExFreePoolWithTag(g_AvCamPendingFrame, 'mcVA');
         g_AvCamPendingFrame = NULL;
     }
+}
+
+VOID
+AvCamEvtDriverUnload(_In_ WDFDRIVER Driver)
+{
+    UNREFERENCED_PARAMETER(Driver);
+    AvCamFreeFrameBuffers();
 }
 
 NTSTATUS
@@ -1527,7 +1534,7 @@ DriverEntry(
     g_AvCamPendingFrame = (PUCHAR)ExAllocatePool2(
         POOL_FLAG_NON_PAGED, AVCAM_UVC_FRAME_MAX_BYTES, 'mcVA');
     if (g_AvCamActiveFrame == NULL || g_AvCamPendingFrame == NULL) {
-        AvCamEvtDriverUnload(NULL);
+        AvCamFreeFrameBuffers();
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     WDF_DRIVER_CONFIG_INIT(&config, AvCamEvtDeviceAdd);
@@ -1542,7 +1549,7 @@ DriverEntry(
         );
 
     if (!NT_SUCCESS(status)) {
-        AvCamEvtDriverUnload(NULL);
+        AvCamFreeFrameBuffers();
     }
     AvCamWriteDiagnosticDword(
         RegistryPath,
