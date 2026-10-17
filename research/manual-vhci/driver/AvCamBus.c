@@ -134,6 +134,17 @@ AvCamEvtQueryInterfacePreprocess(
         interfaceId,
         STATUS_PENDING
         );
+    if (irpStack != NULL) {
+        /* Version and Size are USHORTs; pack only for diagnostics. */
+        const ULONG versionAndSize =
+            ((ULONG)irpStack->Parameters.QueryInterface.Size << 16) |
+            (ULONG)irpStack->Parameters.QueryInterface.Version;
+        AvCamRecordDiagnostic(
+            AVCAM_DIAG_EVENT_QUERY_INTERFACE_DETAILS,
+            interfaceId,
+            (NTSTATUS)versionAndSize
+            );
+    }
     IoSkipCurrentIrpStackLocation(Irp);
     return WdfDeviceWdmDispatchPreprocessedIrp(Device, Irp);
 }
