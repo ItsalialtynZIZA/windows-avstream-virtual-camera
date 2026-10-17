@@ -58,6 +58,10 @@ Assert-Contains $source 'AvCamAddUsbdiV1QueryInterface' 'USBDI V1 interface regi
 Assert-Contains $source 'WdfDeviceAddQueryInterface' 'KMDF USB bus interface registration missing.'
 Assert-Contains $source 'AvCamUnsupportedIsoOut' 'Unsupported ISO OUT operations must be rejected.'
 Assert-Contains $source 'AvCamUnsupportedBusInformation' 'Unsupported bus information operations must be rejected.'
+Assert-Contains $source 'URB_FUNCTION_CLASS_INTERFACE' 'Class-interface URBs must be handled.'
+Assert-Contains $source 'AvCamProcessUvcClassInterface' 'UVC streaming class request handler is missing.'
+Assert-Contains $source 'AVCAM_DIAG_EVENT_UVC_CONTROL' 'UVC request-level tracing is missing.'
+Assert-Contains $source 'AvCamUvcInitState' 'Per-device UVC streaming state is missing.'
 Assert-NotContains $ioctl 'METHOD_NEITHER' 'Research IOCTLs must not use METHOD_NEITHER.'
 
 $functionNumbers = [regex]::Matches($ioctl, 'CTL_CODE\([^,]+,\s*(0x[0-9A-Fa-f]+)') | ForEach-Object { $_.Groups[1].Value }
