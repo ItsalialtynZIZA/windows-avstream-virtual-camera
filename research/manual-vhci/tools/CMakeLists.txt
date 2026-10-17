@@ -20,3 +20,12 @@ target_link_libraries(AvCamBusInstall PRIVATE setupapi newdev)
 if(MSVC)
     target_compile_options(AvCamBusInstall PRIVATE /W4 /WX /permissive-)
 endif()
+
+# User-mode-only Media Foundation capture diagnosis. No custom driver install.
+add_executable(AvCamMfProbe AvCamMfProbe.cpp)
+target_compile_features(AvCamMfProbe PRIVATE cxx_std_17)
+target_compile_definitions(AvCamMfProbe PRIVATE UNICODE _UNICODE)
+target_link_libraries(AvCamMfProbe PRIVATE mfplat mf mfreadwrite mfuuid ole32)
+if(MSVC)
+    target_compile_options(AvCamMfProbe PRIVATE /W4 /WX /permissive-)
+endif()
