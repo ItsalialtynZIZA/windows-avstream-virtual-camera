@@ -67,6 +67,7 @@ static PUCHAR g_AvCamPendingFrame;
 static ULONG g_AvCamActiveBytes;
 static ULONG g_AvCamPendingBytes;
 static BOOLEAN g_AvCamPendingReady;
+static AVCAM_STREAM_STATS g_AvCamStats;
 
 static
 VOID
@@ -201,6 +202,24 @@ AvCamAddUsbdiV1QueryInterface(
         NULL
         );
     return WdfDeviceAddQueryInterface(ChildDevice, &queryConfig);
+}
+
+
+/* Persistent totals survive overwriting the small diagnostic ring. */
+static NTSTATUS AvCamReadStreamStats(_In_ WDFREQUEST Request)
+{
+    PAVCAM_STREAM_STATS output;
+    NTSTATUS status = WdfRequestRetrieveOutputBuffer(
+        Request, sizeof(AVCAM_STREAM_STATS), (PVOID*)&output, NULL);
+    if (!NT_SUCCESS(status)) return status;
+
+    ExAcquireFastMutex(&g_AvCamFrameLock);
+    *output = g_AvCamStats;
+    output->Version = AVCAM_STREAM_STATS_VERSION;
+    output->ActiveFrameBytes = g_AvCamActiveBytes;
+    output->PendingReady = g_AvCamPendingReady ? 1u : 0u;
+    ExReleaseFastMutex(&g_AvCamFrameLock);
+    return STATUS_SUCCESS;
 }
 
 static
@@ -951,6 +970,7 @@ AvCamProcessIsochTransfer(
         g_AvCamPendingFrame = swap;
         g_AvCamActiveBytes = g_AvCamPendingBytes;
         g_AvCamPendingReady = FALSE;
+        ++g_AvCamStats.FrameSwaps;
     }
 
     for (i = 0; i < packets; ++i) {
@@ -974,12 +994,23 @@ AvCamProcessIsochTransfer(
                 ++filled;
                 if (ChildContext->Packetizer.Offset == 0) {
                     eof = TRUE;
+                    ++g_AvCamStats.MjpegFramesCompleted;
                     ChildContext->NextFrameDue100ns =
                         now + AVCAM_UVC_FRAME_INTERVAL_100NS;
                 }
             }
         }
     }
+    ++g_AvCamStats.IsoUrbsCompleted;
+    if (filled > 0) {
+        ++g_AvCamStats.IsoUrbsWithData;
+    } else {
+        ++g_AvCamStats.IsoUrbsEmpty;
+    }
+    g_AvCamStats.IsoPacketsWithData += filled;
+    g_AvCamStats.TotalIsoPayloadBytes += actualBytes;
+    g_AvCamStats.LastIsoUrbBytes = actualBytes;
+    g_AvCamStats.LastIsoUrbPackets = filled;
     ExReleaseFastMutex(&g_AvCamFrameLock);
 
     transfer->ErrorCount = 0;
@@ -1360,6 +1391,8 @@ AvCamWriteMjpegFrame(
     RtlCopyMemory(g_AvCamPendingFrame, data, header->PayloadBytes);
     g_AvCamPendingBytes = header->PayloadBytes;
     g_AvCamPendingReady = TRUE;
+    ++g_AvCamStats.FrameWrites;
+    g_AvCamStats.LastAcceptedFrameBytes = header->PayloadBytes;
     ExReleaseFastMutex(&g_AvCamFrameLock);
     AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_FRAME_WRITE,
                           header->PayloadBytes, STATUS_SUCCESS);
@@ -1395,6 +1428,12 @@ AvCamEvtIoDeviceControl(
     case IOCTL_AVCAM_WRITE_FRAME:
         status = AvCamWriteMjpegFrame(Request, OutputBufferLength);
         break;
+
+    case IOCTL_AVCAM_READ_STREAM_STATS:
+        status = AvCamReadStreamStats(Request);
+        WdfRequestCompleteWithInformation(
+            Request, status, NT_SUCCESS(status) ? sizeof(AVCAM_STREAM_STATS) : 0);
+        return;
 
     case IOCTL_AVCAM_READ_DIAGNOSTICS:
         status = AvCamReadDiagnostics(Request);
@@ -1529,6 +1568,7 @@ DriverEntry(
 
     KeInitializeSpinLock(&g_AvCamTraceLock);
     ExInitializeFastMutex(&g_AvCamFrameLock);
+    RtlZeroMemory(&g_AvCamStats, sizeof(g_AvCamStats));
     g_AvCamActiveFrame = (PUCHAR)ExAllocatePool2(
         POOL_FLAG_NON_PAGED, AVCAM_UVC_FRAME_MAX_BYTES, 'mcVA');
     g_AvCamPendingFrame = (PUCHAR)ExAllocatePool2(

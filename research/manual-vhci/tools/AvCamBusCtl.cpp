@@ -185,6 +185,44 @@ static DWORD SendJpegFrame(const wchar_t* filename)
     return error;
 }
 
+
+static DWORD PrintStreamStats()
+{
+    const std::wstring path = GetBusInterfacePath();
+    HANDLE handle = CreateFileW(
+        path.c_str(), GENERIC_READ | GENERIC_WRITE,
+        FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+        OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (handle == INVALID_HANDLE_VALUE) return GetLastError();
+
+    AVCAM_STREAM_STATS stats{};
+    DWORD returned = 0;
+    const BOOL ok = DeviceIoControl(
+        handle, IOCTL_AVCAM_READ_STREAM_STATS,
+        nullptr, 0, &stats, sizeof(stats), &returned, nullptr);
+    const DWORD error = ok ? ERROR_SUCCESS : GetLastError();
+    CloseHandle(handle);
+    if (error != ERROR_SUCCESS) return error;
+    if (returned != sizeof(stats) || stats.Version != AVCAM_STREAM_STATS_VERSION)
+        return ERROR_INVALID_DATA;
+
+    std::wcout << L"StreamStatsVersion=" << stats.Version << L"\n"
+               << L"FrameWrites=" << stats.FrameWrites
+               << L" LastAcceptedFrameBytes=" << stats.LastAcceptedFrameBytes << L"\n"
+               << L"FrameSwaps=" << stats.FrameSwaps
+               << L" ActiveFrameBytes=" << stats.ActiveFrameBytes
+               << L" PendingReady=" << stats.PendingReady << L"\n"
+               << L"IsoUrbsCompleted=" << stats.IsoUrbsCompleted
+               << L" IsoUrbsWithData=" << stats.IsoUrbsWithData
+               << L" IsoUrbsEmpty=" << stats.IsoUrbsEmpty << L"\n"
+               << L"IsoPacketsWithData=" << stats.IsoPacketsWithData
+               << L" MjpegFramesCompleted=" << stats.MjpegFramesCompleted
+               << L" TotalIsoPayloadBytes=" << stats.TotalIsoPayloadBytes << L"\n"
+               << L"LastIsoUrbBytes=" << stats.LastIsoUrbBytes
+               << L" LastIsoUrbPackets=" << stats.LastIsoUrbPackets << L"\n";
+    return ERROR_SUCCESS;
+}
+
 static DWORD PrintDiagnostics()
 {
     const std::wstring path = GetBusInterfacePath();
@@ -284,7 +322,7 @@ static DWORD PrintDiagnostics()
 int wmain(int argc, wchar_t** argv)
 {
     if (argc != 2 && !(argc == 3 && wcscmp(argv[1], L"frame") == 0)) {
-        std::wcerr << L"Usage: AvCamBusCtl.exe plug|unplug|path|trace|frame <jpeg-file>\n";
+        std::wcerr << L"Usage: AvCamBusCtl.exe plug|unplug|path|trace|stats|frame <jpeg-file>\n";
         return 2;
     }
 
@@ -304,6 +342,14 @@ int wmain(int argc, wchar_t** argv)
             return static_cast<int>(error);
         }
 
+        if (command == L"stats") {
+            const DWORD error = PrintStreamStats();
+            if (error != ERROR_SUCCESS) {
+                std::wcerr << L"Stream stats read failed with Win32 error "
+                           << error << L"\n";
+            }
+            return static_cast<int>(error);
+        }
         if (command == L"trace") {
             const DWORD error = PrintDiagnostics();
             if (error != ERROR_SUCCESS) {

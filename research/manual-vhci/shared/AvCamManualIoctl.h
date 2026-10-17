@@ -33,6 +33,27 @@ typedef struct _AVCAM_FRAME_HEADER {
 #define IOCTL_AVCAM_READ_DIAGNOSTICS \
     CTL_CODE(FILE_DEVICE_AVCAM_BUS, 0x803, METHOD_BUFFERED, FILE_READ_DATA)
 
+#define IOCTL_AVCAM_READ_STREAM_STATS \
+    CTL_CODE(FILE_DEVICE_AVCAM_BUS, 0x804, METHOD_BUFFERED, FILE_READ_DATA)
+#define AVCAM_STREAM_STATS_VERSION 1u
+
+typedef struct _AVCAM_STREAM_STATS {
+    unsigned long Version;
+    unsigned long FrameWrites;
+    unsigned long LastAcceptedFrameBytes;
+    unsigned long FrameSwaps;
+    unsigned long ActiveFrameBytes;
+    unsigned long PendingReady;
+    unsigned long IsoUrbsCompleted;
+    unsigned long IsoUrbsWithData;
+    unsigned long IsoUrbsEmpty;
+    unsigned long IsoPacketsWithData;
+    unsigned long MjpegFramesCompleted;
+    unsigned long LastIsoUrbBytes;
+    unsigned long LastIsoUrbPackets;
+    unsigned long long TotalIsoPayloadBytes;
+} AVCAM_STREAM_STATS, *PAVCAM_STREAM_STATS;
+
 #define AVCAM_DIAG_TRACE_CAPACITY 128u
 #define AVCAM_DIAG_EVENT_INTERNAL_IOCTL 1u
 #define AVCAM_DIAG_EVENT_URB 2u
