@@ -99,6 +99,18 @@ static const wchar_t* QueryInterfaceName(unsigned long code)
     }
 }
 
+static const wchar_t* BusCallbackName(unsigned long code)
+{
+    switch (code) {
+    case 1: return L"GetUSBDIVersion";
+    case 2: return L"QueryBusTime";
+    case 3: return L"SubmitIsoOutUrb";
+    case 4: return L"QueryBusInformation";
+    case 5: return L"IsDeviceHighSpeed";
+    default: return L"Unknown callback";
+    }
+}
+
 static DWORD PrintDiagnostics()
 {
     const std::wstring path = GetBusInterfacePath();
@@ -128,7 +140,8 @@ static DWORD PrintDiagnostics()
                << L" TotalSinceDriverLoad=" << output.TotalEvents << L"\n";
     std::wcout << L"Type: 1=unsupported internal USB IOCTL,"
                   L" 2=URB handler return, 3=PnP QUERY_INTERFACE observed,"
-                  L" 4=PnP QUERY_INTERFACE requested Version/Size.\n"
+                  L" 4=PnP QUERY_INTERFACE requested Version/Size," 
+                  L" 5=USB_BUS_INTERFACE_USBDI_V1 callback.\n"
                   L"Type 3 status=0x00000103 means entry was observed;"
                   L" it is not the framework's completion result.\n";
     for (unsigned long i = 0; i < output.Count; ++i) {
@@ -147,6 +160,9 @@ static DWORD PrintDiagnostics()
             std::wcout << L" GUID=" << QueryInterfaceName(event.Code)
                        << L" Version=" << (packed & 0xFFFFu)
                        << L" Size=" << (packed >> 16);
+        }
+        if (event.EventType == AVCAM_DIAG_EVENT_USB_BUS_CALLBACK) {
+            std::wcout << L" Callback=" << BusCallbackName(event.Code);
         }
         std::wcout << L"\n";
     }
