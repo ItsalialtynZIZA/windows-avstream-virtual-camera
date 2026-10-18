@@ -219,7 +219,11 @@ static DWORD PrintStreamStats()
                << L" MjpegFramesCompleted=" << stats.MjpegFramesCompleted
                << L" TotalIsoPayloadBytes=" << stats.TotalIsoPayloadBytes << L"\n"
                << L"LastIsoUrbBytes=" << stats.LastIsoUrbBytes
-               << L" LastIsoUrbPackets=" << stats.LastIsoUrbPackets << L"\n";
+               << L" LastIsoUrbPackets=" << stats.LastIsoUrbPackets << L"\n"
+               << L"PortStatusQueries=" << stats.PortStatusQueries
+               << L" PortStatusFailures=" << stats.PortStatusFailures
+               << L" LastPortStatusFlags=0x" << std::hex
+               << stats.LastPortStatusFlags << std::dec << L"\n";
     return ERROR_SUCCESS;
 }
 
@@ -257,7 +261,8 @@ static DWORD PrintDiagnostics()
                   L" 6=UVC control status, 7=UVC request length/direction,\n"
                   L" 8=ISO packet count/capacity, 9=ISO flags/start frame,\n"
                   L" 10=ISO state/available packet descriptors, 11=ISO offsets,\n"
-                  L" 12=ISO completion packets/bytes, 13=accepted JPEG size.\n"
+                  L" 12=ISO completion packets/bytes, 13=accepted JPEG size,\n"
+                  L" 14=USB GET_PORT_STATUS flags.\n"
                   L"Type 3 status=0x00000103 means entry was observed;"
                   L" it is not the framework's completion result.\n";
     for (unsigned long i = 0; i < output.Count; ++i) {
@@ -304,6 +309,9 @@ static DWORD PrintDiagnostics()
                        << L" ActualBytes=" << static_cast<unsigned long>(event.Status);
         } else if (event.EventType == AVCAM_DIAG_EVENT_FRAME_WRITE) {
             std::wcout << L" AcceptedFrameBytes=" << event.Code;
+        } else if (event.EventType == AVCAM_DIAG_EVENT_PORT_STATUS) {
+            std::wcout << L" Enabled=" << ((event.Code & 0x01u) != 0)
+                       << L" Connected=" << ((event.Code & 0x02u) != 0);
         }
         if (event.EventType == AVCAM_DIAG_EVENT_UVC_CONTROL ||
             event.EventType == AVCAM_DIAG_EVENT_UVC_REQUEST_LENGTH) {

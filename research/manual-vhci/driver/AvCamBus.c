@@ -1235,6 +1235,51 @@ AvCamEvtChildListCreateDevice(
     return status;
 }
 
+
+/* The usbvideo.sys class stack can ask whether the upstream USB port is
+ * present and enabled. This is a separate internal IOCTL, not an URB.
+ * usbioctl.h specifies the returned ULONG through Others.Argument1.
+ */
+static
+NTSTATUS
+AvCamQueryConnectedPortStatus(_In_ WDFREQUEST Request)
+{
+    PIRP irp = WdfRequestWdmGetIrp(Request);
+    PIO_STACK_LOCATION irpStack = NULL;
+    PULONG output = NULL;
+    NTSTATUS status = STATUS_INVALID_PARAMETER;
+    const ULONG flags = USBD_PORT_ENABLED | USBD_PORT_CONNECTED;
+
+    if (irp != NULL) {
+        irpStack = IoGetCurrentIrpStackLocation(irp);
+    }
+    if (irpStack != NULL) {
+        output = (PULONG)irpStack->Parameters.Others.Argument1;
+    }
+    if (output != NULL) {
+        __try {
+            *output = flags;
+            status = STATUS_SUCCESS;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER) {
+            status = GetExceptionCode();
+        }
+    }
+
+    ExAcquireFastMutex(&g_AvCamFrameLock);
+    ++g_AvCamStats.PortStatusQueries;
+    if (!NT_SUCCESS(status)) {
+        ++g_AvCamStats.PortStatusFailures;
+    }
+    g_AvCamStats.LastPortStatusFlags =
+        NT_SUCCESS(status) ? flags : 0;
+    ExReleaseFastMutex(&g_AvCamFrameLock);
+    AvCamRecordDiagnostic(
+        AVCAM_DIAG_EVENT_PORT_STATUS,
+        NT_SUCCESS(status) ? flags : 0, status);
+    return status;
+}
+
 VOID
 AvCamEvtIoInternalDeviceControl(
     _In_ WDFQUEUE Queue,
@@ -1250,6 +1295,12 @@ AvCamEvtIoInternalDeviceControl(
 
     UNREFERENCED_PARAMETER(OutputBufferLength);
     UNREFERENCED_PARAMETER(InputBufferLength);
+
+    if (IoControlCode == IOCTL_INTERNAL_USB_GET_PORT_STATUS) {
+        status = AvCamQueryConnectedPortStatus(Request);
+        WdfRequestComplete(Request, status);
+        return;
+    }
 
     if (IoControlCode != IOCTL_INTERNAL_USB_SUBMIT_URB) {
         AvCamRecordDiagnostic(

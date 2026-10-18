@@ -35,7 +35,7 @@ typedef struct _AVCAM_FRAME_HEADER {
 
 #define IOCTL_AVCAM_READ_STREAM_STATS \
     CTL_CODE(FILE_DEVICE_AVCAM_BUS, 0x804, METHOD_BUFFERED, FILE_READ_DATA)
-#define AVCAM_STREAM_STATS_VERSION 1u
+#define AVCAM_STREAM_STATS_VERSION 2u
 
 typedef struct _AVCAM_STREAM_STATS {
     unsigned long Version;
@@ -52,6 +52,9 @@ typedef struct _AVCAM_STREAM_STATS {
     unsigned long LastIsoUrbBytes;
     unsigned long LastIsoUrbPackets;
     unsigned long long TotalIsoPayloadBytes;
+    unsigned long PortStatusQueries;
+    unsigned long PortStatusFailures;
+    unsigned long LastPortStatusFlags;
 } AVCAM_STREAM_STATS, *PAVCAM_STREAM_STATS;
 
 #define AVCAM_DIAG_TRACE_CAPACITY 128u
@@ -68,6 +71,7 @@ typedef struct _AVCAM_STREAM_STATS {
 #define AVCAM_DIAG_EVENT_ISOCH_OFFSETS 11u
 #define AVCAM_DIAG_EVENT_ISOCH_COMPLETION 12u
 #define AVCAM_DIAG_EVENT_FRAME_WRITE 13u
+#define AVCAM_DIAG_EVENT_PORT_STATUS 14u
 
 typedef struct _AVCAM_DIAG_EVENT {
     unsigned long Sequence;
