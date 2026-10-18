@@ -93,8 +93,6 @@ try {
         throw "Media Foundation never delivered a nonempty MJPG sample (probe exit $exitCode)."
     }
 
-    & $controller stats | Tee-Object -FilePath (Join-Path $destination 'driver-stats.txt')
-    if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve driver statistics.' }
     Write-Host 'ACCEPTANCE: MJPG sample delivered to Media Foundation.'
 }
 finally {
@@ -105,6 +103,18 @@ finally {
         & logman delete $session | Out-Host
     }
     if ($plugged) {
+        # Capture ISO timing/counters even when the MF probe times out.
+        # Never let a diagnostic read prevent the mandatory unplug.
+        try {
+            & $controller stats | Tee-Object -FilePath (
+                Join-Path $destination 'driver-stats.txt')
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warning 'Could not retrieve driver statistics.'
+            }
+        }
+        catch {
+            Write-Warning "Driver stats capture failed: $_"
+        }
         & $controller unplug | Out-Host
         if ($LASTEXITCODE -ne 0) {
             Write-Warning 'Automatic unplug failed: inspect PnP child status before retrying.'
