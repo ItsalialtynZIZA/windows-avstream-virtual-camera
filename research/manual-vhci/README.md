@@ -94,6 +94,23 @@ The existing `main` branch and the AVStream work are not modified by this resear
 
 ## Current diagnostic release (2026-10-18, experimental)
 
+- Package 0.1.0.5 addresses two questions from the 0.1.0.4 Windows trace:
+  per-URB USBVideo warnings 210/212 persist after timing improved from
+  ~32 ms to ~17 ms; 781 JPEG frames correspond exactly to 33,400,246
+  USB payload bytes (42,738 JPEG bytes + 28 UVC header bytes per frame),
+  while Media Foundation still receives no sample.
+- For USBD_START_ISO_TRANSFER_ASAP, StartFrame now denotes the USB frame
+  when the ISO transfer started, not when it completed ~16 ms later.
+  Portable regression tests validate frame wraparound.
+- Stream stats V4 record how often the occupied fixed-offset ISO buffer
+  region extends beyond the sum of received packet lengths. Also record
+  leading empty packet counts, returned StartFrame and maximum sparse extent.
+  This adds diagnostics without compacting offsets or changing the
+  documented returned-byte count in TransferBufferLength.
+- These are diagnostic hypotheses; camera success is NOT established.
+- The installed Windows driver remains unchanged until explicit testing.
+
+
 - Driver package 0.1.0.4 builds on 0.1.0.3 with high-resolution pacing for
   isochronous URB completion; the former 128-microframe transfer budget was
   16 ms, while Windows 11 telemetry observed approximately 31 ms per URB.
