@@ -1086,9 +1086,38 @@ AvCamProcessIsochTransfer(
         const ULONGLONG alreadyElapsed100ns =
             KeQueryInterruptTime() - handlerStarted100ns;
         if (alreadyElapsed100ns < duration100ns) {
-            delay.QuadPart =
-                -(LONGLONG)(duration100ns - alreadyElapsed100ns);
-            (VOID)KeDelayExecutionThread(KernelMode, FALSE, &delay);
+            /*
+             * The default KeDelayExecutionThread clock quantum can exceed
+             * a 128-microframe (16 ms) ISO URB budget. In the Windows 11
+             * acceptance trace, 128-packet URBs took approximately 31 ms
+             * and USBVideo logged buffer starvation/overrun per transfer.
+             * Use a one-shot high-resolution kernel timer so normal ISO
+             * completions are not quantized to the default clock tick.
+             *
+             * The callback runs at PASSIVE_LEVEL. A timer is private to
+             * this request, avoiding shared timer races during unplug.
+             */
+            PEX_TIMER timer = ExAllocateTimer(
+                NULL, NULL, EX_TIMER_HIGH_RESOLUTION);
+            if (timer != NULL) {
+                const ULONGLONG elapsedAfterAllocation100ns =
+                    KeQueryInterruptTime() - handlerStarted100ns;
+                if (elapsedAfterAllocation100ns < duration100ns) {
+                    (VOID)ExSetTimer(
+                        timer,
+                        -(LONGLONG)(duration100ns -
+                            elapsedAfterAllocation100ns),
+                        0, NULL);
+                    (VOID)KeWaitForSingleObject(
+                        timer, Executive, KernelMode, FALSE, NULL);
+                }
+                (VOID)ExDeleteTimer(timer, TRUE, TRUE, NULL);
+            } else {
+                /* Low-resource fallback: retain bounded legacy pacing. */
+                delay.QuadPart =
+                    -(LONGLONG)(duration100ns - alreadyElapsed100ns);
+                (VOID)KeDelayExecutionThread(KernelMode, FALSE, &delay);
+            }
         }
     }
     {
