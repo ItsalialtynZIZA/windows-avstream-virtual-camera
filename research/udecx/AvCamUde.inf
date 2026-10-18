@@ -1,0 +1,53 @@
+[Version]
+Signature   = "$WINDOWS NT$"
+Class       = USB
+ClassGuid   = {36FC9E60-C465-11CF-8056-444553540000}
+Provider    = %Provider%
+DriverVer   = 10/18/2026,0.0.1.0
+CatalogFile = AvCamUde.cat
+PnpLockdown = 1
+
+[DestinationDirs]
+DefaultDestDir = 13
+AvCamUde_Copy = 13
+
+[SourceDisksNames]
+1 = %DiskName%,,,
+
+[SourceDisksFiles]
+AvCamUde.sys = 1
+
+[Manufacturer]
+%Manufacturer% = Standard,NTamd64.10.0...16299
+
+[Standard.NTamd64.10.0...16299]
+%DeviceDescription% = AvCamUde_Install,Root\AvCamUdeController
+
+[AvCamUde_Install.NT]
+CopyFiles = AvCamUde_Copy
+
+[AvCamUde_Copy]
+AvCamUde.sys
+
+[AvCamUde_Install.NT.Services]
+AddService = AvCamUde,%SPSVCINST_ASSOCSERVICE%,AvCamUde_Service
+
+[AvCamUde_Service]
+DisplayName   = %ServiceDescription%
+ServiceType   = 1
+StartType     = 3
+ErrorControl  = 1
+ServiceBinary = %13%\AvCamUde.sys
+
+[AvCamUde_Install.NT.Wdf]
+KmdfService = AvCamUde,AvCamUde_Wdf
+
+[AvCamUde_Wdf]
+KmdfLibraryVersion = 1.33
+
+[Strings]
+SPSVCINST_ASSOCSERVICE = 0x00000002
+Provider = "AvCam Research"
+DiskName = "AvCam UdeCx Experimental Controller"
+DeviceDescription = "AvCam UdeCx Research USB Host Controller"
+ServiceDescription = "AvCam UdeCx Research Controller"
