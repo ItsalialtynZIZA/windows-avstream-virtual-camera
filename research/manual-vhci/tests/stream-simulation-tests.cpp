@@ -30,12 +30,15 @@ int main()
         unsigned int completeFrames = 0;
         unsigned char lastFid = 0;
         unsigned int sparseUrbs = 0;
+        unsigned int multiUrbFrames = 0;
+        unsigned int packetsSinceEof = 0;
+        unsigned int mostPopulatedUrb = 0;
 
         for (unsigned int urb=0; urb<625; ++urb) {
             std::fill(transfer.begin(), transfer.end(), static_cast<unsigned char>(0xCD));
             const unsigned long long now = 50000000ull + urb * urbDuration;
-            bool eof = false;
             unsigned long returnedBytes = 0;
+            unsigned int populatedPackets = 0;
             unsigned int highestOccupiedEnd = 0;
             for (unsigned int slot=0; slot<packetCount; ++slot) {
                 const unsigned int offset = slot*packetCapacity;
@@ -44,22 +47,28 @@ int main()
                 Require(AvCamIsoPacketWindowValid(offset,offset+packetCapacity,
                     static_cast<unsigned int>(transfer.size())),
                     "Invalid packet layout");
-                if (eof || (state.Offset == 0 && packetTime < nextDue)) {
+                if (state.Offset == 0 && packetTime < nextDue) {
                     Require(transfer[offset]==0xCD, "Empty packet unexpectedly touched");
                     continue;
                 }
                 if (state.Offset == 0) {
                     nextDue = AvCamIsoAdvanceFrameDue(nextDue,packetTime,interval);
                 }
+                const unsigned int pacedCapacity = AvCamUvcPacedPacketCapacity(
+                    static_cast<unsigned int>(jpeg.size()), packetCapacity,
+                    static_cast<unsigned int>(interval),
+                    static_cast<unsigned int>(AVCAM_ISO_MICROFRAME_100NS));
                 unsigned int written = 0;
                 const int result=AvCamUvcPacketizeMjpeg(
                     &state,jpeg.data(),static_cast<unsigned int>(jpeg.size()),
-                    transfer.data()+offset,packetCapacity,&written);
+                    transfer.data()+offset,pacedCapacity,&written);
                 Require(result==AVCAM_UVC_PACKET_OK &&
-                        written >= 3 && written <= packetCapacity,
+                        written >= 3 && written <= pacedCapacity,
                         "Invalid UVC payload length");
                 returnedBytes+=written;
                 highestOccupiedEnd=offset+written;
+                ++populatedPackets;
+                ++packetsSinceEof;
                 Require(transfer[offset]==AVCAM_UVC_PAYLOAD_HEADER_BYTES &&
                         (transfer[offset+1] & AVCAM_UVC_PAYLOAD_EOH)!=0,
                         "Malformed UVC packet header");
@@ -72,12 +81,20 @@ int main()
                     transfer.begin()+offset+AVCAM_UVC_PAYLOAD_HEADER_BYTES,
                     transfer.begin()+offset+written);
                 if ((transfer[offset+1] & AVCAM_UVC_PAYLOAD_EOF)!=0) {
-                    eof=true;
+                    Require(packetsSinceEof >= 260u,
+                            "A whole MJPEG frame was burst in too few microframes");
+                    if (packetsSinceEof > packetCount) {
+                        ++multiUrbFrames;
+                    }
+                    packetsSinceEof = 0;
                     Require(reconstructed==jpeg, "Reassembled JPEG frame mismatch");
                     reconstructed.clear();
                     ++completeFrames;
                     lastFid^=AVCAM_UVC_PAYLOAD_FID;
                 }
+            }
+            if (populatedPackets > mostPopulatedUrb) {
+                mostPopulatedUrb = populatedPackets;
             }
             Require(returnedBytes<=packetCount*packetCapacity,
                     "ISO transfer payload exceeded allocation");
@@ -92,6 +109,10 @@ int main()
 
         Require(sparseUrbs>0u,
                 "Expected at least one sparse ISO transfer");
+        Require(multiUrbFrames > 290u,
+                "MJPEG frames must span successive 128-microframe URBs");
+        Require(mostPopulatedUrb >= 120u,
+                "Continuous video must populate most USB microframes");
         Require(completeFrames>=298 && completeFrames<=302,
                 "MJPEG stream drifted away from 30fps");
         Require(state.Offset==0 && reconstructed.empty(),
