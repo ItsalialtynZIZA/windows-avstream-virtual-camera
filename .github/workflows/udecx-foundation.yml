@@ -6,6 +6,7 @@ on:
       - dev/manual-vhci
     paths:
       - 'research/udecx/**'
+      - 'feeder/src/MediaFoundationFrameSource.cpp'
       - '.github/workflows/udecx-foundation.yml'
       - 'packages.config'
   workflow_dispatch:
