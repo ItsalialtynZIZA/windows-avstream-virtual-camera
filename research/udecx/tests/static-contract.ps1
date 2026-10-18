@@ -82,4 +82,17 @@ if ($activeWorkflow -match 'actions/upload-artifact|pnputil|AvCamBusInstall\.exe
 }
 Assert-Matches $workflow 'EnablePREfast=true' 'UdeCx PREfast analysis must remain enabled.'
 
+$adapter = Get-Content (Join-Path $root 'AvCamUdeIsoAdapter.c') -Raw
+$source = Get-Content (Join-Path $root 'AvCamUdeFrameSource.h') -Raw
+$project = Get-Content (Join-Path $root 'AvCamUde.vcxproj') -Raw
+Assert-Matches $project 'AvCamUdeIsoAdapter.c' 'Native ISO staging adapter must be WDK-built.'
+Assert-Matches $adapter 'AvCamUdeInspectIsoUrb' 'Native adapter must validate the real URB.'
+Assert-Matches $adapter 'AvCamUdeIsoFill' 'Native adapter must call the MJPEG ISO encoder.'
+Assert-Matches $adapter 'USBD_STATUS_SUCCESS' 'Native adapter must update ISO packet statuses.'
+Assert-Matches $source 'AvCamUdeFrameSourcePublish' 'Immutable JPEG publication API missing.'
+Assert-Matches $source 'AvCamUdeFrameSourceAcquire' 'Immutable JPEG lease API missing.'
+Assert-Matches $source 'AvCamUdeFrameSourceRelease' 'Frame lease release API missing.'
+Assert-Matches $source 'target->Readers != 0' 'Publishing must not overwrite leased frames.'
+Assert-Matches $usb 'STATUS_NOT_SUPPORTED' 'Live ISO endpoint must remain disabled until request ownership is safe.'
+
 Write-Host "UdeCx guarded USB child contract: passed"
