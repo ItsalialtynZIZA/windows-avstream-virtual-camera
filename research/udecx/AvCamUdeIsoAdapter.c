@@ -8,16 +8,18 @@
  */
 #include "AvCamUdeUsb.h"
 #include "AvCamUdeIso.h"
+#include "AvCamUdeFramePump.h"
 #include "AvCamUdeIsoUrbLayout.h"
 
 #define AVCAM_UDE_ISO_WORKSPACE_TAG 'sIcA'
 
-NTSTATUS
-AvCamUdePrepareIsoUrb(
+static NTSTATUS
+AvCamUdePrepareIsoUrbCore(
     _In_ WDFREQUEST request,
-    _Inout_ AVCAM_UDE_ISO_STREAM* stream,
-    _In_reads_bytes_(frameBytes) const UCHAR* frame,
+    _Inout_opt_ AVCAM_UDE_ISO_STREAM* stream,
+    _In_reads_bytes_opt_(frameBytes) const UCHAR* frame,
     _In_ ULONG frameBytes,
+    _Inout_opt_ AVCAM_UDE_FRAME_PUMP* pump,
     _In_ ULONGLONG firstMicroframe100ns,
     _Out_ PULONG bytesFilled)
 {
@@ -40,10 +42,16 @@ AvCamUdePrepareIsoUrb(
         return STATUS_INVALID_PARAMETER;
     }
     *bytesFilled = 0;
-    if (stream == NULL || frame == NULL ||
-        frameBytes < 4 || frameBytes > AVCAM_UVC_FRAME_MAX_BYTES ||
-        frame[0] != 0xFF || frame[1] != 0xD8 ||
-        frame[frameBytes - 2] != 0xFF || frame[frameBytes - 1] != 0xD9) {
+    if (pump == NULL) {
+        if (stream == NULL || frame == NULL ||
+            frameBytes < 4 || frameBytes > AVCAM_UVC_FRAME_MAX_BYTES ||
+            frame[0] != 0xFF || frame[1] != 0xD8 ||
+            frame[frameBytes - 2] != 0xFF ||
+            frame[frameBytes - 1] != 0xD9) {
+            return STATUS_INVALID_PARAMETER;
+        }
+    } else if (stream != NULL || frame != NULL ||
+               frameBytes != 0 || pump->Source == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -93,13 +101,24 @@ AvCamUdePrepareIsoUrb(
      * window before changing the stream. All per-packet metadata is written
      * only after successful encoding.
      */
-    result = AvCamUdeIsoFill(
-        stream, frame, frameBytes, transfer, transferBytes,
-        offsets, packets, firstMicroframe100ns, lengths, &total);
-    if (result != AVCAM_UDE_ISO_OK) {
-        status = result == AVCAM_UDE_ISO_INVALID ?
-            STATUS_INVALID_PARAMETER : STATUS_DATA_ERROR;
-        goto Exit;
+    if (pump == NULL) {
+        result = AvCamUdeIsoFill(
+            stream, frame, frameBytes, transfer, transferBytes,
+            offsets, packets, firstMicroframe100ns, lengths, &total);
+        if (result != AVCAM_UDE_ISO_OK) {
+            status = result == AVCAM_UDE_ISO_INVALID ?
+                STATUS_INVALID_PARAMETER : STATUS_DATA_ERROR;
+            goto Exit;
+        }
+    } else {
+        result = AvCamUdeFramePumpFill(
+            pump, transfer, transferBytes, offsets, packets,
+            firstMicroframe100ns, lengths, &total);
+        if (result != AVCAM_UDE_PUMP_OK) {
+            status = result == AVCAM_UDE_PUMP_NO_FRAME ?
+                STATUS_DEVICE_NOT_READY : STATUS_INVALID_PARAMETER;
+            goto Exit;
+        }
     }
 
     /* A zero-length scheduled microframe is still a successful ISO packet.
@@ -116,4 +135,34 @@ AvCamUdePrepareIsoUrb(
 Exit:
     ExFreePoolWithTag(workspace, AVCAM_UDE_ISO_WORKSPACE_TAG);
     return status;
+}
+
+/* Legacy single-frame staging entry point. Still not called from EP 0x81. */
+NTSTATUS
+AvCamUdePrepareIsoUrb(
+    _In_ WDFREQUEST request,
+    _Inout_ AVCAM_UDE_ISO_STREAM* stream,
+    _In_reads_bytes_(frameBytes) const UCHAR* frame,
+    _In_ ULONG frameBytes,
+    _In_ ULONGLONG firstMicroframe100ns,
+    _Out_ PULONG bytesFilled)
+{
+    return AvCamUdePrepareIsoUrbCore(
+        request, stream, frame, frameBytes, NULL,
+        firstMicroframe100ns, bytesFilled);
+}
+
+/* Staged source-backed URB filling; requires a serialized PASSIVE worker.
+ * A frame lease is retained over URB boundaries until a real UVC EOF.
+ * Neither function takes WDF request ownership nor completes the URB.
+ */
+NTSTATUS
+AvCamUdePrepareIsoUrbFromPump(
+    _In_ WDFREQUEST request,
+    _Inout_ AVCAM_UDE_FRAME_PUMP* pump,
+    _In_ ULONGLONG firstMicroframe100ns,
+    _Out_ PULONG bytesFilled)
+{
+    return AvCamUdePrepareIsoUrbCore(
+        request, NULL, NULL, 0, pump, firstMicroframe100ns, bytesFilled);
 }
