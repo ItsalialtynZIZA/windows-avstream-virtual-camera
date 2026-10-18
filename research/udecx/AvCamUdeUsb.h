@@ -4,6 +4,7 @@
 #include <usb.h>
 #include <wdfusb.h>
 #include <usbdlib.h>
+#include <usbioctl.h>
 #include <ude/1.0/UdeCx.h>
 
 /* One emulated high-speed UVC device on one software USB controller.
