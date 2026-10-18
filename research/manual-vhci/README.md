@@ -94,6 +94,10 @@ The existing `main` branch and the AVStream work are not modified by this resear
 
 ## Current diagnostic release (2026-10-18, experimental)
 
+- Driver package 0.1.0.4 builds on 0.1.0.3 with high-resolution pacing for
+  isochronous URB completion; the former 128-microframe transfer budget was
+  16 ms, while Windows 11 telemetry observed approximately 31 ms per URB.
+  This is a timing hypothesis and requires a fresh ETW/MF acceptance test.
 - Driver package 0.1.0.3 has MDL bounds checking on every USB transfer mapping,
   ISO microframe layout validation and version-3 persisted stream diagnostics.
 - The video scheduler now uses microframe positions, a phase-preserving 30fps
