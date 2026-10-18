@@ -8,7 +8,15 @@
  * thread-safe. A lease must be held across ALL ISO URBs for one JPEG frame.
  * Never replace the leased frame until the UVC EOF has been packetized.
  */
+/* Never include user-mode CRT stdint.h in the WDK kernel build. The x64
+ * driver already includes ntddk.h, where ULONG_PTR is pointer-width.
+ */
+#if defined(_AMD64_) && defined(WINNT)
+typedef ULONG_PTR AVCAM_UDE_FRAME_POINTER_INTEGER;
+#else
 #include <stdint.h>
+typedef uintptr_t AVCAM_UDE_FRAME_POINTER_INTEGER;
+#endif
 #include "../manual-vhci/shared/AvCamUvcControls.h"
 
 #define AVCAM_UDE_FRAME_OK 0
@@ -51,11 +59,11 @@ AvCamUdeFrameSourceInit(
         return AVCAM_UDE_FRAME_INVALID;
     }
     /* Reject partially overlapping source buffers, not only exact aliases. */
-    if ((uintptr_t)first < (uintptr_t)second) {
-        if ((uintptr_t)second - (uintptr_t)first < firstCapacity) {
+    if ((AVCAM_UDE_FRAME_POINTER_INTEGER)first < (AVCAM_UDE_FRAME_POINTER_INTEGER)second) {
+        if ((AVCAM_UDE_FRAME_POINTER_INTEGER)second - (AVCAM_UDE_FRAME_POINTER_INTEGER)first < firstCapacity) {
             return AVCAM_UDE_FRAME_INVALID;
         }
-    } else if ((uintptr_t)first - (uintptr_t)second < secondCapacity) {
+    } else if ((AVCAM_UDE_FRAME_POINTER_INTEGER)first - (AVCAM_UDE_FRAME_POINTER_INTEGER)second < secondCapacity) {
         return AVCAM_UDE_FRAME_INVALID;
     }
     source->Slots[0].Data = first;
