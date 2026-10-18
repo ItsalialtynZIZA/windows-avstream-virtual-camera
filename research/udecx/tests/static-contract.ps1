@@ -125,4 +125,18 @@ if ($usb -match 'AvCamUdePrepareIsoUrbFromPump\s*\(') {
     throw 'Streaming endpoint must remain fail-closed until WDF async completion is verified.'
 }
 
+$upload = Get-Content (Join-Path $root 'AvCamUdeUploadProtocol.h') -Raw
+Assert-Matches $upload 'AvCamUdeValidateUpload' 'Versioned JPEG upload validation is required.'
+Assert-Matches $upload 'AvCamUdeValidateJpegHeader' 'MJPEG frame dimensions must be validated.'
+Assert-Matches $upload 'IOCTL_AVCAM_UDE_SUBMIT_MJPEG' 'Private write-only upload IOCTL must be declared.'
+Assert-Matches $controller 'WdfDeviceInitAssignSDDLString' 'Private controller access must be restricted.'
+Assert-Matches $controller 'IOCTL_AVCAM_UDE_SUBMIT_MJPEG' 'Controller must handle JPEG frame ingestion.'
+Assert-Matches $controller 'WdfRequestRetrieveInputBuffer' 'Upload must retrieve a bounded METHOD_BUFFERED input.'
+Assert-Matches $controller 'AvCamUdeValidateUpload' 'Upload validation must run before frame publication.'
+Assert-Matches $controller 'AvCamUdeFrameSourcePublish' 'Controller must publish MJPEG into immutable slots.'
+Assert-Matches $controller 'AvCamUdeEnsureFrameStoreLocked' 'Source allocation must be lazy and bounded.'
+Assert-Matches $controller 'AvCamUdeEvtControllerCleanup' 'MJPEG slots need a controller cleanup callback.'
+Assert-Matches $usb 'context->ChildPlugged = FALSE' 'Plug-out must revoke ingestion.'
+Assert-Matches $controller 'if \(!g_AvCamUdeEnableAutoplug\)' 'Experimental USB device must remain unplugged by default.'
+
 Write-Host "UdeCx guarded USB child contract: passed"
