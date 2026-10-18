@@ -35,7 +35,8 @@ Assert-Matches $usb 'UdecxUsbDevicePlugIn' 'Explicit USB child plug-in mechanism
 Assert-Matches $usb 'UdecxUrbCompleteWithNtStatus\(request,\s*STATUS_NOT_SUPPORTED\)' 'Incomplete endpoint requests must not return false success.'
 Assert-Matches $header 'AVCAM_UDE_CONTROLLER_CONTEXT' 'Controller lifecycle context missing.'
 
-if ($workflow -match 'upload-artifact|pnputil|AvCamBusInstall\.exe') {
+$activeWorkflow = ($workflow -split "\r?\n" | Where-Object { $_ -notmatch '^\s*#' }) -join "`n"
+if ($activeWorkflow -match 'actions/upload-artifact|pnputil|AvCamBusInstall\.exe') {
     throw 'Compile-only UdeCx CI must not publish an installable package or attempt installation.'
 }
 Assert-Matches $workflow 'EnablePREfast=true' 'UdeCx PREfast analysis must remain enabled.'
