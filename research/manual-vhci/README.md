@@ -91,3 +91,21 @@ research/manual-vhci/
 ```
 
 The existing `main` branch and the AVStream work are not modified by this research branch.
+
+## Current diagnostic release (2026-10-18, experimental)
+
+- Driver package 0.1.0.3 has MDL bounds checking on every USB transfer mapping,
+  ISO microframe layout validation and version-3 persisted stream diagnostics.
+- The video scheduler now uses microframe positions, a phase-preserving 30fps
+  deadline, and accounts for processing time when waiting for the next URB.
+- The MJPEG frame descriptor advertises a maximum bitrate of 100 Mbps, below
+  the 196.608 Mbps theoretical high-speed 3072-byte/microframe limit.
+- All portable unit tests and PREfast are required to pass in GitHub Actions.
+- **No assertion of a working camera is made before an actual Media Foundation
+  nonempty sample arrives on the Windows 11 test machine.**
+- `tests/runtime-camera-acceptance.ps1` is a guarded elevated acceptance gate:
+  it requires the child unplugged initially, uses a bounded MF probe, retains
+  ETW evidence, and unplugs the child in `finally`. It does not install or remove
+  the root bus or alter driver signing.
+- Preserve historical CI #73 and CI #76 as rollback packages; all work stays
+  on `dev/manual-vhci` and must never be merged into `main` without approval.
