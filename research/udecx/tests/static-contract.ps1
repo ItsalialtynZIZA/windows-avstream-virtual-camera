@@ -101,4 +101,18 @@ if ($usb -match 'WdfIoQueue(Start|Purge)\(') {
     throw 'UdeCx owns the direct endpoint queues; do not independently start or purge them.'
 }
 
+$drain = Get-Content (Join-Path $root 'AvCamUdeEndpointDrain.h') -Raw
+Assert-Matches $drain 'AvCamUdeDrainEnter' 'An endpoint must count accepted requests.'
+Assert-Matches $drain 'AvCamUdeDrainLeave' 'An endpoint must drain accepted requests.'
+Assert-Matches $drain 'AvCamUdeDrainClaimPurgeAck' 'Purge acknowledgement must be single-owner.'
+Assert-Matches $header 'AVCAM_UDE_ENDPOINT_CONTEXT' 'Native endpoint-specific lifecycle context is missing.'
+Assert-Matches $usb 'WdfSpinLockAcquire' 'Endpoint state must be synchronized.'
+Assert-Matches $usb 'WdfWorkItemEnqueue' 'Purge must be deferred to PASSIVE_LEVEL.'
+Assert-Matches $usb 'WdfWorkItemGetParentObject' 'Purge worker must retain endpoint identity.'
+Assert-Matches $usb 'AvCamUdeDrainClaimPurgeAck' 'Purge worker must verify that outstanding I/O drained.'
+Assert-Matches $usb 'AvCamUdeEvtEndpointPurgeWorkItem' 'Purge worker callback missing.'
+if ($usb -match '(?s)AvCamUdeEvtEndpointPurge\([^)]*\)\s*\{[^}]*UdecxUsbEndpointPurgeComplete') {
+    throw 'Unsafe inline purge acknowledgement from DISPATCH_LEVEL callback.'
+}
+
 Write-Host "UdeCx guarded USB child contract: passed"
