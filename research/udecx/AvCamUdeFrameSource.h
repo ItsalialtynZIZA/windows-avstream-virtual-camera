@@ -8,6 +8,7 @@
  * thread-safe. A lease must be held across ALL ISO URBs for one JPEG frame.
  * Never replace the leased frame until the UVC EOF has been packetized.
  */
+#include <stdint.h>
 #include "../manual-vhci/shared/AvCamUvcControls.h"
 
 #define AVCAM_UDE_FRAME_OK 0
@@ -49,6 +50,14 @@ AvCamUdeFrameSourceInit(
         secondCapacity > AVCAM_UVC_FRAME_MAX_BYTES) {
         return AVCAM_UDE_FRAME_INVALID;
     }
+    /* Reject partially overlapping source buffers, not only exact aliases. */
+    if ((uintptr_t)first < (uintptr_t)second) {
+        if ((uintptr_t)second - (uintptr_t)first < firstCapacity) {
+            return AVCAM_UDE_FRAME_INVALID;
+        }
+    } else if ((uintptr_t)first - (uintptr_t)second < secondCapacity) {
+        return AVCAM_UDE_FRAME_INVALID;
+    }
     source->Slots[0].Data = first;
     source->Slots[0].Capacity = firstCapacity;
     source->Slots[0].Length = 0;
@@ -77,14 +86,16 @@ AvCamUdeFrameSourcePublish(
     AVCAM_UDE_FRAME_SLOT* target;
     if (source == 0 || jpeg == 0 || bytes < 4 ||
         bytes > AVCAM_UVC_FRAME_MAX_BYTES ||
-        jpeg[0] != 0xffu || jpeg[1] != 0xd8u ||
-        jpeg[bytes - 2u] != 0xffu || jpeg[bytes - 1u] != 0xd9u ||
         source->NextGeneration == 0) {
         return AVCAM_UDE_FRAME_INVALID;
     }
     slot = source->HasFrame ? (unsigned int)(source->Active ^ 1u) : 0u;
     target = &source->Slots[slot];
     if (target->Data == 0 || target->Capacity < bytes) {
+        return AVCAM_UDE_FRAME_INVALID;
+    }
+    if (jpeg[0] != 0xffu || jpeg[1] != 0xd8u ||
+        jpeg[bytes - 2u] != 0xffu || jpeg[bytes - 1u] != 0xd9u) {
         return AVCAM_UDE_FRAME_INVALID;
     }
     if (target->Readers != 0) {
