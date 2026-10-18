@@ -72,6 +72,9 @@ static void TestMalformedSource() {
         bufferA.data(), 16) == AVCAM_UDE_FRAME_INVALID,
         "Aliased frame slots must fail initialization");
     Expect(AvCamUdeFrameSourceInit(&source, bufferA.data(), 16,
+        bufferA.data() + 1, 15) == AVCAM_UDE_FRAME_INVALID,
+        "Overlapping frame slots must be rejected");
+    Expect(AvCamUdeFrameSourceInit(&source, bufferA.data(), 16,
         bufferB.data(), 16) == AVCAM_UDE_FRAME_OK, "Source init failed");
     Expect(AvCamUdeFrameSourcePublish(&source, invalid,
         sizeof(invalid)) == AVCAM_UDE_FRAME_INVALID,
