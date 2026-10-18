@@ -111,3 +111,47 @@ directly. The start callback does not call `WdfIoQueueStart`; UdeCx owns the
 state of its associated queue. This implementation MUST be revisited before
 enabling a worker/forwarding queue: purge will then need to await a drained
 and cancellation-safe worker path rather than acknowledge immediately.
+
+
+## PASSIVE_LEVEL purge handling and active request drain
+
+The native endpoint now owns a WDF spinlock, WDF work item, and
+`AVCAM_UDE_ENDPOINT_DRAIN` state model (`AvCamUdeEndpointDrain.h`).
+The synchronous callback is counted from admission to its return, including
+its inline USB completion. PURGE immediately stops new admissions and waits
+for the active count to become zero. Only then is a work item queued; its
+PASSIVE_LEVEL callback claims a single acknowledgement and calls
+`UdecxUsbEndpointPurgeComplete` outside the spinlock. This addresses the
+IRQL mismatch between a UdeCx purge callback (up to DISPATCH_LEVEL) and
+`UdecxUsbEndpointPurgeComplete` (PASSIVE_LEVEL).
+
+The six portable test suites include `endpoint-drain-tests.cpp`, which
+checks duplicate purge, START barriers, active I/O draining, generation
+overflow and 5^7 bounded interleavings. This does not validate WDF
+lifetime races under Driver Verifier. An async worker must hold the active
+count until its request and mapped buffer are no longer accessed; it must
+not simply decrement at callback return.
+
+## Cross-URB immutable MJPEG source pump
+
+`AvCamUdeFramePump.h` composes the previously implemented source leases
+with `AvCamUdeIsoFill`, validating all host packet windows up front.
+The current JPEG lease remains pinned across any number of ISO URBs and is
+released only after the encoder has emitted UVC EOF. The next JPEG can be
+selected at a subsequent microframe boundary, including within the same
+URB. The pump retains FID, frame interval, and sparse offset semantics.
+`AvCamUdePrepareIsoUrbFromPump` stages this path against actual UdeCx
+buffers and packet descriptors, but **is not called by endpoint 0x81**.
+
+`frame-pump-tests.cpp` simulates a change of source JPEG while a prior
+JPEG is mid-stream and rejects slot overwrites until EOF. It reconstructs
+the resulting frame generations from ISO payloads and verifies canaries,
+FID/EOF boundaries and byte equality. These are synthetic marker-terminated
+byte arrays, not evidence of a decodable 1920x1080 JPEG.
+
+Still blocked before live video: a validated user-mode JPEG ingress path
+and decoder-compatible samples, proper mapping of host USB frame timing,
+an asynchronous cancel-safe WDF request pipeline with completion-thread
+verification, endpoint reset/power teardown, and isolated Windows VM
+USBVIDEO/Media Foundation acceptance. Do not install the research driver
+or enable automatic USB child enumeration on the primary PC.
