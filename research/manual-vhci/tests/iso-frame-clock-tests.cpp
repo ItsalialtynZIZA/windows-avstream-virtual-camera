@@ -44,6 +44,18 @@ int main()
               <= 2100000 + interval, "Late frame must not build backlog");
         Check(AvCamIsoAdvanceFrameDue(0, 1500000, interval)
               == 1500000 + interval, "First frame due mismatch");
+        // Returned ASAP StartFrame is the submission/start time, not
+        // the frame observed after a 16ms URB has completed.
+        Check(AvCamIsoUsbFrameNumber(10ull * AVCAM_ISO_USB_FRAME_100NS) == 10u,
+              "ASAP start frame mismatch");
+        Check(AvCamIsoUsbFrameNumber(2050ull * AVCAM_ISO_USB_FRAME_100NS) == 2u,
+              "ASAP frame wraparound mismatch");
+        const auto began = AvCamIsoUsbFrameNumber(
+            1234ull * AVCAM_ISO_USB_FRAME_100NS);
+        const auto ended = AvCamIsoUsbFrameNumber(
+            (1234ull + 16ull) * AVCAM_ISO_USB_FRAME_100NS);
+        Check(began == 1234u && ended == 1250u && began != ended,
+              "ASAP start frame must not come from completion time");
         std::cout << "ISO 30fps microframe pacing tests passed: "
                   << frames << " frames in 10s.\n";
         return 0;
