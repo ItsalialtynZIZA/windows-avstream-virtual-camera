@@ -41,7 +41,7 @@ static void RunContinuousIsoWindowTest() {
     bool frameStarted = false;
 
     for (unsigned urb = 0; urb < urbs; ++urb) {
-        std::fill(buffer.begin(), buffer.end(), 0xA5u);
+        std::fill(buffer.begin(), buffer.end(), static_cast<unsigned char>(0xA5u));
         std::fill(actual.begin(), actual.end(), 999u);
         unsigned returned = 0;
         const auto result = AvCamUdeIsoFill(
