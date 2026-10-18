@@ -449,8 +449,13 @@ AvCamUdeUsbCreateAndPlug(_In_ WDFDEVICE controller)
     status = UdecxUsbDevicePlugIn(usbDevice, &options);
     if (!NT_SUCCESS(status)) goto Fail;
 
+    /* User-mode publishers observe child presence under the same lock
+     * that protects source storage across future USB streaming workers.
+     */
+    WdfWaitLockAcquire(context->FrameLock, NULL);
     context->UsbDevice = usbDevice;
     context->ChildPlugged = TRUE;
+    WdfWaitLockRelease(context->FrameLock);
     return STATUS_SUCCESS;
 
 Fail:
@@ -470,16 +475,27 @@ AvCamUdeUsbDisconnect(_In_ WDFDEVICE controller)
 {
     PAVCAM_UDE_CONTROLLER_CONTEXT context =
         AvCamUdeControllerGetContext(controller);
+    UDECXUSBDEVICE usbDevice;
+    BOOLEAN plugged;
 
-    if (context->UsbDevice != NULL) {
-        if (context->ChildPlugged) {
-            (VOID)UdecxUsbDevicePlugOutAndDelete(context->UsbDevice);
+    /* Revoke user-mode ingestion BEFORE deleting the child. Never hold
+     * FrameLock across UdecxUsbDevicePlugOutAndDelete: UdeCx can invoke
+     * endpoint callbacks as part of its removal path.
+     */
+    WdfWaitLockAcquire(context->FrameLock, NULL);
+    usbDevice = context->UsbDevice;
+    plugged = context->ChildPlugged;
+    context->ChildPlugged = FALSE;
+    context->UsbDevice = NULL;
+    WdfWaitLockRelease(context->FrameLock);
+
+    if (usbDevice != NULL) {
+        if (plugged) {
+            (VOID)UdecxUsbDevicePlugOutAndDelete(usbDevice);
         } else {
-            WdfObjectDelete(context->UsbDevice);
+            WdfObjectDelete(usbDevice);
         }
-        context->UsbDevice = NULL;
         context->ControlEndpoint = NULL;
         context->VideoEndpoint = NULL;
-        context->ChildPlugged = FALSE;
     }
 }
