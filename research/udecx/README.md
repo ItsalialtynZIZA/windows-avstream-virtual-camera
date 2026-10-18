@@ -47,6 +47,16 @@ The new `AvCamUdeIso.h` provides a platform-independent encoder for ISO URB pack
 
 Microsoft's UdeCx guide specifically warns that data-transfer URBs should not complete synchronously on the driver's request callback thread, and recommends completion from a separate DPC. Its individual `UdecxUrb*()` helpers document PASSIVE_LEVEL constraints. Before enabling an actual endpoint, resolve the IRQL/ownership differences using a queue-and-completion architecture, Driver Verifier, and real Windows USB enumeration. The existing EP0 implementation also currently completes inline; treat it as compile-only research until this is resolved.
 
+## Milestone: native ISO URB preflight + cancellation ownership model
+
+The kernel now builds and calls `AvCamUdeInspectIsoUrb` from the UdeCx video endpoint `0x81` before rejecting unsupported streaming requests. It reads the incoming WDF request parameters, requires `URB_FUNCTION_ISOCH_TRANSFER` and an IN direction, checks the variable-length isochronous packet array against `UrbHeader.Length`, obtains the real mapped transfer buffer through `UdecxUrbRetrieveBuffer`, and validates **every packet window** for ordering, size and bounds. The USB device uses a passive-execution WDFDEVICE because the UdeCx transfer-buffer helper requires `PASSIVE_LEVEL`.
+
+These checks are covered by an independent native-header simulation (`iso-urb-layout-tests.cpp`) including truncated headers, oversized packet counts, invalid offsets, incorrect direction, and transfer-buffer mismatches.
+
+A separate portable `AvCamUdeRequestLifecycle.h` models cancellation while a worker still owns a buffer and permits one completion claim only after the worker has relinquished ownership. `request-lifecycle-tests.cpp` verifies cancellation-before-work-end, cancellation-before-completion, and duplicate completion prevention. **The model is intentionally not thread-safe and is not yet used to complete kernel requests**; the production WDF implementation must serialize transitions, connect `EvtIoCanceledOnQueue` to a deferred completion path, and independently verify DPC/PASSIVE_LEVEL requirements with Driver Verifier.
+
+**Streaming still fails closed.** A validated ISO URB currently receives `STATUS_NOT_SUPPORTED`; `AvCamUdeIsoFill` is not yet called on a live URB, no input JPEG source exists on the new UdeCx device, and the child auto-plug gate stays disabled. CI passing does not mean Windows has enumerated the camera or decoded frames.
+
 ## Required gates before any installation
 
 1. WDK CI and PREfast must compile and link the controller plus the USB-device lifecycle without warnings; the static contract must ensure auto-plug stays disabled. No installer or signed device package should be published as working-camera software yet.
