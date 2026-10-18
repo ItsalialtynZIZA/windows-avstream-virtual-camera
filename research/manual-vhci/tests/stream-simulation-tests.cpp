@@ -115,8 +115,14 @@ int main()
                 "Continuous video must populate most USB microframes");
         Require(completeFrames>=298 && completeFrames<=302,
                 "MJPEG stream drifted away from 30fps");
-        Require(state.Offset==0 && reconstructed.empty(),
-                "Streaming test ended with a partial JPEG");
+        // The 10-second observation window may stop while a new JPEG is
+        // being transmitted. Require its buffered bytes to match the
+        // beginning of the source frame, rather than requiring EOF to
+        // coincide exactly with the test shutdown boundary.
+        Require(reconstructed.size() <= jpeg.size() &&
+                reconstructed.size() == state.Offset &&
+                std::equal(reconstructed.begin(), reconstructed.end(), jpeg.begin()),
+                "Incomplete final MJPEG frame must be an exact source prefix");
         std::cout << "Integrated ISO / UVC 10s test passed: "
                   << completeFrames << " complete MJPEG frames.\n";
         return 0;
