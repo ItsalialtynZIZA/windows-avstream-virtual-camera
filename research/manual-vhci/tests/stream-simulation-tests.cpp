@@ -31,7 +31,7 @@ int main()
         unsigned char lastFid = 0;
 
         for (unsigned int urb=0; urb<625; ++urb) {
-            std::fill(transfer.begin(), transfer.end(), 0xCD);
+            std::fill(transfer.begin(), transfer.end(), static_cast<unsigned char>(0xCD));
             const unsigned long long now = 50000000ull + urb * urbDuration;
             bool eof = false;
             unsigned long returnedBytes = 0;
