@@ -10,6 +10,7 @@
 #include "AvCamUdeEndpointDrain.h"
 #include "AvCamUdeIso.h"
 #include "AvCamUdeFramePump.h"
+#include "AvCamUdeUploadProtocol.h"
 
 /* One emulated high-speed UVC device on one software USB controller.
  * The current milestone is compile-only. No child is plugged in unless
@@ -20,6 +21,15 @@ typedef struct _AVCAM_UDE_CONTROLLER_CONTEXT {
     UDECXUSBENDPOINT ControlEndpoint;
     UDECXUSBENDPOINT VideoEndpoint;
     BOOLEAN ChildPlugged;
+    /* PASSIVE_LEVEL lock shared by MJPEG publication and future ISO pump.
+     * Slots live until controller cleanup, never until one URB completion.
+     * FrameStorage allocation is lazy and happens only after child plug-in.
+     */
+    WDFWAITLOCK FrameLock;
+    PUCHAR FrameStorage[2];
+    AVCAM_UDE_FRAME_SOURCE FrameSource;
+    BOOLEAN FrameSourceReady;
+    ULONGLONG UploadedFrames;
 } AVCAM_UDE_CONTROLLER_CONTEXT, *PAVCAM_UDE_CONTROLLER_CONTEXT;
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(
     AVCAM_UDE_CONTROLLER_CONTEXT, AvCamUdeControllerGetContext);
