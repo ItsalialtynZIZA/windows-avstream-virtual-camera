@@ -1,5 +1,5 @@
 // Media Foundation camera probe: no kernel driver changes and no OBS needed.
-// Enumerates actual native formats and asynchronously requests one video sample.
+// Enumerates formats and reads a sample in native MJPG by default, or NV12 via --nv12.
 // Build: CMake target AvCamMfProbe (Windows SDK).
 #include <Windows.h>
 #include <mfapi.h>
@@ -27,7 +27,7 @@ static void PrintResult(const wchar_t* stage, HRESULT hr)
     std::wcout << stage << L": HRESULT=0x"
                << std::hex << std::setw(8) << std::setfill(L'0')
                << static_cast<unsigned long>(hr)
-               << std::dec << std::setfill(L' ') << L"\n";
+               << std::dec << std::setfill(L' ') << std::endl;
 }
 
 class SampleCallback final : public IMFSourceReaderCallback
@@ -63,6 +63,9 @@ public:
         HRESULT status, DWORD /* stream */, DWORD flags,
         LONGLONG timestamp, IMFSample* sample) override
     {
+        std::wcout << L"OnReadSample callback entered. Status=0x"
+                   << std::hex << static_cast<unsigned long>(status)
+                   << L" flags=0x" << flags << std::dec << std::endl;
         result_ = status;
         flags_ = flags;
         timestamp_ = timestamp;
@@ -77,8 +80,19 @@ public:
         return S_OK;
     }
 
-    HRESULT STDMETHODCALLTYPE OnEvent(DWORD /* stream */, IMFMediaEvent* /* event */) override
+    HRESULT STDMETHODCALLTYPE OnEvent(DWORD stream, IMFMediaEvent* event) override
     {
+        HRESULT eventStatus = S_OK;
+        MediaEventType eventType = MEUnknown;
+        if (event) {
+            event->GetStatus(&eventStatus);
+            event->GetType(&eventType);
+        }
+        std::wcout << L"OnEvent stream=" << stream
+                   << L" type=" << static_cast<unsigned>(eventType)
+                   << L" HRESULT=0x" << std::hex
+                   << static_cast<unsigned long>(eventStatus)
+                   << std::dec << std::endl;
         return S_OK;
     }
 
@@ -118,8 +132,16 @@ struct MfRuntime
     }
 };
 
-int wmain()
+int wmain(int argc, wchar_t** argv)
 {
+    bool useNv12 = false;
+    if (argc > 2 || (argc == 2 && std::wstring(argv[1]) != L"--nv12")) {
+        std::wcerr << L"Usage: AvCamMfProbe.exe [--nv12]" << std::endl;
+        return 19;
+    }
+    if (argc == 2) useNv12 = true;
+    std::wcout << L"Requested native format: "
+               << (useNv12 ? L"NV12" : L"MJPG") << std::endl;
     MfRuntime runtime;
     HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     PrintResult(L"COM initialization", hr);
@@ -207,7 +229,8 @@ int wmain()
     PrintResult(L"Create source reader", hr);
     if (FAILED(hr)) return 10;
 
-    ComPtr<IMFMediaType> firstNative;
+    ComPtr<IMFMediaType> selectedNative;
+    const GUID requestedSubtype = useNv12 ? MFVideoFormat_NV12 : MFVideoFormat_MJPG;
     unsigned int types = 0;
     for (DWORD index = 0; index < 32; ++index) {
         ComPtr<IMFMediaType> native;
@@ -218,10 +241,10 @@ int wmain()
             PrintResult(L"Get native video type", hr);
             break;
         }
-        if (index == 0) firstNative = native;
         GUID subtype{};
         UINT32 width = 0, height = 0, rateNum = 0, rateDen = 0;
         native->GetGUID(MF_MT_SUBTYPE, &subtype);
+        if (subtype == requestedSubtype && !selectedNative) selectedNative = native;
         MFGetAttributeSize(native.Get(), MF_MT_FRAME_SIZE, &width, &height);
         MFGetAttributeRatio(native.Get(), MF_MT_FRAME_RATE, &rateNum, &rateDen);
         std::wcout << L"NativeType[" << index << L"] subtype=0x"
@@ -230,10 +253,13 @@ int wmain()
                    << L" fps=" << rateNum << L"/" << rateDen << L"\n";
         ++types;
     }
-    if (types == 0 || !firstNative) {
-        std::wcerr << L"No native video media types exposed.\n";
+    if (types == 0 || !selectedNative) {
+        std::wcerr << L"Requested native format not exposed by camera."
+                   << std::endl;
         return 11;
     }
+    std::wcout << L"Selected native format: "
+               << (useNv12 ? L"NV12" : L"MJPG") << std::endl;
 
     hr = reader->SetStreamSelection(static_cast<DWORD>(MF_SOURCE_READER_ALL_STREAMS), FALSE);
     PrintResult(L"Deselect streams", hr);
@@ -243,20 +269,25 @@ int wmain()
     if (FAILED(hr)) return 13;
 
     hr = reader->SetCurrentMediaType(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
-                                     nullptr, firstNative.Get());
-    PrintResult(L"Select first native format", hr);
+                                     nullptr, selectedNative.Get());
+    PrintResult(L"Select requested native format", hr);
     if (FAILED(hr)) return 14;
 
-    std::wcout << L"Requesting one video sample (8-second timeout)..." << std::endl;
+    std::wcout << L"Requesting one video sample (8-second callback timeout)..."
+               << std::endl;
+    const ULONGLONG sampleStart = GetTickCount64();
     hr = reader->ReadSample(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), 0,
                              nullptr, nullptr, nullptr, nullptr);
     PrintResult(L"Queue asynchronous ReadSample", hr);
     if (FAILED(hr)) return 15;
 
     const DWORD waitResult = WaitForSingleObject(rawCallback->Event(), 8000);
+    const ULONGLONG waitedMs = GetTickCount64() - sampleStart;
+    std::wcout << L"Callback wait result=" << waitResult
+               << L" elapsed_ms=" << waitedMs << std::endl;
     if (waitResult == WAIT_TIMEOUT) {
         std::wcout << L"NO_SAMPLE_WITHIN_8_SECONDS. The media source opened,"
-                      L" but did not deliver a frame.\n";
+                      L" but did not deliver a frame." << std::endl;
         return 16;
     }
     if (waitResult != WAIT_OBJECT_0) {
@@ -271,6 +302,6 @@ int wmain()
     if (FAILED(rawCallback->Result()) || rawCallback->SampleBytes() == 0) {
         return 18;
     }
-    std::wcout << L"MEDIA_FOUNDATION_SAMPLE_RECEIVED\n";
+    std::wcout << L"MEDIA_FOUNDATION_SAMPLE_RECEIVED" << std::endl;
     return 0;
 }
