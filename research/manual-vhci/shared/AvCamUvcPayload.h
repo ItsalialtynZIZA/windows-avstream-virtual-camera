@@ -14,6 +14,53 @@
 #define AVCAM_UVC_PACKET_OK 0
 #define AVCAM_UVC_PACKET_INVALID 1
 
+/*
+ * Spread MJPEG bytes across the negotiated frame interval instead of
+ * exhausting a complete frame in the first few USB microframes.
+ *
+ * Each packet still contains a two-byte UVC header. The USB host's
+ * existing ISO offsets and 3072-byte packet windows remain unchanged.
+ * This is a target packet size, not a change to endpoint descriptors.
+ */
+static __inline unsigned int AvCamUvcPacedPacketCapacity(
+    unsigned int frameBytes,
+    unsigned int physicalCapacity,
+    unsigned int frameInterval100ns,
+    unsigned int microframeInterval100ns
+    )
+{
+    unsigned int microframes;
+    unsigned int payloadBytes;
+
+    if (frameBytes == 0 || physicalCapacity <= AVCAM_UVC_PAYLOAD_HEADER_BYTES ||
+        frameInterval100ns == 0 || microframeInterval100ns == 0) {
+        return 0;
+    }
+    if (physicalCapacity > AVCAM_UVC_PAYLOAD_MAX_BYTES) {
+        physicalCapacity = AVCAM_UVC_PAYLOAD_MAX_BYTES;
+    }
+
+    /* Use ceiling division, avoiding unsigned multiplication overflow. */
+    microframes = frameInterval100ns / microframeInterval100ns;
+    if (frameInterval100ns % microframeInterval100ns != 0) {
+        ++microframes;
+    }
+    if (microframes == 0) {
+        return physicalCapacity;
+    }
+
+    payloadBytes = frameBytes / microframes;
+    if (frameBytes % microframes != 0) {
+        ++payloadBytes;
+    }
+    if (payloadBytes > physicalCapacity - AVCAM_UVC_PAYLOAD_HEADER_BYTES) {
+        payloadBytes = physicalCapacity - AVCAM_UVC_PAYLOAD_HEADER_BYTES;
+    }
+
+    return payloadBytes + AVCAM_UVC_PAYLOAD_HEADER_BYTES;
+}
+
+
 typedef struct _AVCAM_UVC_PACKETIZER {
     unsigned int Offset;
     unsigned int FramesCompleted;
