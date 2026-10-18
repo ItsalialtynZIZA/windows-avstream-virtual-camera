@@ -84,3 +84,15 @@ if(WIN32)
         target_compile_options(AvCamUdeUploadTool PRIVATE /W4 /WX)
     endif()
 endif()
+
+# Real Windows Imaging Component acceptance, unlike the synthetic JPEG
+# marker-only protocol fixtures. CI must decode the reconstructed ISO image.
+if(WIN32)
+    add_executable(AvCamUdeWicJpegTests wic-real-jpeg-tests.cpp)
+    target_compile_features(AvCamUdeWicJpegTests PRIVATE cxx_std_17)
+    target_link_libraries(AvCamUdeWicJpegTests PRIVATE windowscodecs ole32)
+    if(MSVC)
+        target_compile_options(AvCamUdeWicJpegTests PRIVATE /W4 /WX)
+    endif()
+    add_test(NAME udecx-real-wic-jpeg-iso-decode COMMAND AvCamUdeWicJpegTests)
+endif()
