@@ -28,3 +28,13 @@ else()
     target_compile_options(AvCamUdeIsoUrbLayoutTests PRIVATE -Wall -Wextra -Werror)
 endif()
 add_test(NAME udecx-iso-urb-preflight COMMAND AvCamUdeIsoUrbLayoutTests)
+
+
+add_executable(AvCamUdeRequestLifecycleTests request-lifecycle-tests.cpp)
+target_compile_features(AvCamUdeRequestLifecycleTests PRIVATE cxx_std_17)
+if(MSVC)
+    target_compile_options(AvCamUdeRequestLifecycleTests PRIVATE /W4 /WX)
+else()
+    target_compile_options(AvCamUdeRequestLifecycleTests PRIVATE -Wall -Wextra -Werror)
+endif()
+add_test(NAME udecx-request-lifecycle COMMAND AvCamUdeRequestLifecycleTests)
