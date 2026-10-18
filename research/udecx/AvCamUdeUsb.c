@@ -21,8 +21,8 @@ EVT_UDECX_USB_ENDPOINT_PURGE AvCamUdeEvtEndpointPurge;
  * Dynamic video endpoint requests remain explicitly unsupported until
  * UdeCx ISO completion is implemented and tested.
  */
-VOID
-AvCamUdeEvtEndpointIo(
+static VOID
+AvCamUdeProcessEndpointIo(
     _In_ WDFQUEUE queue,
     _In_ WDFREQUEST request,
     _In_ size_t outputLength,
@@ -116,24 +116,105 @@ AvCamUdeEvtEndpointIo(
 }
 
 /*
- * Only the UdeCx-owned endpoint queue exists at this research milestone.
- * No requests are forwarded to internal queues and no URB is retained past
- * EvtIoInternalDeviceControl. UdeCx owns its queue's start/purge state;
- * the client must not change it with WdfIoQueueStart/WdfIoQueuePurge.
- *
- * When asynchronous URBs are introduced, purge acknowledgement MUST wait
- * for all forwarded/active requests to finish or cancel safely.
+ * Count the full duration of the inline callback, including its UdeCx
+ * completion. This guards concurrent endpoint PURGE against acknowledging
+ * while an EP0/ISO callback is still using the USB child or request.
+ * Future asynchronous workers MUST retain this count until buffer access
+ * and cancellation have both ended, not merely until callback return.
+ */
+VOID
+AvCamUdeEvtEndpointIo(
+    _In_ WDFQUEUE queue,
+    _In_ WDFREQUEST request,
+    _In_ size_t outputLength,
+    _In_ size_t inputLength,
+    _In_ ULONG ioctl)
+{
+    PAVCAM_UDE_ENDPOINT_QUEUE_CONTEXT qctx =
+        AvCamUdeEndpointQueueGetContext(queue);
+    PAVCAM_UDE_ENDPOINT_CONTEXT ectx;
+    BOOLEAN admitted = FALSE;
+    BOOLEAN signalPurge = FALSE;
+
+    if (qctx->Endpoint == NULL) {
+        WdfRequestComplete(request, STATUS_INVALID_DEVICE_STATE);
+        return;
+    }
+    ectx = AvCamUdeEndpointGetContext(qctx->Endpoint);
+    WdfSpinLockAcquire(ectx->Lock);
+    admitted = (AvCamUdeDrainEnter(&ectx->Drain) ==
+        AVCAM_UDE_DRAIN_OK);
+    WdfSpinLockRelease(ectx->Lock);
+
+    if (!admitted) {
+        if (ioctl == IOCTL_INTERNAL_USB_SUBMIT_URB) {
+            UdecxUrbCompleteWithNtStatus(request, STATUS_DEVICE_NOT_READY);
+        } else {
+            WdfRequestComplete(request, STATUS_DEVICE_NOT_READY);
+        }
+        return;
+    }
+
+    AvCamUdeProcessEndpointIo(
+        queue, request, outputLength, inputLength, ioctl);
+
+    WdfSpinLockAcquire(ectx->Lock);
+    (VOID)AvCamUdeDrainLeave(&ectx->Drain);
+    if (ectx->Drain.PurgePending && ectx->Drain.Active == 0) {
+        signalPurge = TRUE;
+    }
+    WdfSpinLockRelease(ectx->Lock);
+    if (signalPurge) {
+        WdfWorkItemEnqueue(ectx->PurgeWorkItem);
+    }
+}
+
+/* UdeCx owns its associated endpoint queue. Do not call WdfIoQueuePurge
+ * or WdfIoQueueStart on it. START/PURGE callbacks can be <= DISPATCH_LEVEL.
+ * The UdeCx PURGE acknowledgement API, however, requires PASSIVE_LEVEL.
  */
 VOID
 AvCamUdeEvtEndpointStart(_In_ UDECXUSBENDPOINT endpoint)
 {
-    UNREFERENCED_PARAMETER(endpoint);
+    PAVCAM_UDE_ENDPOINT_CONTEXT ctx = AvCamUdeEndpointGetContext(endpoint);
+    WdfSpinLockAcquire(ctx->Lock);
+    (VOID)AvCamUdeDrainStart(&ctx->Drain);
+    WdfSpinLockRelease(ctx->Lock);
 }
 
 VOID
 AvCamUdeEvtEndpointPurge(_In_ UDECXUSBENDPOINT endpoint)
 {
-    UdecxUsbEndpointPurgeComplete(endpoint);
+    PAVCAM_UDE_ENDPOINT_CONTEXT ctx = AvCamUdeEndpointGetContext(endpoint);
+    BOOLEAN signalPurge = FALSE;
+    WdfSpinLockAcquire(ctx->Lock);
+    if (AvCamUdeDrainBeginPurge(&ctx->Drain) == AVCAM_UDE_DRAIN_OK &&
+        ctx->Drain.Active == 0) {
+        signalPurge = TRUE;
+    }
+    WdfSpinLockRelease(ctx->Lock);
+
+    /* Never acknowledge inline at DISPATCH_LEVEL. If a callback is
+     * active, its final Leave will enqueue the sole acknowledgment.
+     */
+    if (signalPurge) {
+        WdfWorkItemEnqueue(ctx->PurgeWorkItem);
+    }
+}
+
+VOID
+AvCamUdeEvtEndpointPurgeWorkItem(_In_ WDFWORKITEM workItem)
+{
+    UDECXUSBENDPOINT endpoint = (UDECXUSBENDPOINT)
+        WdfWorkItemGetParentObject(workItem);
+    PAVCAM_UDE_ENDPOINT_CONTEXT ctx = AvCamUdeEndpointGetContext(endpoint);
+    BOOLEAN acknowledge;
+    WdfSpinLockAcquire(ctx->Lock);
+    acknowledge = (AvCamUdeDrainClaimPurgeAck(&ctx->Drain) != 0);
+    WdfSpinLockRelease(ctx->Lock);
+    if (acknowledge) {
+        UdecxUsbEndpointPurgeComplete(endpoint);
+    }
 }
 
 VOID
@@ -163,6 +244,10 @@ AvCamUdeCreateDynamicEndpoint(
     NTSTATUS status;
     WDF_IO_QUEUE_CONFIG queueConfig;
     WDF_OBJECT_ATTRIBUTES queueAttributes;
+    WDF_OBJECT_ATTRIBUTES endpointAttributes;
+    WDF_OBJECT_ATTRIBUTES childAttributes;
+    WDF_WORKITEM_CONFIG workItemConfig;
+    PAVCAM_UDE_ENDPOINT_CONTEXT ctx;
     UDECX_USB_ENDPOINT_CALLBACKS callbacks;
     PUDECXUSBENDPOINT_INIT localInit = providedInit;
     WDFQUEUE queue;
@@ -190,16 +275,40 @@ AvCamUdeCreateDynamicEndpoint(
     callbacks.EvtUsbEndpointStart = AvCamUdeEvtEndpointStart;
     callbacks.EvtUsbEndpointPurge = AvCamUdeEvtEndpointPurge;
     UdecxUsbEndpointInitSetCallbacks(localInit, &callbacks);
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
+        &endpointAttributes, AVCAM_UDE_ENDPOINT_CONTEXT);
     status = UdecxUsbEndpointCreate(
-        &localInit, WDF_NO_OBJECT_ATTRIBUTES, endpoint);
+        &localInit, &endpointAttributes, endpoint);
     if (!NT_SUCCESS(status)) {
         /* The endpoint init belongs to the UdeCx callback, not this helper. */
         WdfObjectDelete(queue);
         return status;
     }
 
+    ctx = AvCamUdeEndpointGetContext(*endpoint);
+    AvCamUdeDrainInit(&ctx->Drain);
+    WDF_OBJECT_ATTRIBUTES_INIT(&childAttributes);
+    childAttributes.ParentObject = (WDFOBJECT)*endpoint;
+    status = WdfSpinLockCreate(&childAttributes, &ctx->Lock);
+    if (!NT_SUCCESS(status)) {
+        goto FailEndpoint;
+    }
+    WDF_WORKITEM_CONFIG_INIT(
+        &workItemConfig, AvCamUdeEvtEndpointPurgeWorkItem);
+    status = WdfWorkItemCreate(
+        &workItemConfig, &childAttributes, &ctx->PurgeWorkItem);
+    if (!NT_SUCCESS(status)) {
+        goto FailEndpoint;
+    }
+    AvCamUdeEndpointQueueGetContext(queue)->Endpoint = *endpoint;
     UdecxUsbEndpointSetWdfIoQueue(*endpoint, queue);
     return STATUS_SUCCESS;
+
+FailEndpoint:
+    WdfObjectDelete(*endpoint);
+    *endpoint = NULL;
+    WdfObjectDelete(queue);
+    return status;
 }
 
 NTSTATUS
