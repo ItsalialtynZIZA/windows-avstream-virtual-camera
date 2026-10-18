@@ -35,7 +35,7 @@ typedef struct _AVCAM_FRAME_HEADER {
 
 #define IOCTL_AVCAM_READ_STREAM_STATS \
     CTL_CODE(FILE_DEVICE_AVCAM_BUS, 0x804, METHOD_BUFFERED, FILE_READ_DATA)
-#define AVCAM_STREAM_STATS_VERSION 3u
+#define AVCAM_STREAM_STATS_VERSION 4u
 
 typedef struct _AVCAM_STREAM_STATS {
     unsigned long Version;
@@ -67,6 +67,15 @@ typedef struct _AVCAM_STREAM_STATS {
     unsigned long UvcCommitCount;
     unsigned long SelectAlt0Count;
     unsigned long SelectAlt1Count;
+    /* Version 4: sparse ISO buffer extents and USB frame start telemetry. */
+    unsigned long IsoUrbsWithSparseExtent;
+    unsigned long IsoUrbsWithLeadingEmptyPackets;
+    unsigned long LastIsoFirstFilledPacket;
+    unsigned long LastIsoHighestOccupiedEnd;
+    unsigned long LastIsoSparseExtentBytes;
+    unsigned long MaxIsoSparseExtentBytes;
+    unsigned long LastIsoStartFrame;
+    unsigned long IsoAsapUrbsCompleted;
 } AVCAM_STREAM_STATS, *PAVCAM_STREAM_STATS;
 
 /* ISO rejection reasons exposed by the versioned statistics IOCTL. */
