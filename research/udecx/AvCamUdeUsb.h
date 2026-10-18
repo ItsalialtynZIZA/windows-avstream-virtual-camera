@@ -6,6 +6,7 @@
 #include <usbdlib.h>
 #include <usbioctl.h>
 #include <ude/1.0/UdeCx.h>
+#include "AvCamUdeControl.h"
 
 /* One emulated high-speed UVC device on one software USB controller.
  * The current milestone is compile-only. No child is plugged in unless
@@ -22,9 +23,19 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(
 
 typedef struct _AVCAM_UDE_USB_DEVICE_CONTEXT {
     WDFDEVICE Controller;
+    AVCAM_UVC_STREAM_STATE Stream;
 } AVCAM_UDE_USB_DEVICE_CONTEXT, *PAVCAM_UDE_USB_DEVICE_CONTEXT;
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(
     AVCAM_UDE_USB_DEVICE_CONTEXT, AvCamUdeUsbGetContext);
+
+/* An endpoint queue belongs to the controller; retain the identity
+ * of the UdeCx child and which pipe it represents for safe dispatch. */
+typedef struct _AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT {
+    UDECXUSBDEVICE UsbDevice;
+    UCHAR EndpointAddress;
+} AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT, *PAVCAM_UDE_ENDPOINT_QUEUE_CONTEXT;
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(
+    AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT, AvCamUdeEndpointQueueGetContext);
 
 NTSTATUS AvCamUdeUsbCreateAndPlug(_In_ WDFDEVICE Controller);
 VOID AvCamUdeUsbDisconnect(_In_ WDFDEVICE Controller);
