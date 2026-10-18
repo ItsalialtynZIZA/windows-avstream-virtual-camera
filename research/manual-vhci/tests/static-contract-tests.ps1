@@ -83,6 +83,9 @@ Assert-Contains $source 'AvCamIsoPacketWindowValid' 'ISO packet windows must be 
 Assert-Contains $source 'AvCamRejectIsoUrb' 'Rejected ISO URBs must be counted.'
 Assert-Contains $ioctl 'AVCAM_STREAM_STATS_VERSION 3u' 'Versioned ISO diagnostics must be exposed.'
 Assert-Contains $source 'LastIsoElapsed100ns' 'ISO callback duration telemetry missing.'
+Assert-Contains $source 'AvCamIsoAdvanceFrameDue' 'ISO video cadence must be microframe-aware.'
+Assert-Contains $source 'AvCamMapTransferBuffer' 'USB buffer mapper missing.'
+Assert-Contains $source 'MmGetMdlByteCount' 'USB buffer mapping must validate the MDL backing.'
 Assert-Contains $ioctl 'AVCAM_DIAG_EVENT_ISOCH_STATE' 'ISO state telemetry event definition is missing.'
 Assert-NotContains $ioctl 'METHOD_NEITHER' 'Research IOCTLs must not use METHOD_NEITHER.'
 

@@ -10,6 +10,7 @@
 #include "../shared/AvCamUvcControls.h"
 #include "../shared/AvCamUvcPayload.h"
 #include "../shared/AvCamIsoPacketLayout.h"
+#include "../shared/AvCamIsoFrameClock.h"
 
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD AvCamEvtDeviceAdd;
@@ -1005,29 +1006,36 @@ AvCamProcessIsochTransfer(
 
     ExAcquireFastMutex(&g_AvCamFrameLock);
     now = KeQueryInterruptTime();
-    if (ChildContext->Packetizer.Offset == 0 &&
-        now >= ChildContext->NextFrameDue100ns &&
-        g_AvCamPendingReady) {
-        PUCHAR swap = g_AvCamActiveFrame;
-        g_AvCamActiveFrame = g_AvCamPendingFrame;
-        g_AvCamPendingFrame = swap;
-        g_AvCamActiveBytes = g_AvCamPendingBytes;
-        g_AvCamPendingReady = FALSE;
-        ++g_AvCamStats.FrameSwaps;
-    }
-
     for (i = 0; i < packets; ++i) {
         PUSBD_ISO_PACKET_DESCRIPTOR packet = &transfer->IsoPacket[i];
+        const ULONGLONG packetTime100ns =
+            now + ((ULONGLONG)i * AVCAM_ISO_MICROFRAME_100NS);
         packet->Length = 0;
         packet->Status = USBD_STATUS_SUCCESS;
+        if (!eof && ChildContext->Packetizer.Offset == 0 &&
+            packetTime100ns >= ChildContext->NextFrameDue100ns &&
+            g_AvCamPendingReady) {
+            PUCHAR swap = g_AvCamActiveFrame;
+            g_AvCamActiveFrame = g_AvCamPendingFrame;
+            g_AvCamPendingFrame = swap;
+            g_AvCamActiveBytes = g_AvCamPendingBytes;
+            g_AvCamPendingReady = FALSE;
+            ++g_AvCamStats.FrameSwaps;
+        }
         if (g_AvCamActiveBytes > 0 && !eof &&
             (ChildContext->Packetizer.Offset != 0 ||
-             now >= ChildContext->NextFrameDue100ns)) {
+             packetTime100ns >= ChildContext->NextFrameDue100ns)) {
             ULONG capacity = i + 1 < packets ?
                 transfer->IsoPacket[i + 1].Offset - packet->Offset :
                 originalBytes - packet->Offset;
             unsigned int written = 0;
-            int result = AvCamUvcPacketizeMjpeg(
+            int result;
+            if (ChildContext->Packetizer.Offset == 0) {
+                ChildContext->NextFrameDue100ns = AvCamIsoAdvanceFrameDue(
+                    ChildContext->NextFrameDue100ns, packetTime100ns,
+                    AVCAM_UVC_FRAME_INTERVAL_100NS);
+            }
+            result = AvCamUvcPacketizeMjpeg(
                 &ChildContext->Packetizer, g_AvCamActiveFrame,
                 g_AvCamActiveBytes, buffer + packet->Offset,
                 capacity, &written);
@@ -1038,8 +1046,6 @@ AvCamProcessIsochTransfer(
                 if (ChildContext->Packetizer.Offset == 0) {
                     eof = TRUE;
                     ++g_AvCamStats.MjpegFramesCompleted;
-                    ChildContext->NextFrameDue100ns =
-                        now + AVCAM_UVC_FRAME_INTERVAL_100NS;
                 }
             }
         }
@@ -1070,8 +1076,21 @@ AvCamProcessIsochTransfer(
                               filled, (NTSTATUS)actualBytes);
     }
 
-    delay.QuadPart = -((LONGLONG)packets * 1250ll);
-    (VOID)KeDelayExecutionThread(KernelMode, FALSE, &delay);
+    /*
+     * Account for time already spent processing this URB. Sleeping the
+     * entire 16ms after handling would introduce drift and backlog.
+     */
+    {
+        const ULONGLONG duration100ns =
+            (ULONGLONG)packets * AVCAM_ISO_MICROFRAME_100NS;
+        const ULONGLONG alreadyElapsed100ns =
+            KeQueryInterruptTime() - handlerStarted100ns;
+        if (alreadyElapsed100ns < duration100ns) {
+            delay.QuadPart =
+                -(LONGLONG)(duration100ns - alreadyElapsed100ns);
+            (VOID)KeDelayExecutionThread(KernelMode, FALSE, &delay);
+        }
+    }
     {
         const ULONGLONG elapsed100ns =
             KeQueryInterruptTime() - handlerStarted100ns;
