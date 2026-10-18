@@ -7,6 +7,7 @@
 #include <usbioctl.h>
 #include <ude/1.0/UdeCx.h>
 #include "AvCamUdeControl.h"
+#include "AvCamUdeIso.h"
 
 /* One emulated high-speed UVC device on one software USB controller.
  * The current milestone is compile-only. No child is plugged in unless
@@ -38,6 +39,15 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(
     AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT, AvCamUdeEndpointQueueGetContext);
 
 NTSTATUS AvCamUdeInspectIsoUrb(_In_ WDFREQUEST Request);
+/* PASSIVE_LEVEL only. Prepares payload/packet descriptors, but never completes
+ * or takes ownership of the WDF request. Caller owns cancellation and state. */
+NTSTATUS AvCamUdePrepareIsoUrb(
+    _In_ WDFREQUEST Request,
+    _Inout_ AVCAM_UDE_ISO_STREAM* Stream,
+    _In_reads_bytes_(FrameBytes) const UCHAR* Frame,
+    _In_ ULONG FrameBytes,
+    _In_ ULONGLONG FirstMicroframe100ns,
+    _Out_ PULONG BytesFilled);
 
 NTSTATUS AvCamUdeUsbCreateAndPlug(_In_ WDFDEVICE Controller);
 VOID AvCamUdeUsbDisconnect(_In_ WDFDEVICE Controller);
