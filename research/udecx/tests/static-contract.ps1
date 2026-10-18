@@ -94,5 +94,11 @@ Assert-Matches $source 'AvCamUdeFrameSourceAcquire' 'Immutable JPEG lease API mi
 Assert-Matches $source 'AvCamUdeFrameSourceRelease' 'Frame lease release API missing.'
 Assert-Matches $source 'target->Readers != 0' 'Publishing must not overwrite leased frames.'
 Assert-Matches $usb 'STATUS_NOT_SUPPORTED' 'Live ISO endpoint must remain disabled until request ownership is safe.'
+Assert-Matches $usb 'callbacks.EvtUsbEndpointStart\s*=\s*AvCamUdeEvtEndpointStart' 'Endpoint start callback missing.'
+Assert-Matches $usb 'callbacks.EvtUsbEndpointPurge\s*=\s*AvCamUdeEvtEndpointPurge' 'Endpoint purge callback missing.'
+Assert-Matches $usb 'UdecxUsbEndpointPurgeComplete\(endpoint\)' 'Purge must acknowledge UdeCx after draining forwarded I/O.'
+if ($usb -match 'WdfIoQueue(Start|Purge)\(') {
+    throw 'UdeCx owns the direct endpoint queues; do not independently start or purge them.'
+}
 
 Write-Host "UdeCx guarded USB child contract: passed"
