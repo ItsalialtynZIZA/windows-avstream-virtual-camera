@@ -30,6 +30,17 @@ Assert-Matches $usb 'UdecxUsbDeviceInitSetSpeed\(init,\s*UdecxUsbHighSpeed\)' 'U
 Assert-Matches $usb 'g_AvCamUsbDeviceDescriptor' 'Shared USB device descriptor missing.'
 Assert-Matches $usb 'g_AvCamUsbConfigurationDescriptor' 'Shared UVC config descriptor missing.'
 Assert-Matches $usb 'UdecxUsbDeviceCreate' 'Native UdeCx child device creation missing.'
+Assert-Matches $usb 'UdecxEndpointTypeDynamic' 'UVC alt0 and alt1 require UdeCx dynamic endpoints.'
+Assert-Matches $usb 'EvtUsbDeviceDefaultEndpointAdd\s*=\s*AvCamUdeEvtDefaultEndpointAdd' 'Default endpoint must be added by UdeCx callback.'
+Assert-Matches $usb 'EvtUsbDeviceEndpointAdd\s*=\s*AvCamUdeEvtDynamicEndpointAdd' 'UVC video endpoint must be added dynamically.'
+Assert-Matches $usb 'EvtUsbDeviceEndpointsConfigure\s*=\s*AvCamUdeEvtEndpointsConfigure' 'UVC interface alternate-setting callback missing.'
+if ($usb -match 'UdecxEndpointTypeSimple') {
+    throw 'Simple UdeCx endpoints are incompatible with the advertised UVC alternate settings.'
+}
+$control = Get-Content (Join-Path $root "AvCamUdeControl.h") -Raw
+Assert-Matches $control 'AvCamUdeHandleUvcInterfaceControl' 'Portable bounded UVC control validator is missing.'
+Assert-Matches $control 'setupLength\s*>\s*transferCapacity' 'USB setup length must never exceed available transfer buffer.'
+
 Assert-Matches $usb 'UdecxUsbEndpointCreate' 'Native UdeCx endpoints missing.'
 Assert-Matches $usb 'UdecxUsbDevicePlugIn' 'Explicit USB child plug-in mechanism missing.'
 Assert-Matches $usb 'UdecxUrbCompleteWithNtStatus\(request,\s*STATUS_NOT_SUPPORTED\)' 'Incomplete endpoint requests must not return false success.'
