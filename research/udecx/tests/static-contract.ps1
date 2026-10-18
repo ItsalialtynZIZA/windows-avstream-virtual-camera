@@ -115,4 +115,14 @@ if ($usb -match '(?s)AvCamUdeEvtEndpointPurge\([^)]*\)\s*\{[^}]*UdecxUsbEndpoint
     throw 'Unsafe inline purge acknowledgement from DISPATCH_LEVEL callback.'
 }
 
+$pump = Get-Content (Join-Path $root 'AvCamUdeFramePump.h') -Raw
+Assert-Matches $pump 'AvCamUdeFrameSourceAcquire' 'Frame pump must acquire immutable JPEG leases.'
+Assert-Matches $pump 'AvCamUdeFrameSourceRelease' 'Frame pump must release leases at EOF.'
+Assert-Matches $pump 'AvCamUdeIsoFill' 'Frame pump must emit native ISO packets.'
+Assert-Matches $adapter 'AvCamUdeFramePumpFill' 'Native adapter must stage source-backed ISO URBs.'
+Assert-Matches $header 'AvCamUdePrepareIsoUrbFromPump' 'Native frame pump API declaration missing.'
+if ($usb -match 'AvCamUdePrepareIsoUrbFromPump\s*\(') {
+    throw 'Streaming endpoint must remain fail-closed until WDF async completion is verified.'
+}
+
 Write-Host "UdeCx guarded USB child contract: passed"
