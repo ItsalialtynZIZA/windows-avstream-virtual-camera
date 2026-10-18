@@ -92,6 +92,13 @@ research/manual-vhci/
 
 The existing `main` branch and the AVStream work are not modified by this research branch.
 
+## Frame-pacing experiment 0.1.0.6 (experimental; runtime outcome unknown)
+
+- Primary hypothesis: previously the generator emitted one 42,738-byte JPEG in 14 consecutive 125-us microframes (~1.75ms), then left long runs of zero-length packets. The change tests sustained video transfer without modifying ISO buffer offsets.
+- AvCamUvcPacedPacketCapacity distributes a JPEG over approximately 267 microframes per 33.333ms frame interval. For 42,738 JPEG bytes the target is 161 image bytes plus a 2-byte UVC header per microframe, bounded by the original USB transfer window.
+- Frame boundaries are allowed within ISO URBs, keeping UVC FID/EOF and stable host-provided packet offsets. Portable integration tests verify that a 10-second stream reconstructs exact images and approximates 30fps.
+- CI success only verifies code/build/tests. It does not prove Windows Media Foundation frame delivery; real Windows runtime acceptance is still required.
+- Previous oem60.inf and exported rollback drivers remain unchanged. main is not modified.
 ## Current diagnostic release (2026-10-18, experimental)
 
 - Package 0.1.0.5 addresses two questions from the 0.1.0.4 Windows trace:
