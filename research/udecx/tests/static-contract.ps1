@@ -30,6 +30,14 @@ Assert-Matches $usb 'UdecxUsbDeviceInitSetSpeed\(init,\s*UdecxUsbHighSpeed\)' 'U
 Assert-Matches $usb 'g_AvCamUsbDeviceDescriptor' 'Shared USB device descriptor missing.'
 Assert-Matches $usb 'g_AvCamUsbConfigurationDescriptor' 'Shared UVC config descriptor missing.'
 Assert-Matches $usb 'UdecxUsbDeviceCreate' 'Native UdeCx child device creation missing.'
+$iso = Get-Content (Join-Path $root "AvCamUdeIso.h") -Raw
+Assert-Matches $iso 'AvCamUdeIsoFill' 'Portable host-window ISO packetizer is missing.'
+Assert-Matches $iso 'AvCamIsoPacketWindowValid' 'Every host ISO packet window must be validated.'
+Assert-Matches $iso 'AvCamUvcPacedPacketCapacity' 'ISO MJPEG must enforce bounded packet pacing.'
+Assert-Matches $iso 'AVCAM_UDE_ISO_MAX_PACKETS' 'ISO packet count limit must be explicit.'
+Assert-Matches $iso 'AvCamUvcPacketizeMjpeg' 'ISO packetizer must preserve UVC FID/EOF.'
+Assert-Matches $iso 'NextFrameStart100ns' '30fps scheduling state is missing.'
+
 Assert-Matches $usb 'UdecxEndpointTypeDynamic' 'UVC alt0 and alt1 require UdeCx dynamic endpoints.'
 Assert-Matches $usb 'EvtUsbDeviceDefaultEndpointAdd\s*=\s*AvCamUdeEvtDefaultEndpointAdd' 'Default endpoint must be added by UdeCx callback.'
 Assert-Matches $usb 'EvtUsbDeviceEndpointAdd\s*=\s*AvCamUdeEvtDynamicEndpointAdd' 'UVC video endpoint must be added dynamically.'
