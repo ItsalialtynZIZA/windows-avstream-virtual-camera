@@ -29,12 +29,14 @@ int main()
         unsigned long long nextDue = 0;
         unsigned int completeFrames = 0;
         unsigned char lastFid = 0;
+        unsigned int sparseUrbs = 0;
 
         for (unsigned int urb=0; urb<625; ++urb) {
             std::fill(transfer.begin(), transfer.end(), static_cast<unsigned char>(0xCD));
             const unsigned long long now = 50000000ull + urb * urbDuration;
             bool eof = false;
             unsigned long returnedBytes = 0;
+            unsigned int highestOccupiedEnd = 0;
             for (unsigned int slot=0; slot<packetCount; ++slot) {
                 const unsigned int offset = slot*packetCapacity;
                 const unsigned long long packetTime = now +
@@ -57,6 +59,7 @@ int main()
                         written >= 3 && written <= packetCapacity,
                         "Invalid UVC payload length");
                 returnedBytes+=written;
+                highestOccupiedEnd=offset+written;
                 Require(transfer[offset]==AVCAM_UVC_PAYLOAD_HEADER_BYTES &&
                         (transfer[offset+1] & AVCAM_UVC_PAYLOAD_EOH)!=0,
                         "Malformed UVC packet header");
@@ -78,8 +81,17 @@ int main()
             }
             Require(returnedBytes<=packetCount*packetCapacity,
                     "ISO transfer payload exceeded allocation");
+            const auto sparseExtent = AvCamIsoSparseExtentBytes(
+                highestOccupiedEnd, static_cast<unsigned int>(returnedBytes));
+            if (sparseExtent != 0u) {
+                ++sparseUrbs;
+                Require(highestOccupiedEnd <= transfer.size(),
+                        "Sparse ISO packet write exceeded allocated backing");
+            }
         }
 
+        Require(sparseUrbs>0u,
+                "Expected at least one sparse ISO transfer");
         Require(completeFrames>=298 && completeFrames<=302,
                 "MJPEG stream drifted away from 30fps");
         Require(state.Offset==0 && reconstructed.empty(),
