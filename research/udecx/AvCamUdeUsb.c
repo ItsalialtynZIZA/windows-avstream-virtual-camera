@@ -12,6 +12,13 @@
 EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL AvCamUdeEvtEndpointIo;
 EVT_UDECX_USB_ENDPOINT_RESET AvCamUdeEvtEndpointReset;
 
+/*
+ * Synchronous USB control-URB handling. No request is pended, so there is
+ * no ownership transfer or cancellation race in the control path yet.
+ *
+ * Dynamic video endpoint requests remain explicitly unsupported until
+ * UdeCx ISO completion is implemented and tested.
+ */
 VOID
 AvCamUdeEvtEndpointIo(
     _In_ WDFQUEUE queue,
@@ -20,16 +27,75 @@ AvCamUdeEvtEndpointIo(
     _In_ size_t inputLength,
     _In_ ULONG ioctl)
 {
-    UNREFERENCED_PARAMETER(queue);
+    PAVCAM_UDE_ENDPOINT_QUEUE_CONTEXT endpoint;
+    PAVCAM_UDE_USB_DEVICE_CONTEXT device;
+    WDF_USB_CONTROL_SETUP_PACKET setup;
+    PUCHAR transferBuffer = NULL;
+    ULONG transferCapacity = 0;
+    unsigned int transferred = 0;
+    NTSTATUS status;
+    int result;
+
     UNREFERENCED_PARAMETER(outputLength);
     UNREFERENCED_PARAMETER(inputLength);
 
-    if (ioctl == IOCTL_INTERNAL_USB_SUBMIT_URB) {
-        /* No fabricated successful transfers: UVC class controls and
-         * isochronous endpoint handling are not implemented yet. */
-        UdecxUrbCompleteWithNtStatus(request, STATUS_NOT_SUPPORTED);
-    } else {
+    if (ioctl != IOCTL_INTERNAL_USB_SUBMIT_URB) {
         WdfRequestComplete(request, STATUS_INVALID_DEVICE_REQUEST);
+        return;
+    }
+
+    endpoint = AvCamUdeEndpointQueueGetContext(queue);
+    if (endpoint->EndpointAddress != 0x00 || endpoint->UsbDevice == NULL) {
+        UdecxUrbCompleteWithNtStatus(request, STATUS_NOT_SUPPORTED);
+        return;
+    }
+
+    status = UdecxUrbRetrieveControlSetupPacket(request, &setup);
+    if (!NT_SUCCESS(status)) {
+        UdecxUrbCompleteWithNtStatus(request, status);
+        return;
+    }
+
+    /* Only the UVC interface class is implemented. Never report false
+     * success for unimplemented standard/device/vendor control requests. */
+    if (setup.Packet.bm.Byte != AVCAM_UDE_UVC_INTERFACE_CLASS_IN &&
+        setup.Packet.bm.Byte != AVCAM_UDE_UVC_INTERFACE_CLASS_OUT) {
+        UdecxUrbComplete(request, USBD_STATUS_STALL_PID);
+        return;
+    }
+
+    status = UdecxUrbRetrieveBuffer(
+        request, &transferBuffer, &transferCapacity);
+    if (!NT_SUCCESS(status)) {
+        UdecxUrbCompleteWithNtStatus(request, status);
+        return;
+    }
+
+    device = AvCamUdeUsbGetContext(endpoint->UsbDevice);
+    result = AvCamUdeHandleUvcInterfaceControl(
+        &device->Stream,
+        setup.Packet.bm.Byte,
+        setup.Packet.bRequest,
+        setup.Packet.wValue.Value,
+        setup.Packet.wIndex.Value,
+        setup.Packet.wLength,
+        transferBuffer,
+        transferCapacity,
+        &transferred);
+
+    if (result == AVCAM_UVC_RESULT_OK) {
+        /* Never report a byte count larger than the mapped URB buffer. */
+        if (transferred > transferCapacity ||
+            transferred > setup.Packet.wLength) {
+            UdecxUrbCompleteWithNtStatus(request, STATUS_DATA_ERROR);
+            return;
+        }
+        UdecxUrbSetBytesCompleted(request, (ULONG)transferred);
+        UdecxUrbCompleteWithNtStatus(request, STATUS_SUCCESS);
+    } else if (result == AVCAM_UVC_RESULT_STALL) {
+        UdecxUrbComplete(request, USBD_STATUS_STALL_PID);
+    } else {
+        UdecxUrbCompleteWithNtStatus(request, STATUS_INVALID_PARAMETER);
     }
 }
 
@@ -52,12 +118,14 @@ static
 NTSTATUS
 AvCamUdeCreateDynamicEndpoint(
     _In_ WDFDEVICE controller,
+    _In_ UDECXUSBDEVICE usbDevice,
     _In_ PUDECXUSBENDPOINT_INIT providedInit,
     _In_ UCHAR address,
     _Out_ UDECXUSBENDPOINT* endpoint)
 {
     NTSTATUS status;
     WDF_IO_QUEUE_CONFIG queueConfig;
+    WDF_OBJECT_ATTRIBUTES queueAttributes;
     UDECX_USB_ENDPOINT_CALLBACKS callbacks;
     PUDECXUSBENDPOINT_INIT localInit = providedInit;
     WDFQUEUE queue;
@@ -70,11 +138,15 @@ AvCamUdeCreateDynamicEndpoint(
     WDF_IO_QUEUE_CONFIG_INIT(&queueConfig, WdfIoQueueDispatchSequential);
     queueConfig.EvtIoInternalDeviceControl = AvCamUdeEvtEndpointIo;
     queueConfig.PowerManaged = WdfFalse;
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
+        &queueAttributes, AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT);
     status = WdfIoQueueCreate(controller, &queueConfig,
-                              WDF_NO_OBJECT_ATTRIBUTES, &queue);
+                              &queueAttributes, &queue);
     if (!NT_SUCCESS(status)) {
         return status;
     }
+    AvCamUdeEndpointQueueGetContext(queue)->UsbDevice = usbDevice;
+    AvCamUdeEndpointQueueGetContext(queue)->EndpointAddress = address;
 
     UdecxUsbEndpointInitSetEndpointAddress(localInit, address);
     UDECX_USB_ENDPOINT_CALLBACKS_INIT(&callbacks, AvCamUdeEvtEndpointReset);
@@ -102,7 +174,7 @@ AvCamUdeEvtDefaultEndpointAdd(
         AvCamUdeControllerGetContext(deviceContext->Controller);
 
     return AvCamUdeCreateDynamicEndpoint(
-        deviceContext->Controller, endpointInit, 0x00,
+        deviceContext->Controller, usbDevice, endpointInit, 0x00,
         &controllerContext->ControlEndpoint);
 }
 
@@ -133,7 +205,8 @@ AvCamUdeEvtDynamicEndpointAdd(
     }
 
     return AvCamUdeCreateDynamicEndpoint(
-        deviceContext->Controller, endpointToCreate->UdecxUsbEndpointInit,
+        deviceContext->Controller, usbDevice,
+        endpointToCreate->UdecxUsbEndpointInit,
         descriptor->bEndpointAddress, &controllerContext->VideoEndpoint);
 }
 
@@ -218,6 +291,7 @@ AvCamUdeUsbCreateAndPlug(_In_ WDFDEVICE controller)
     status = UdecxUsbDeviceCreate(&init, &attributes, &usbDevice);
     if (!NT_SUCCESS(status)) goto Fail;
     AvCamUdeUsbGetContext(usbDevice)->Controller = controller;
+    AvCamUvcInitState(&AvCamUdeUsbGetContext(usbDevice)->Stream);
 
     /* UdeCx now creates EP0 and alternate-setting video EP 0x81 through
      * callbacks when its USB configuration changes. */
