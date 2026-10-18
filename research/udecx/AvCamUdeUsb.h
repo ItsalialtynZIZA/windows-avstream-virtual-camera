@@ -7,6 +7,7 @@
 #include <usbioctl.h>
 #include <ude/1.0/UdeCx.h>
 #include "AvCamUdeControl.h"
+#include "AvCamUdeEndpointDrain.h"
 #include "AvCamUdeIso.h"
 
 /* One emulated high-speed UVC device on one software USB controller.
@@ -33,8 +34,21 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(
  * of the UdeCx child and which pipe it represents for safe dispatch. */
 typedef struct _AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT {
     UDECXUSBDEVICE UsbDevice;
+    UDECXUSBENDPOINT Endpoint;
     UCHAR EndpointAddress;
 } AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT, *PAVCAM_UDE_ENDPOINT_QUEUE_CONTEXT;
+
+/* Created on the native UdeCx endpoint object, not the controller. The
+ * spinlock guards the pure state machine. WorkItem acknowledges PURGE at
+ * PASSIVE_LEVEL after the final request has left.
+ */
+typedef struct _AVCAM_UDE_ENDPOINT_CONTEXT {
+    WDFSPINLOCK Lock;
+    WDFWORKITEM PurgeWorkItem;
+    AVCAM_UDE_ENDPOINT_DRAIN Drain;
+} AVCAM_UDE_ENDPOINT_CONTEXT, *PAVCAM_UDE_ENDPOINT_CONTEXT;
+WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(
+    AVCAM_UDE_ENDPOINT_CONTEXT, AvCamUdeEndpointGetContext);
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(
     AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT, AvCamUdeEndpointQueueGetContext);
 
@@ -60,3 +74,4 @@ EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL AvCamUdeEvtEndpointIo;
 EVT_UDECX_USB_ENDPOINT_RESET AvCamUdeEvtEndpointReset;
 EVT_UDECX_USB_ENDPOINT_START AvCamUdeEvtEndpointStart;
 EVT_UDECX_USB_ENDPOINT_PURGE AvCamUdeEvtEndpointPurge;
+EVT_WDF_WORKITEM AvCamUdeEvtEndpointPurgeWorkItem;
