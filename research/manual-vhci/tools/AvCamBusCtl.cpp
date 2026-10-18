@@ -223,7 +223,18 @@ static DWORD PrintStreamStats()
                << L"PortStatusQueries=" << stats.PortStatusQueries
                << L" PortStatusFailures=" << stats.PortStatusFailures
                << L" LastPortStatusFlags=0x" << std::hex
-               << stats.LastPortStatusFlags << std::dec << L"\n";
+               << stats.LastPortStatusFlags << std::dec << L"\n"
+               << L"IsoUrbsRejected=" << stats.IsoUrbsRejected
+               << L" PacketLayout=" << stats.IsoRejectedPacketLayout
+               << L" MdlBounds=" << stats.IsoRejectedMdlBounds
+               << L" LastRejectReason=" << stats.LastIsoRejectReason << L"\n"
+               << L"LastIsoRequestedBytes=" << stats.LastIsoRequestedBytes
+               << L" LastIsoReturnedBytes=" << stats.LastIsoReturnedBytes << L"\n"
+               << L"LastIsoElapsed100ns=" << stats.LastIsoElapsed100ns
+               << L" MaxIsoElapsed100ns=" << stats.MaxIsoElapsed100ns << L"\n"
+               << L"UvcCommitCount=" << stats.UvcCommitCount
+               << L" SelectAlt0Count=" << stats.SelectAlt0Count
+               << L" SelectAlt1Count=" << stats.SelectAlt1Count << L"\n";
     return ERROR_SUCCESS;
 }
 

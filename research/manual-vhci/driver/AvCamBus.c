@@ -9,6 +9,7 @@
 #include "../shared/AvCamUsbDescriptors.h"
 #include "../shared/AvCamUvcControls.h"
 #include "../shared/AvCamUvcPayload.h"
+#include "../shared/AvCamIsoPacketLayout.h"
 
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD AvCamEvtDeviceAdd;
@@ -658,6 +659,13 @@ AvCamSelectInterface(
     }
 
     if (selectInterface->Interface.InterfaceNumber == 1) {
+        ExAcquireFastMutex(&g_AvCamFrameLock);
+        if (selectInterface->Interface.AlternateSetting == 1) {
+            ++g_AvCamStats.SelectAlt1Count;
+        } else {
+            ++g_AvCamStats.SelectAlt0Count;
+        }
+        ExReleaseFastMutex(&g_AvCamFrameLock);
         ChildContext->StreamingAlternateSetting =
             selectInterface->Interface.AlternateSetting;
         AvCamUvcPacketizerReset(&ChildContext->Packetizer);
@@ -823,6 +831,9 @@ AvCamProcessUvcClassInterface(
     }
     if (NT_SUCCESS(status) && request->Request == AVCAM_UVC_SET_CUR &&
         (request->Value >> 8) == AVCAM_UVC_VS_COMMIT_CONTROL) {
+        ExAcquireFastMutex(&g_AvCamFrameLock);
+        ++g_AvCamStats.UvcCommitCount;
+        ExReleaseFastMutex(&g_AvCamFrameLock);
         AvCamUvcPacketizerReset(&ChildContext->Packetizer);
         ChildContext->NextFrameDue100ns = 0;
     }
@@ -898,6 +909,24 @@ AvCamTraceIsochRequest(
 }
 
 
+/* Centralized rejection accounting; no buffer access on invalid URBs. */
+static
+NTSTATUS
+AvCamRejectIsoUrb(_Inout_ PURB Urb, _In_ ULONG Reason)
+{
+    ExAcquireFastMutex(&g_AvCamFrameLock);
+    ++g_AvCamStats.IsoUrbsRejected;
+    g_AvCamStats.LastIsoRejectReason = Reason;
+    if (Reason == AVCAM_ISO_REJECT_PACKET_LAYOUT) {
+        ++g_AvCamStats.IsoRejectedPacketLayout;
+    } else if (Reason == AVCAM_ISO_REJECT_MDL_BOUNDS) {
+        ++g_AvCamStats.IsoRejectedMdlBounds;
+    }
+    ExReleaseFastMutex(&g_AvCamFrameLock);
+    Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
+    return STATUS_INVALID_PARAMETER;
+}
+
 /* Validate an isochronous IN URB before touching any packet buffer.
  * Pacing is experimental: one microframe costs 125us at high speed.
  * Device callbacks explicitly run at PASSIVE_LEVEL to permit the wait.
@@ -921,10 +950,10 @@ AvCamProcessIsochTransfer(
     BOOLEAN eof = FALSE;
     ULONGLONG now;
     LARGE_INTEGER delay;
+    const ULONGLONG handlerStarted100ns = KeQueryInterruptTime();
 
     if (Urb->UrbHeader.Length < base) {
-        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
-        return STATUS_INVALID_PARAMETER;
+        return AvCamRejectIsoUrb(Urb, AVCAM_ISO_REJECT_SHORT_URB);
     }
     transfer = &Urb->UrbIsochronousTransfer;
     packets = transfer->NumberOfPackets;
@@ -938,26 +967,26 @@ AvCamProcessIsochTransfer(
         (transfer->TransferFlags & USBD_TRANSFER_DIRECTION_IN) == 0 ||
         packets == 0 || packets > 1024 || packets > supplied ||
         originalBytes == 0 || originalBytes > AVCAM_MAX_FRAME_BYTES) {
-        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
-        return STATUS_INVALID_PARAMETER;
+        return AvCamRejectIsoUrb(Urb, AVCAM_ISO_REJECT_INVALID_STATE);
+    }
+    /* The transfer's advertised capacity must not exceed its MDL backing. */
+    if (transfer->TransferBufferMDL != NULL &&
+        MmGetMdlByteCount(transfer->TransferBufferMDL) < originalBytes) {
+        return AvCamRejectIsoUrb(Urb, AVCAM_ISO_REJECT_MDL_BOUNDS);
     }
 
     for (i = 0; i < packets; ++i) {
         ULONG start = transfer->IsoPacket[i].Offset;
         ULONG end = i + 1 < packets ?
             transfer->IsoPacket[i + 1].Offset : originalBytes;
-        if (end < start || end > originalBytes ||
-            end - start <= AVCAM_UVC_PAYLOAD_HEADER_BYTES ||
-            end - start > AVCAM_UVC_PAYLOAD_MAX_BYTES) {
-            Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
-            return STATUS_INVALID_PARAMETER;
+        if (!AvCamIsoPacketWindowValid(start, end, originalBytes)) {
+            return AvCamRejectIsoUrb(Urb, AVCAM_ISO_REJECT_PACKET_LAYOUT);
         }
     }
     buffer = (PUCHAR)AvCamMapTransferBuffer(
         transfer->TransferBuffer, transfer->TransferBufferMDL);
     if (buffer == NULL) {
-        Urb->UrbHeader.Status = USBD_STATUS_INVALID_PARAMETER;
-        return STATUS_INVALID_PARAMETER;
+        return AvCamRejectIsoUrb(Urb, AVCAM_ISO_REJECT_NO_BUFFER);
     }
 
     ExAcquireFastMutex(&g_AvCamFrameLock);
@@ -1011,6 +1040,8 @@ AvCamProcessIsochTransfer(
     g_AvCamStats.TotalIsoPayloadBytes += actualBytes;
     g_AvCamStats.LastIsoUrbBytes = actualBytes;
     g_AvCamStats.LastIsoUrbPackets = filled;
+    g_AvCamStats.LastIsoRequestedBytes = originalBytes;
+    g_AvCamStats.LastIsoReturnedBytes = actualBytes;
     ExReleaseFastMutex(&g_AvCamFrameLock);
 
     transfer->ErrorCount = 0;
@@ -1027,6 +1058,18 @@ AvCamProcessIsochTransfer(
 
     delay.QuadPart = -((LONGLONG)packets * 1250ll);
     (VOID)KeDelayExecutionThread(KernelMode, FALSE, &delay);
+    {
+        const ULONGLONG elapsed100ns =
+            KeQueryInterruptTime() - handlerStarted100ns;
+        const ULONG boundedElapsed100ns =
+            elapsed100ns > MAXULONG ? MAXULONG : (ULONG)elapsed100ns;
+        ExAcquireFastMutex(&g_AvCamFrameLock);
+        g_AvCamStats.LastIsoElapsed100ns = boundedElapsed100ns;
+        if (boundedElapsed100ns > g_AvCamStats.MaxIsoElapsed100ns) {
+            g_AvCamStats.MaxIsoElapsed100ns = boundedElapsed100ns;
+        }
+        ExReleaseFastMutex(&g_AvCamFrameLock);
+    }
     return STATUS_SUCCESS;
 }
 

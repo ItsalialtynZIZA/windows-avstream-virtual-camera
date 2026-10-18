@@ -35,7 +35,7 @@ typedef struct _AVCAM_FRAME_HEADER {
 
 #define IOCTL_AVCAM_READ_STREAM_STATS \
     CTL_CODE(FILE_DEVICE_AVCAM_BUS, 0x804, METHOD_BUFFERED, FILE_READ_DATA)
-#define AVCAM_STREAM_STATS_VERSION 2u
+#define AVCAM_STREAM_STATS_VERSION 3u
 
 typedef struct _AVCAM_STREAM_STATS {
     unsigned long Version;
@@ -55,7 +55,26 @@ typedef struct _AVCAM_STREAM_STATS {
     unsigned long PortStatusQueries;
     unsigned long PortStatusFailures;
     unsigned long LastPortStatusFlags;
+    /* Version 3: instrument failures and timing without changing ISO behavior. */
+    unsigned long IsoUrbsRejected;
+    unsigned long IsoRejectedPacketLayout;
+    unsigned long IsoRejectedMdlBounds;
+    unsigned long LastIsoRejectReason;
+    unsigned long LastIsoRequestedBytes;
+    unsigned long LastIsoReturnedBytes;
+    unsigned long LastIsoElapsed100ns;
+    unsigned long MaxIsoElapsed100ns;
+    unsigned long UvcCommitCount;
+    unsigned long SelectAlt0Count;
+    unsigned long SelectAlt1Count;
 } AVCAM_STREAM_STATS, *PAVCAM_STREAM_STATS;
+
+/* ISO rejection reasons exposed by the versioned statistics IOCTL. */
+#define AVCAM_ISO_REJECT_SHORT_URB 1u
+#define AVCAM_ISO_REJECT_INVALID_STATE 2u
+#define AVCAM_ISO_REJECT_PACKET_LAYOUT 3u
+#define AVCAM_ISO_REJECT_MDL_BOUNDS 4u
+#define AVCAM_ISO_REJECT_NO_BUFFER 5u
 
 #define AVCAM_DIAG_TRACE_CAPACITY 128u
 #define AVCAM_DIAG_EVENT_INTERNAL_IOCTL 1u

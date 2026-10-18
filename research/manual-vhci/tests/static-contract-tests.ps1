@@ -78,6 +78,11 @@ Assert-Contains $source 'AvCamQueryConnectedPortStatus' 'Port status handler is 
 Assert-Contains $source 'PortStatusQueries' 'Persistent port-status statistics are missing.'
 Assert-Contains $ioctl 'AVCAM_DIAG_EVENT_PORT_STATUS' 'Port-status trace event is missing.'
 Assert-Contains $source 'KeDelayExecutionThread' 'ISO pacing implementation missing.'
+Assert-Contains $source 'MmGetMdlByteCount' 'ISO transfer must check backing MDL bounds.'
+Assert-Contains $source 'AvCamIsoPacketWindowValid' 'ISO packet windows must be validated.'
+Assert-Contains $source 'AvCamRejectIsoUrb' 'Rejected ISO URBs must be counted.'
+Assert-Contains $ioctl 'AVCAM_STREAM_STATS_VERSION 3u' 'Versioned ISO diagnostics must be exposed.'
+Assert-Contains $source 'LastIsoElapsed100ns' 'ISO callback duration telemetry missing.'
 Assert-Contains $ioctl 'AVCAM_DIAG_EVENT_ISOCH_STATE' 'ISO state telemetry event definition is missing.'
 Assert-NotContains $ioctl 'METHOD_NEITHER' 'Research IOCTLs must not use METHOD_NEITHER.'
 
