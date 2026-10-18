@@ -108,5 +108,5 @@ $parseErrors = $null
 [System.Management.Automation.Language.Parser]::ParseFile(
     $acceptanceScript, [ref]$null, [ref]$parseErrors) | Out-Null
 if (@($parseErrors).Count -ne 0) { throw "Camera runtime acceptance PowerShell syntax invalid: $parseErrors" }
-Assert-Contains $inf 'DriverVer\s*=\s*10/18/2026,0\.1\.0\.3' 'New build must have a distinct DriverVer.'
+Assert-Contains $inf 'DriverVer\s*=\s*10/18/2026,0\.1\.0\.4' 'New build must have a distinct DriverVer.'
 Write-Host 'Static contract tests passed.'
