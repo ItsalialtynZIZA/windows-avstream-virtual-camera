@@ -71,6 +71,19 @@ static ULONG g_AvCamPendingBytes;
 static BOOLEAN g_AvCamPendingReady;
 static AVCAM_STREAM_STATS g_AvCamStats;
 
+/*
+ * ISO frame deadlines are in 125-us microframes. KeQueryInterruptTime
+ * updates only on system ticks (as coarse as 15.625 ms), so use the
+ * precise monotonic interrupt clock for both frame scheduling and timing.
+ */
+static
+ULONGLONG
+AvCamIsoPreciseNow100ns(VOID)
+{
+    ULONG64 qpcTimeStamp = 0;
+    return KeQueryInterruptTimePrecise(&qpcTimeStamp);
+}
+
 static
 VOID
 AvCamRecordDiagnostic(
@@ -130,7 +143,7 @@ AvCamQueryBusTime(
         return STATUS_INVALID_PARAMETER;
     }
     /* USB frames are 1ms. The value wraps on the 2048-frame boundary. */
-    *FrameNumber = (ULONG)((KeQueryInterruptTime() / 10000ull) % 2048ull);
+    *FrameNumber = (ULONG)((AvCamIsoPreciseNow100ns() / 10000ull) % 2048ull);
     AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_USB_BUS_CALLBACK, 2, STATUS_SUCCESS);
     return STATUS_SUCCESS;
 }
@@ -964,7 +977,7 @@ AvCamProcessIsochTransfer(
     BOOLEAN eof = FALSE;
     ULONGLONG now;
     LARGE_INTEGER delay;
-    const ULONGLONG handlerStarted100ns = KeQueryInterruptTime();
+    const ULONGLONG handlerStarted100ns = AvCamIsoPreciseNow100ns();
 
     if (Urb->UrbHeader.Length < base) {
         return AvCamRejectIsoUrb(Urb, AVCAM_ISO_REJECT_SHORT_URB);
@@ -1005,7 +1018,7 @@ AvCamProcessIsochTransfer(
     }
 
     ExAcquireFastMutex(&g_AvCamFrameLock);
-    now = KeQueryInterruptTime();
+    now = AvCamIsoPreciseNow100ns();
     for (i = 0; i < packets; ++i) {
         PUSBD_ISO_PACKET_DESCRIPTOR packet = &transfer->IsoPacket[i];
         const ULONGLONG packetTime100ns =
@@ -1068,7 +1081,7 @@ AvCamProcessIsochTransfer(
     transfer->TransferBufferLength = actualBytes;
     if ((transfer->TransferFlags & USBD_START_ISO_TRANSFER_ASAP) != 0) {
         transfer->StartFrame =
-            (ULONG)((KeQueryInterruptTime() / 10000ull) % 2048ull);
+            (ULONG)((AvCamIsoPreciseNow100ns() / 10000ull) % 2048ull);
     }
     Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
     if (g_AvCamIsochSampleCount <= 4) {
@@ -1084,7 +1097,7 @@ AvCamProcessIsochTransfer(
         const ULONGLONG duration100ns =
             (ULONGLONG)packets * AVCAM_ISO_MICROFRAME_100NS;
         const ULONGLONG alreadyElapsed100ns =
-            KeQueryInterruptTime() - handlerStarted100ns;
+            AvCamIsoPreciseNow100ns() - handlerStarted100ns;
         if (alreadyElapsed100ns < duration100ns) {
             /*
              * The default KeDelayExecutionThread clock quantum can exceed
@@ -1101,7 +1114,7 @@ AvCamProcessIsochTransfer(
                 NULL, NULL, EX_TIMER_HIGH_RESOLUTION);
             if (timer != NULL) {
                 const ULONGLONG elapsedAfterAllocation100ns =
-                    KeQueryInterruptTime() - handlerStarted100ns;
+                    AvCamIsoPreciseNow100ns() - handlerStarted100ns;
                 if (elapsedAfterAllocation100ns < duration100ns) {
                     (VOID)ExSetTimer(
                         timer,
@@ -1122,7 +1135,7 @@ AvCamProcessIsochTransfer(
     }
     {
         const ULONGLONG elapsed100ns =
-            KeQueryInterruptTime() - handlerStarted100ns;
+            AvCamIsoPreciseNow100ns() - handlerStarted100ns;
         const ULONG boundedElapsed100ns =
             elapsed100ns > MAXULONG ? MAXULONG : (ULONG)elapsed100ns;
         ExAcquireFastMutex(&g_AvCamFrameLock);
