@@ -974,6 +974,10 @@ AvCamProcessIsochTransfer(
     ULONG i;
     ULONG filled = 0;
     ULONG actualBytes = 0;
+    ULONG firstFilledPacket = 0;
+    ULONG highestOccupiedEnd = 0;
+    ULONG sparseExtentBytes;
+    ULONG reportedStartFrame;
     BOOLEAN eof = FALSE;
     ULONGLONG now;
     LARGE_INTEGER delay;
@@ -1019,6 +1023,9 @@ AvCamProcessIsochTransfer(
 
     ExAcquireFastMutex(&g_AvCamFrameLock);
     now = AvCamIsoPreciseNow100ns();
+    reportedStartFrame =
+        (transfer->TransferFlags & USBD_START_ISO_TRANSFER_ASAP) != 0 ?
+        AvCamIsoUsbFrameNumber(now) : transfer->StartFrame;
     for (i = 0; i < packets; ++i) {
         PUSBD_ISO_PACKET_DESCRIPTOR packet = &transfer->IsoPacket[i];
         const ULONGLONG packetTime100ns =
@@ -1053,8 +1060,12 @@ AvCamProcessIsochTransfer(
                 g_AvCamActiveBytes, buffer + packet->Offset,
                 capacity, &written);
             if (result == AVCAM_UVC_PACKET_OK) {
+                if (filled == 0) {
+                    firstFilledPacket = i;
+                }
                 packet->Length = written;
                 actualBytes += written;
+                highestOccupiedEnd = packet->Offset + written;
                 ++filled;
                 if (ChildContext->Packetizer.Offset == 0) {
                     eof = TRUE;
@@ -1063,8 +1074,16 @@ AvCamProcessIsochTransfer(
             }
         }
     }
+    sparseExtentBytes =
+        AvCamIsoSparseExtentBytes(highestOccupiedEnd, actualBytes);
     ++g_AvCamStats.IsoUrbsCompleted;
     if (filled > 0) {
+        if (firstFilledPacket != 0) {
+            ++g_AvCamStats.IsoUrbsWithLeadingEmptyPackets;
+        }
+        if (sparseExtentBytes != 0) {
+            ++g_AvCamStats.IsoUrbsWithSparseExtent;
+        }
         ++g_AvCamStats.IsoUrbsWithData;
     } else {
         ++g_AvCamStats.IsoUrbsEmpty;
@@ -1075,14 +1094,23 @@ AvCamProcessIsochTransfer(
     g_AvCamStats.LastIsoUrbPackets = filled;
     g_AvCamStats.LastIsoRequestedBytes = originalBytes;
     g_AvCamStats.LastIsoReturnedBytes = actualBytes;
+    g_AvCamStats.LastIsoFirstFilledPacket = firstFilledPacket;
+    g_AvCamStats.LastIsoHighestOccupiedEnd = highestOccupiedEnd;
+    g_AvCamStats.LastIsoSparseExtentBytes = sparseExtentBytes;
+    if (sparseExtentBytes > g_AvCamStats.MaxIsoSparseExtentBytes) {
+        g_AvCamStats.MaxIsoSparseExtentBytes = sparseExtentBytes;
+    }
+    g_AvCamStats.LastIsoStartFrame = reportedStartFrame;
+    if ((transfer->TransferFlags & USBD_START_ISO_TRANSFER_ASAP) != 0) {
+        ++g_AvCamStats.IsoAsapUrbsCompleted;
+    }
     ExReleaseFastMutex(&g_AvCamFrameLock);
 
     transfer->ErrorCount = 0;
     transfer->TransferBufferLength = actualBytes;
-    if ((transfer->TransferFlags & USBD_START_ISO_TRANSFER_ASAP) != 0) {
-        transfer->StartFrame =
-            (ULONG)((AvCamIsoPreciseNow100ns() / 10000ull) % 2048ull);
-    }
+    /* ASAP requests return the USB frame when streaming started, not
+     * the frame at which the 16-ms transfer completed. */
+    transfer->StartFrame = reportedStartFrame;
     Urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
     if (g_AvCamIsochSampleCount <= 4) {
         AvCamRecordDiagnostic(AVCAM_DIAG_EVENT_ISOCH_COMPLETION,
