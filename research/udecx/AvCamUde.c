@@ -11,11 +11,17 @@
 #include <initguid.h>
 #include <usbioctl.h>
 #include <ude/1.0/UdeCx.h>
+#include "AvCamUdeUsb.h"
+
+/* Explicit safety gate: this build does not enumerate a USB child. */
+#define AVCAM_UDECX_ENABLE_AUTOPLUG 0
 
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD AvCamUdeEvtDeviceAdd;
 EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL AvCamUdeEvtIoDeviceControl;
 EVT_UDECX_WDF_DEVICE_QUERY_USB_CAPABILITY AvCamUdeEvtQueryUsbCapability;
+EVT_WDF_DEVICE_D0_ENTRY AvCamUdeEvtD0Entry;
+EVT_WDF_DEVICE_D0_EXIT AvCamUdeEvtD0Exit;
 
 static const WCHAR kControllerName[] = L"\\Device\\AvCamUdeController0";
 static const WCHAR kControllerLink[] = L"\\DosDevices\\AvCamUdeController0";
@@ -39,12 +45,19 @@ AvCamUdeEvtDeviceAdd(_In_ WDFDRIVER driver,
     WDFDEVICE device;
     WDF_IO_QUEUE_CONFIG queueConfig;
     WDF_FILEOBJECT_CONFIG fileConfig;
+    WDF_PNPPOWER_EVENT_CALLBACKS powerCallbacks;
+    WDF_OBJECT_ATTRIBUTES deviceAttributes;
     UDECX_WDF_DEVICE_CONFIG udeConfig;
     UNICODE_STRING deviceName;
     UNICODE_STRING symbolicLink;
     UNICODE_STRING reference;
 
     UNREFERENCED_PARAMETER(driver);
+
+    WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&powerCallbacks);
+    powerCallbacks.EvtDeviceD0Entry = AvCamUdeEvtD0Entry;
+    powerCallbacks.EvtDeviceD0Exit = AvCamUdeEvtD0Exit;
+    WdfDeviceInitSetPnpPowerEventCallbacks(deviceInit, &powerCallbacks);
 
     /* UdeCx must attach to the FDO before WdfDeviceCreate. */
     status = UdecxInitializeWdfDeviceInit(deviceInit);
@@ -59,7 +72,8 @@ AvCamUdeEvtDeviceAdd(_In_ WDFDRIVER driver,
     status = WdfDeviceInitAssignName(deviceInit, &deviceName);
     if (!NT_SUCCESS(status)) return status;
 
-    status = WdfDeviceCreate(&deviceInit, WDF_NO_OBJECT_ATTRIBUTES, &device);
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&deviceAttributes, AVCAM_UDE_CONTROLLER_CONTEXT);
+    status = WdfDeviceCreate(&deviceInit, &deviceAttributes, &device);
     if (!NT_SUCCESS(status)) return status;
 
     RtlInitUnicodeString(&symbolicLink, kControllerLink);
@@ -80,6 +94,29 @@ AvCamUdeEvtDeviceAdd(_In_ WDFDRIVER driver,
     queueConfig.PowerManaged = WdfFalse;
     return WdfIoQueueCreate(device, &queueConfig,
                             WDF_NO_OBJECT_ATTRIBUTES, WDF_NO_HANDLE);
+}
+
+NTSTATUS
+AvCamUdeEvtD0Entry(_In_ WDFDEVICE device,
+                    _In_ WDF_POWER_DEVICE_STATE previousState)
+{
+    UNREFERENCED_PARAMETER(previousState);
+
+    /* Deliberately disabled until UVC endpoints, class controls, resets,
+     * and cancellation are implemented and independently validated. */
+    if (AVCAM_UDECX_ENABLE_AUTOPLUG == 0) {
+        return STATUS_SUCCESS;
+    }
+    return AvCamUdeUsbCreateAndPlug(device);
+}
+
+NTSTATUS
+AvCamUdeEvtD0Exit(_In_ WDFDEVICE device,
+                   _In_ WDF_POWER_DEVICE_STATE targetState)
+{
+    UNREFERENCED_PARAMETER(targetState);
+    AvCamUdeUsbDisconnect(device);
+    return STATUS_SUCCESS;
 }
 
 VOID
