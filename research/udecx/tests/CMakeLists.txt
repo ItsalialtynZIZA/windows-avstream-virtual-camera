@@ -96,3 +96,33 @@ if(WIN32)
     endif()
     add_test(NAME udecx-real-wic-jpeg-iso-decode COMMAND AvCamUdeWicJpegTests)
 endif()
+
+# OBS/Media Foundation capture -> WIC 1920x1080 MJPEG user-mode pipeline.
+# Built and test-encoded in Actions; no host controller is installed.
+if(WIN32)
+    add_executable(AvCamUdeObsFeeder
+        ../tools/AvCamUdeObsFeeder.cpp
+        ../tools/AvCamUdeMjpegEncoder.cpp
+        ../../../feeder/src/MediaFoundationFrameSource.cpp
+    )
+    target_include_directories(AvCamUdeObsFeeder PRIVATE ../../../shared)
+    target_compile_features(AvCamUdeObsFeeder PRIVATE cxx_std_17)
+    target_compile_definitions(AvCamUdeObsFeeder PRIVATE
+        WINVER=0x0A00 _WIN32_WINNT=0x0A00)
+    target_link_libraries(AvCamUdeObsFeeder PRIVATE
+        windowscodecs ole32 mf mfplat mfreadwrite mfuuid)
+    if(MSVC)
+        target_compile_options(AvCamUdeObsFeeder PRIVATE /W4 /WX /permissive-)
+    endif()
+
+    add_executable(AvCamUdeBgraJpegTests
+        mf-bgra-mjpeg-encode-tests.cpp
+        ../tools/AvCamUdeMjpegEncoder.cpp)
+    target_compile_features(AvCamUdeBgraJpegTests PRIVATE cxx_std_17)
+    target_link_libraries(AvCamUdeBgraJpegTests PRIVATE windowscodecs ole32)
+    if(MSVC)
+        target_compile_options(AvCamUdeBgraJpegTests PRIVATE /W4 /WX)
+    endif()
+    add_test(NAME udecx-mf-bgra-to-decodable-jpeg
+        COMMAND AvCamUdeBgraJpegTests)
+endif()
