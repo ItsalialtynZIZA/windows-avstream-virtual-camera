@@ -23,7 +23,7 @@ The original UdeCx scaffold configured `UdecxEndpointTypeSimple`, although the U
 
 The driver now uses `UdecxEndpointTypeDynamic` and registers `EvtUsbDeviceDefaultEndpointAdd`, `EvtUsbDeviceEndpointAdd`, and `EvtUsbDeviceEndpointsConfigure`. UdeCx supplies each endpoint's init object when the host selects an interface setting. No video endpoint is pre-created in the idle alternate setting.
 
-The portable `AvCamUdeControl.h` validates UVC class/interface request type, exact setup transfer length, backing buffer capacity, and forwards supported Probe/Commit controls to the existing host-tested `AvCamUvcProcessClassInterface` implementation. This reusable helper is tested, but **has not yet been wired into kernel URB dispatch**.
+The portable `AvCamUdeControl.h` validates UVC class/interface request type, exact setup transfer length, backing buffer capacity, and forwards supported Probe/Commit controls to the existing host-tested `AvCamUvcProcessClassInterface` implementation. This helper is wired to the research EP0 URB callback and is compile-tested, but runtime/cancellation/IRQL behavior has not been verified.
 
 The `tests/uvc-protocol-tests.cpp` check validates descriptor total length, alt0/alt1 layout, endpoint direction/type, Probe/Commit state, GET_LEN, wrong recipient/interface and too-short buffers. It is built by CI alongside the independent static safety checks, WDK compile and PREfast.
 
@@ -37,10 +37,20 @@ Successful control requests report their actual byte count using `UdecxUrbSetByt
 
 **This is not Windows runtime verification.** No USB child is automatically plugged in; ordinary USB standard requests and native isochronous video handling are not yet implemented. A safe, cancellation-aware streaming lifecycle and first VM enumeration test remain mandatory before attempting installation.
 
+## Milestone: bounded ISO MJPEG encoding (portable tests, no kernel URB dispatch)
+
+The new `AvCamUdeIso.h` provides a platform-independent encoder for ISO URB packet windows. The host-provided offsets are never compacted or modified; every packet window is validated before writing. A 30fps phase-preserving MJPEG packetizer generates two-byte UVC headers, alternating FID across frames and EOF only on the final packet. It caps each packet's bytes and keeps the next frame's due time in the stream state.
+
+`tests/iso-packet-tests.cpp` simulates more than four seconds of 128-packet USB high-speed ISO URBs against a 42,738-byte test JPEG, reconstructs full frames byte-for-byte, checks FID/EOF, measured frame count, sums of packet lengths, buffer canaries and malformed host offsets. CI runs it separately from UVC control and INF/driver compile checks.
+
+**Important:** This is a portable data encoder, **not** a working Windows UdeCx isochronous endpoint. The kernel callback still returns `STATUS_NOT_SUPPORTED` for endpoint 0x81. Native URB metadata, per-packet completion, cancellation, reset and asynchronous completion need a separate adapter that is validated with a USB host-stack test environment.
+
+Microsoft's UdeCx guide specifically warns that data-transfer URBs should not complete synchronously on the driver's request callback thread, and recommends completion from a separate DPC. Its individual `UdecxUrb*()` helpers document PASSIVE_LEVEL constraints. Before enabling an actual endpoint, resolve the IRQL/ownership differences using a queue-and-completion architecture, Driver Verifier, and real Windows USB enumeration. The existing EP0 implementation also currently completes inline; treat it as compile-only research until this is resolved.
+
 ## Required gates before any installation
 
 1. WDK CI and PREfast must compile and link the controller plus the USB-device lifecycle without warnings; the static contract must ensure auto-plug stays disabled. No installer or signed device package should be published as working-camera software yet.
-2. UdeCx **dynamic** endpoint construction and portable UVC Probe/Commit validation now compile and pass tests, but the helper is not yet connected to kernel URBs, and auto-plug remains disabled. The first Windows VM runtime gate must validate enumeration under `USBHUB3` and binding to `usbvideo.sys` after an explicitly controlled enablement.
+2. UdeCx **dynamic** endpoint construction and portable UVC Probe/Commit validation now compile and pass tests; the helper is connected to the EP0 source but synchronous completion is not yet validated, and auto-plug remains disabled. The first Windows VM runtime gate must validate enumeration under `USBHUB3` and binding to `usbvideo.sys` after an explicitly controlled enablement.
 3. Implement default control endpoint and UVC Probe/Commit, streaming endpoint selection and native UdeCx URB completion methods with cancellation, reset and power handling.
 4. In an isolated test environment, validate real USB device parent chain, 30fps MJPEG integrity, a nonempty Media Foundation sample, and then continuity/OBS/browser operation.
 
