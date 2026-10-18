@@ -11,6 +11,8 @@
 
 EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL AvCamUdeEvtEndpointIo;
 EVT_UDECX_USB_ENDPOINT_RESET AvCamUdeEvtEndpointReset;
+EVT_UDECX_USB_ENDPOINT_START AvCamUdeEvtEndpointStart;
+EVT_UDECX_USB_ENDPOINT_PURGE AvCamUdeEvtEndpointPurge;
 
 /*
  * Synchronous USB control-URB handling. No request is pended, so there is
@@ -113,6 +115,27 @@ AvCamUdeEvtEndpointIo(
     }
 }
 
+/*
+ * Only the UdeCx-owned endpoint queue exists at this research milestone.
+ * No requests are forwarded to internal queues and no URB is retained past
+ * EvtIoInternalDeviceControl. UdeCx owns its queue's start/purge state;
+ * the client must not change it with WdfIoQueueStart/WdfIoQueuePurge.
+ *
+ * When asynchronous URBs are introduced, purge acknowledgement MUST wait
+ * for all forwarded/active requests to finish or cancel safely.
+ */
+VOID
+AvCamUdeEvtEndpointStart(_In_ UDECXUSBENDPOINT endpoint)
+{
+    UNREFERENCED_PARAMETER(endpoint);
+}
+
+VOID
+AvCamUdeEvtEndpointPurge(_In_ UDECXUSBENDPOINT endpoint)
+{
+    UdecxUsbEndpointPurgeComplete(endpoint);
+}
+
 VOID
 AvCamUdeEvtEndpointReset(
     _In_ UDECXUSBENDPOINT endpoint,
@@ -164,6 +187,8 @@ AvCamUdeCreateDynamicEndpoint(
 
     UdecxUsbEndpointInitSetEndpointAddress(localInit, address);
     UDECX_USB_ENDPOINT_CALLBACKS_INIT(&callbacks, AvCamUdeEvtEndpointReset);
+    callbacks.EvtUsbEndpointStart = AvCamUdeEvtEndpointStart;
+    callbacks.EvtUsbEndpointPurge = AvCamUdeEvtEndpointPurge;
     UdecxUsbEndpointInitSetCallbacks(localInit, &callbacks);
     status = UdecxUsbEndpointCreate(
         &localInit, WDF_NO_OBJECT_ATTRIBUTES, endpoint);
