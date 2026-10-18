@@ -32,6 +32,15 @@ Assert-Matches $usb 'g_AvCamUsbConfigurationDescriptor' 'Shared UVC config descr
 Assert-Matches $usb 'UdecxUsbDeviceCreate' 'Native UdeCx child device creation missing.'
 $iso = Get-Content (Join-Path $root "AvCamUdeIso.h") -Raw
 Assert-Matches $iso 'AvCamUdeIsoFill' 'Portable host-window ISO packetizer is missing.'
+$urb = Get-Content (Join-Path $root 'AvCamUdeIsoUrb.c') -Raw
+$layout = Get-Content (Join-Path $root 'AvCamUdeIsoUrbLayout.h') -Raw
+Assert-Matches $urb 'WdfRequestGetParameters' 'Native ISO URBs must be read from WDF request parameters.'
+Assert-Matches $urb 'URB_FUNCTION_ISOCH_TRANSFER' 'ISO URB function must be checked.'
+Assert-Matches $urb 'UdecxUrbRetrieveBuffer' 'ISO transfer buffer must be mapped via UdeCx.'
+Assert-Matches $urb 'AvCamUdeIsoUrbOffsetValid' 'ISO packet offsets must be validated.'
+Assert-Matches $layout 'AvCamUdeIsoUrbHeaderValid' 'Variable-size ISO URB descriptor count must be validated.'
+Assert-Matches $usb 'AvCamUdeInspectIsoUrb' 'Native ISO validation must be routed from the video endpoint.'
+Assert-Matches $controller 'WdfExecutionLevelPassive' 'UdeCx buffer inspection must run at PASSIVE_LEVEL.'
 Assert-Matches $iso 'AvCamIsoPacketWindowValid' 'Every host ISO packet window must be validated.'
 Assert-Matches $iso 'AvCamUvcPacedPacketCapacity' 'ISO MJPEG must enforce bounded packet pacing.'
 Assert-Matches $iso 'AVCAM_UDE_ISO_MAX_PACKETS' 'ISO packet count limit must be explicit.'
