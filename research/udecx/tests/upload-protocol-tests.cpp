@@ -106,12 +106,14 @@ static void TestMalformations() {
     }
     {
         auto p = packet;
-        p[sizeof(AVCAM_UDE_UPLOAD_HEADER) + 31] = 0xd9;
+        p[p.size() - 1] = 0;
         checkRejected(p, "Missing EOI accepted");
     }
     {
         auto p = packet;
-        checkRejected(p, "placeholder");
+        auto* h = reinterpret_cast<AVCAM_UDE_UPLOAD_HEADER*>(p.data());
+        --h->FrameBytes;
+        checkRejected(p, "Trailing bytes or length mismatch accepted");
     }
 }
 int main() {
