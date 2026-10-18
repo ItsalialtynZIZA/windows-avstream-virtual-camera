@@ -347,9 +347,18 @@ static
 PVOID
 AvCamMapTransferBuffer(
     _In_opt_ PVOID TransferBuffer,
-    _In_opt_ PMDL TransferBufferMdl
+    _In_opt_ PMDL TransferBufferMdl,
+    _In_ ULONG RequiredBytes
     )
 {
+    /*
+     * A client-supplied length must never exceed the backing MDL. This
+     * applies to descriptors, UVC controls, and ISO as well as data pipes.
+     */
+    if (TransferBufferMdl != NULL &&
+        MmGetMdlByteCount(TransferBufferMdl) < RequiredBytes) {
+        return NULL;
+    }
     if (TransferBuffer != NULL) {
         return TransferBuffer;
     }
@@ -459,7 +468,8 @@ AvCamCompleteDescriptorRequest(
 
     destination = AvCamMapTransferBuffer(
         descriptorRequest->TransferBuffer,
-        descriptorRequest->TransferBufferMDL
+        descriptorRequest->TransferBufferMDL,
+        bytesToCopy
         );
 
     if (destination == NULL) {
@@ -699,7 +709,8 @@ AvCamGetConfiguration(
 
     destination = (PUCHAR)AvCamMapTransferBuffer(
         request->TransferBuffer,
-        request->TransferBufferMDL
+        request->TransferBufferMDL,
+        1u
         );
     if (destination == NULL) {
         request->TransferBufferLength = 0;
@@ -749,7 +760,8 @@ AvCamGetInterface(
 
     destination = (PUCHAR)AvCamMapTransferBuffer(
         request->TransferBuffer,
-        request->TransferBufferMDL
+        request->TransferBufferMDL,
+        1u
         );
     if (destination == NULL) {
         request->TransferBufferLength = 0;
@@ -802,7 +814,8 @@ AvCamProcessUvcClassInterface(
 
     buffer = (PUCHAR)AvCamMapTransferBuffer(
         request->TransferBuffer,
-        request->TransferBufferMDL
+        request->TransferBufferMDL,
+        originalLength
         );
     actualLength = 0;
     result = AvCamUvcProcessClassInterface(
@@ -984,7 +997,8 @@ AvCamProcessIsochTransfer(
         }
     }
     buffer = (PUCHAR)AvCamMapTransferBuffer(
-        transfer->TransferBuffer, transfer->TransferBufferMDL);
+        transfer->TransferBuffer, transfer->TransferBufferMDL,
+        originalBytes);
     if (buffer == NULL) {
         return AvCamRejectIsoUrb(Urb, AVCAM_ISO_REJECT_NO_BUFFER);
     }
