@@ -9,6 +9,12 @@
  */
 #include "../manual-vhci/shared/AvCamUvcControls.h"
 
+/* Kernel and Win32 SDK define CTL_CODE, FILE_DEVICE_UNKNOWN, METHOD_BUFFERED
+ * and FILE_WRITE_ACCESS. The portable validator never expands this macro.
+ */
+#define IOCTL_AVCAM_UDE_SUBMIT_MJPEG \
+    CTL_CODE(FILE_DEVICE_UNKNOWN, 0x950u, METHOD_BUFFERED, FILE_WRITE_ACCESS)
+
 #define AVCAM_UDE_UPLOAD_MAGIC 0x314A5641u /* "AVJ1" little-endian */
 #define AVCAM_UDE_UPLOAD_VERSION 1u
 #define AVCAM_UDE_UPLOAD_WIDTH 1920u
