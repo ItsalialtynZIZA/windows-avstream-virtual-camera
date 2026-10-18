@@ -332,8 +332,8 @@ bool MediaFoundationFrameSource::ConfigureReader()
         return false;
     }
 
-    reader_->SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS, FALSE);
-    if (FAILED(reader_->SetStreamSelection(MF_SOURCE_READER_FIRST_VIDEO_STREAM, TRUE)))
+    reader_->SetStreamSelection(static_cast<DWORD>(MF_SOURCE_READER_ALL_STREAMS), FALSE);
+    if (FAILED(reader_->SetStreamSelection(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), TRUE)))
     {
         return false;
     }
@@ -359,7 +359,7 @@ bool MediaFoundationFrameSource::ConfigureReader()
     }
 
     if (FAILED(reader_->SetCurrentMediaType(
-            MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+            static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
             nullptr,
             outputType.Get())))
     {
@@ -378,7 +378,7 @@ bool MediaFoundationFrameSource::ValidateCurrentOutputType()
 
     ComPtr<IMFMediaType> currentType;
     if (FAILED(reader_->GetCurrentMediaType(
-            MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+            static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
             &currentType)))
     {
         return false;
@@ -455,7 +455,7 @@ bool MediaFoundationFrameSource::ReadFrame(
         ComPtr<IMFSample> sample;
 
         const HRESULT readResult = reader_->ReadSample(
-            MF_SOURCE_READER_FIRST_VIDEO_STREAM,
+            static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
             0,
             &actualStream,
             &flags,
