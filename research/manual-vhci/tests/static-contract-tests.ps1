@@ -78,7 +78,7 @@ Assert-Contains $source 'AvCamQueryConnectedPortStatus' 'Port status handler is 
 Assert-Contains $source 'PortStatusQueries' 'Persistent port-status statistics are missing.'
 Assert-Contains $ioctl 'AVCAM_DIAG_EVENT_PORT_STATUS' 'Port-status trace event is missing.'
 Assert-Contains $source 'KeQueryInterruptTimePrecise' 'ISO microframe deadlines need the precise clock.'
-Assert-NotContains $source 'KeQueryInterruptTime\\s*\\(' 'Coarse system-tick clock must not drive ISO deadlines.'
+Assert-NotContains $source 'KeQueryInterruptTime\s*\(' 'Coarse system-tick clock must not drive ISO deadlines.'
 Assert-Contains $source 'EX_TIMER_HIGH_RESOLUTION' 'ISO pacing requires a high-resolution timer.'
 Assert-Contains $source 'ExAllocateTimer' 'High-resolution ISO timer allocation missing.'
 Assert-Contains $source 'ExSetTimer' 'High-resolution ISO timer scheduling missing.'
