@@ -28,10 +28,10 @@ AvCamUdePrepareIsoUrb(
     ULONG transferBytes;
     ULONG packets;
     ULONG i;
-    ULONG total = 0;
-    ULONG* workspace;
-    ULONG* offsets;
-    ULONG* lengths;
+    unsigned int total = 0;
+    unsigned int* workspace;
+    unsigned int* offsets;
+    unsigned int* lengths;
     SIZE_T workspaceBytes;
     NTSTATUS status;
     int result;
@@ -76,8 +76,8 @@ AvCamUdePrepareIsoUrb(
     /* Allocate bounded workspace instead of placing 8 KiB on the kernel stack.
      * Packet windows are host-defined; do not rewrite their offsets.
      */
-    workspaceBytes = (SIZE_T)packets * 2u * sizeof(ULONG);
-    workspace = (ULONG*)ExAllocatePool2(
+    workspaceBytes = (SIZE_T)packets * 2u * sizeof(unsigned int);
+    workspace = (unsigned int*)ExAllocatePool2(
         POOL_FLAG_NON_PAGED, workspaceBytes, AVCAM_UDE_ISO_WORKSPACE_TAG);
     if (workspace == NULL) {
         return STATUS_INSUFFICIENT_RESOURCES;
