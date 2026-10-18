@@ -19,6 +19,9 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+      - name: Validate isolated UdeCx USB child contract
+        shell: pwsh
+        run: ./research/udecx/tests/static-contract.ps1
       - name: Restore WDK package cache
         id: wdk-cache
         uses: actions/cache/restore@v4
