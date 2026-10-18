@@ -70,3 +70,33 @@ A separate portable `AvCamUdeRequestLifecycle.h` models cancellation while a wor
 - Keep installed `oem61.inf` and exported `oem60`/`oem59`/`oem58` backups untouched.
 - Do not merge the research branch into `main` without explicit permission.
 - A software-emulated USB device can use native Windows USB class drivers; that does not make it physically connected hardware or guarantee that third-party apps cannot detect emulation.
+
+
+## Staged URB adapter and immutable frame-source leases (not live)
+
+`AvCamUdeIsoAdapter.c` now builds with the WDK. `AvCamUdePrepareIsoUrb`
+validates an actual incoming IN ISO URB using the preflight routine, maps its
+transfer buffer at PASSIVE_LEVEL, allocates bounded nonpaged workspace, and
+calls the portable `AvCamUdeIsoFill` packetizer. On success only, it writes
+each original `IsoPacket[].Length/Status` and returns the sparse sum of
+transferred bytes. It does **not** complete or queue the WDF request; the
+caller must own it exclusively, serialize the stream state, publish actual
+completion bytes through UdeCx, and complete asynchronously with full
+cancel/reset/purge/power handling. Endpoint `0x81` still rejects requests.
+
+`AvCamUdeFrameSource.h` provides a portable two-slot, caller-buffered MJPEG
+source model. Publishing copies into an unleased inactive slot, and acquiring
+a lease pins immutable bytes until the consumer releases it. Both buffer
+ranges must be disjoint, and source operations must be serialized by a
+future kernel lock. The lease must stay valid over the entire JPEG frame,
+not just one URB; a real feeder interface and WDF locking are **not yet
+connected**. The host-only `frame-source-tests.cpp` covers publication,
+buffer pinning, overlapping allocations and busy-slot behavior.
+
+**Known runtime blockers:** real decodable 1920x1080 JPEG ingress, wiring
+frame leases across ISO URBs, handling endpoint START/PURGE/RESET with
+cancellation-safe ownership, and a verified UdeCx completion strategy.
+Microsoft documents PASSIVE_LEVEL for `UdecxUrbRetrieveBuffer`,
+`UdecxUrbSetBytesCompleted` and `UdecxUrbComplete`; a naive completion from
+the endpoint callback/DPC is not valid. Do not enable auto-plug or install
+this scaffold on the primary Windows 11 machine.
