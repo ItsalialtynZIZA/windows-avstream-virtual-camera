@@ -40,6 +40,7 @@
   <ItemGroup>
     <ClCompile Include="AvCamUde.c" />
     <ClCompile Include="AvCamUdeUsb.c" />
+    <ClCompile Include="AvCamUdeIsoUrb.c" />
   </ItemGroup>
   <ItemGroup>
     <Inf Include="AvCamUde.inf" />
