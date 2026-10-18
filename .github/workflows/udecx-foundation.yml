@@ -22,6 +22,13 @@ jobs:
       - name: Validate isolated UdeCx USB child contract
         shell: pwsh
         run: ./research/udecx/tests/static-contract.ps1
+      - name: Build and run portable UVC protocol tests
+        shell: pwsh
+        run: |
+          cmake -S research/udecx/tests -B build/udecx-tests -A x64
+          cmake --build build/udecx-tests --config Release
+          ctest --test-dir build/udecx-tests -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'UdeCx protocol tests failed.' }
       - name: Restore WDK package cache
         id: wdk-cache
         uses: actions/cache/restore@v4
