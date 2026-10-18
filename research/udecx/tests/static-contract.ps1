@@ -39,6 +39,11 @@ Assert-Matches $urb 'URB_FUNCTION_ISOCH_TRANSFER' 'ISO URB function must be chec
 Assert-Matches $urb 'UdecxUrbRetrieveBuffer' 'ISO transfer buffer must be mapped via UdeCx.'
 Assert-Matches $urb 'AvCamUdeIsoUrbOffsetValid' 'ISO packet offsets must be validated.'
 Assert-Matches $layout 'AvCamUdeIsoUrbHeaderValid' 'Variable-size ISO URB descriptor count must be validated.'
+$lifecycle = Get-Content (Join-Path $root 'AvCamUdeRequestLifecycle.h') -Raw
+Assert-Matches $lifecycle 'WorkerOwnsBuffer' 'ISO cancellation must not release worker-owned buffers.'
+Assert-Matches $lifecycle 'CompletionClaimed' 'Each UdeCx URB must have exactly one completion owner.'
+Assert-Matches $lifecycle 'AvCamUdeRequestMarkCancelled' 'Cancellation path model missing.'
+Assert-Matches $lifecycle 'AvCamUdeRequestClaimCompletion' 'Terminal completion ownership model missing.'
 Assert-Matches $usb 'AvCamUdeInspectIsoUrb' 'Native ISO validation must be routed from the video endpoint.'
 Assert-Matches $controller 'WdfExecutionLevelPassive' 'UdeCx buffer inspection must run at PASSIVE_LEVEL.'
 Assert-Matches $iso 'AvCamIsoPacketWindowValid' 'Every host ISO packet window must be validated.'
