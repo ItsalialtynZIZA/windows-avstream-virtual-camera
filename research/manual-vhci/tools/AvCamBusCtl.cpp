@@ -234,7 +234,16 @@ static DWORD PrintStreamStats()
                << L" MaxIsoElapsed100ns=" << stats.MaxIsoElapsed100ns << L"\n"
                << L"UvcCommitCount=" << stats.UvcCommitCount
                << L" SelectAlt0Count=" << stats.SelectAlt0Count
-               << L" SelectAlt1Count=" << stats.SelectAlt1Count << L"\n";
+               << L" SelectAlt1Count=" << stats.SelectAlt1Count << L"\n"
+               << L"IsoUrbsWithSparseExtent=" << stats.IsoUrbsWithSparseExtent
+               << L" IsoUrbsWithLeadingEmptyPackets="
+               << stats.IsoUrbsWithLeadingEmptyPackets << L"\n"
+               << L"LastIsoFirstFilledPacket=" << stats.LastIsoFirstFilledPacket
+               << L" LastIsoHighestOccupiedEnd=" << stats.LastIsoHighestOccupiedEnd
+               << L" LastIsoSparseExtentBytes=" << stats.LastIsoSparseExtentBytes
+               << L" MaxIsoSparseExtentBytes=" << stats.MaxIsoSparseExtentBytes << L"\n"
+               << L"LastIsoStartFrame=" << stats.LastIsoStartFrame
+               << L" IsoAsapUrbsCompleted=" << stats.IsoAsapUrbsCompleted << L"\n";
     return ERROR_SUCCESS;
 }
 
