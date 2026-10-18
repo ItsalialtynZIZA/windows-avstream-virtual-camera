@@ -39,6 +39,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="AvCamUde.c" />
+    <ClCompile Include="AvCamUdeUsb.c" />
   </ItemGroup>
   <ItemGroup>
     <Inf Include="AvCamUde.inf" />
