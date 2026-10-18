@@ -18,9 +18,9 @@ bool EncodeBgraToMjpeg(
     jpeg.clear();
     if (factory == nullptr || bgra == nullptr ||
         width == 0 || height == 0 || width > 4096 || height > 2160 ||
-        width > std::numeric_limits<unsigned int>::max() / 4u ||
+        width > (std::numeric_limits<unsigned int>::max)() / 4u ||
         stride < width * 4u ||
-        height > std::numeric_limits<unsigned int>::max() / stride) {
+        height > (std::numeric_limits<unsigned int>::max)() / stride) {
         return false;
     }
 
