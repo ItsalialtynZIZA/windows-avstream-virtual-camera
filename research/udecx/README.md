@@ -27,7 +27,15 @@ The portable `AvCamUdeControl.h` validates UVC class/interface request type, exa
 
 The `tests/uvc-protocol-tests.cpp` check validates descriptor total length, alt0/alt1 layout, endpoint direction/type, Probe/Commit state, GET_LEN, wrong recipient/interface and too-short buffers. It is built by CI alongside the independent static safety checks, WDK compile and PREfast.
 
-**Runtime blockers remain:** a cancellation-safe, asynchronous UdeCx URB completion path; kernel binding of the UVC control helper; actual isochronous data handling; and USB enumeration testing in an isolated Windows VM. Existing endpoint callbacks still reject URBs. Automatic plug-in remains disabled. Do not install this unfinished driver.
+**Runtime blockers remain:** implementation of native USB standard-request/enum behavior as needed, cancellation-safe asynchronous ISO streaming completion, and USB enumeration plus Media Foundation verification in an isolated Windows VM. EP0 class controls are connected in source, but untested at runtime. The video endpoint still rejects URBs and auto-plug remains disabled. Do not install this unfinished driver.
+
+## Milestone: native EP0 Probe/Commit dispatch (compile-only)
+
+The native UdeCx endpoint queues now record USB child identity and endpoint address. The **EP0** callback retrieves the actual setup packet with `UdecxUrbRetrieveControlSetupPacket`, maps the USB transfer buffer with `UdecxUrbRetrieveBuffer`, and invokes the portable, bounded `AvCamUdeHandleUvcInterfaceControl` on per-child Probe/Commit state.
+
+Successful control requests report their actual byte count using `UdecxUrbSetBytesCompleted` and complete via `UdecxUrbCompleteWithNtStatus`; unsupported UVC requests return `USBD_STATUS_STALL_PID` instead of reporting success. Requests for the streaming endpoint are still rejected. Every request in the current EP0 path completes synchronously, so no endpoint request is deliberately held pending.
+
+**This is not Windows runtime verification.** No USB child is automatically plugged in; ordinary USB standard requests and native isochronous video handling are not yet implemented. A safe, cancellation-aware streaming lifecycle and first VM enumeration test remain mandatory before attempting installation.
 
 ## Required gates before any installation
 
