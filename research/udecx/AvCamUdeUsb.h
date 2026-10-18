@@ -9,6 +9,7 @@
 #include "AvCamUdeControl.h"
 #include "AvCamUdeEndpointDrain.h"
 #include "AvCamUdeIso.h"
+#include "AvCamUdeFramePump.h"
 
 /* One emulated high-speed UVC device on one software USB controller.
  * The current milestone is compile-only. No child is plugged in unless
@@ -60,6 +61,16 @@ NTSTATUS AvCamUdePrepareIsoUrb(
     _Inout_ AVCAM_UDE_ISO_STREAM* Stream,
     _In_reads_bytes_(FrameBytes) const UCHAR* Frame,
     _In_ ULONG FrameBytes,
+    _In_ ULONGLONG FirstMicroframe100ns,
+    _Out_ PULONG BytesFilled);
+
+/* Prepared MJPEG source-backed ISO URB. Call at PASSIVE_LEVEL while holding
+ * exclusive stream ownership, and reset the pump when a request is aborted.
+ * Does not complete, queue, cancel or acquire any WDF request.
+ */
+NTSTATUS AvCamUdePrepareIsoUrbFromPump(
+    _In_ WDFREQUEST Request,
+    _Inout_ AVCAM_UDE_FRAME_PUMP* Pump,
     _In_ ULONGLONG FirstMicroframe100ns,
     _Out_ PULONG BytesFilled);
 
