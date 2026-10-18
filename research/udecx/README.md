@@ -155,3 +155,35 @@ an asynchronous cancel-safe WDF request pipeline with completion-thread
 verification, endpoint reset/power teardown, and isolated Windows VM
 USBVIDEO/Media Foundation acceptance. Do not install the research driver
 or enable automatic USB child enumeration on the primary PC.
+
+
+## OBS / Media Foundation -> WIC MJPEG producer (isolated research tool)
+
+`tools/AvCamUdeObsFeeder.cpp` captures from a Media Foundation source whose
+friendly name contains `OBS Virtual Camera`, using the already existing
+`feeder/src/MediaFoundationFrameSource.cpp` implementation. The capture is
+1280x720 BGRA32; `tools/AvCamUdeMjpegEncoder.cpp` scales it to the advertised
+1920x1080 size with Windows Imaging Component, converts it to 24bpp BGR,
+encodes a **real** JPEG and checks its SOF size and maximum frame bytes before
+submitting it via the private JPEG upload IOCTL. Upload is permitted only to
+the research controller, which itself refuses frames when the experimental
+UdeCx USB child is not plugged in.
+
+The tool's `--dry-run` option exercises Media Foundation capture and WIC
+JPEG encoding without opening or sending anything to a device:
+
+```powershell
+AvCamUdeObsFeeder.exe --device-name "OBS Virtual Camera" --frames 120 --dry-run
+```
+
+This is optional for a future **isolated VM** where OBS capture is already
+available. The source tool is compiled by CI but never run by CI, installed
+or distributed as a signed device package. CI separately runs a generated
+BGRA32 -> WIC 1080p JPEG -> WIC decoder regression without OBS/hardware.
+A successful dry-run or upload does **not** establish that usbvideo.sys has
+enumerated the UVC child or that Media Foundation has read any USB frame.
+
+**Unresolved primary blocker:** UdeCx URB completion/cancel semantics at
+PASSIVE_LEVEL versus the separate-DPC recommendation, plus handling UVC
+stream reset/USB scheduling correctly. Endpoint 0x81 still rejects URBs.
+Do not enable child autoplug or install the research driver on the host PC.
