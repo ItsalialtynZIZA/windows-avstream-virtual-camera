@@ -46,6 +46,25 @@ int main()
                 state.FramesCompleted == 2,
                 "Next frame must have toggled FID and EOF.");
 
+        // A real frame should be spread across approximately 267 USB
+        // microframes (33.3 ms at 125 us), not sent in a short burst.
+        const unsigned int cap = AvCamUvcPacedPacketCapacity(
+            42738u, AVCAM_UVC_PAYLOAD_MAX_BYTES, 333333u, 1250u);
+        Require(cap == 163u,
+                "42KB MJPEG should use approximately 161 image bytes per microframe");
+        Require(AvCamUvcPacedPacketCapacity(1u, 3072u, 333333u, 1250u) == 3u,
+                "Minimum JPEG size requires two-byte header and one data byte");
+        Require(AvCamUvcPacedPacketCapacity(42738u, 100u, 333333u, 1250u) == 100u,
+                "Frame pacing must respect caller's packet buffer bound");
+        Require(AvCamUvcPacedPacketCapacity(42738u, 32768u, 333333u, 1250u) == 163u,
+                "Frame pacing must ignore oversize physical capacity");
+        Require(AvCamUvcPacedPacketCapacity(0u, 3072u, 333333u, 1250u) == 0u,
+                "Zero-length frames must not produce ISO packets");
+        Require(AvCamUvcPacedPacketCapacity(42738u, 2u, 333333u, 1250u) == 0u,
+                "Insufficient space for UVC packet must be rejected");
+        Require(AvCamUvcPacedPacketCapacity(42738u, 3072u, 0u, 1250u) == 0u,
+                "Frame interval must not be zero");
+
         // Preserve destination sentinel and reset actualLength on failures.
         unsigned char sentinel[4]{0xAA, 0xBB, 0xCC, 0xDD};
         actual = 777;
