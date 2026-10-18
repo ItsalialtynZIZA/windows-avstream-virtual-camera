@@ -97,7 +97,9 @@ The existing `main` branch and the AVStream work are not modified by this resear
 - Driver package 0.1.0.4 builds on 0.1.0.3 with high-resolution pacing for
   isochronous URB completion; the former 128-microframe transfer budget was
   16 ms, while Windows 11 telemetry observed approximately 31 ms per URB.
-  This is a timing hypothesis and requires a fresh ETW/MF acceptance test.
+  Microframe timestamps now use KeQueryInterruptTimePrecise instead of the
+  system-tick-quantized KeQueryInterruptTime. This is a timing hypothesis and
+  requires a fresh ETW/MF acceptance test.
 - Driver package 0.1.0.3 has MDL bounds checking on every USB transfer mapping,
   ISO microframe layout validation and version-3 persisted stream diagnostics.
 - The video scheduler now uses microframe positions, a phase-preserving 30fps
@@ -107,6 +109,8 @@ The existing `main` branch and the AVStream work are not modified by this resear
 - All portable unit tests and PREfast are required to pass in GitHub Actions.
 - **No assertion of a working camera is made before an actual Media Foundation
   nonempty sample arrives on the Windows 11 test machine.**
+- The acceptance gate preserves `driver-stats.txt` on both success and
+  MF probe failure, before automatically unplugging the child.
 - `tests/runtime-camera-acceptance.ps1` is a guarded elevated acceptance gate:
   it requires the child unplugged initially, uses a bounded MF probe, retains
   ETW evidence, and unplugs the child in `finally`. It does not install or remove
