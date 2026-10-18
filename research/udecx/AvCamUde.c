@@ -73,6 +73,8 @@ AvCamUdeEvtDeviceAdd(_In_ WDFDRIVER driver,
     if (!NT_SUCCESS(status)) return status;
 
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&deviceAttributes, AVCAM_UDE_CONTROLLER_CONTEXT);
+    /* UdeCx URB buffer helpers are PASSIVE_LEVEL-only. */
+    deviceAttributes.ExecutionLevel = WdfExecutionLevelPassive;
     status = WdfDeviceCreate(&deviceInit, &deviceAttributes, &device);
     if (!NT_SUCCESS(status)) return status;
 
