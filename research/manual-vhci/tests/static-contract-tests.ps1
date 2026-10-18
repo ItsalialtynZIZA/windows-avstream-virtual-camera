@@ -88,8 +88,14 @@ Assert-Contains $source 'KeDelayExecutionThread' 'Low-resource ISO timer fallbac
 Assert-Contains $source 'MmGetMdlByteCount' 'ISO transfer must check backing MDL bounds.'
 Assert-Contains $source 'AvCamIsoPacketWindowValid' 'ISO packet windows must be validated.'
 Assert-Contains $source 'AvCamRejectIsoUrb' 'Rejected ISO URBs must be counted.'
-Assert-Contains $ioctl 'AVCAM_STREAM_STATS_VERSION 3u' 'Versioned ISO diagnostics must be exposed.'
+Assert-Contains $ioctl 'AVCAM_STREAM_STATS_VERSION 4u' 'Versioned ISO diagnostics must be exposed.'
 Assert-Contains $source 'LastIsoElapsed100ns' 'ISO callback duration telemetry missing.'
+Assert-Contains $ioctl 'AVCAM_STREAM_STATS_VERSION 4u' 'Sparse ISO diagnostics require V4 stream stats.'
+Assert-Contains $source 'AvCamIsoUsbFrameNumber\(now\)' 'ASAP start frame must be captured before completion.'
+Assert-Contains $source 'IsoUrbsWithSparseExtent' 'ISO sparse extent counter missing.'
+Assert-Contains $source 'IsoUrbsWithLeadingEmptyPackets' 'Leading empty packet telemetry missing.'
+Assert-Contains $source 'LastIsoHighestOccupiedEnd' 'ISO highest occupied offset missing.'
+Assert-Contains $source 'LastIsoStartFrame' 'Reported ISO USB start frame telemetry missing.'
 Assert-Contains $source 'AvCamIsoAdvanceFrameDue' 'ISO video cadence must be microframe-aware.'
 Assert-Contains $source 'AvCamMapTransferBuffer' 'USB buffer mapper missing.'
 Assert-Contains $source 'MmGetMdlByteCount' 'USB buffer mapping must validate the MDL backing.'
@@ -110,5 +116,5 @@ $parseErrors = $null
 [System.Management.Automation.Language.Parser]::ParseFile(
     $acceptanceScript, [ref]$null, [ref]$parseErrors) | Out-Null
 if (@($parseErrors).Count -ne 0) { throw "Camera runtime acceptance PowerShell syntax invalid: $parseErrors" }
-Assert-Contains $inf 'DriverVer\s*=\s*10/18/2026,0\.1\.0\.4' 'New build must have a distinct DriverVer.'
+Assert-Contains $inf 'DriverVer\s*=\s*10/18/2026,0\.1\.0\.5' 'New build must have a distinct DriverVer.'
 Write-Host 'Static contract tests passed.'
