@@ -186,8 +186,24 @@ int wmain(int argc, wchar_t** argv)
         if (SUCCEEDED(hr)) {
             std::wstring label(name, length);
             std::wcout << L"Camera: " << label << L"\n";
-            if (label.find(L"AvCam Research Virtual USB Camera") != std::wstring::npos ||
-                label.find(L"AvCam Virtual USB Camera") != std::wstring::npos) {
+            // usbvideo.sys may show the generic "USB Video Device" name.
+            // The UdeCx research descriptors use VID_1234&PID_5678.
+            wchar_t* symbolicLink = nullptr;
+            UINT32 linkLength = 0;
+            std::wstring link;
+            if (SUCCEEDED(device->GetAllocatedString(
+                    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK,
+                    &symbolicLink, &linkLength)) && symbolicLink != nullptr) {
+                link.assign(symbolicLink, linkLength);
+                CoTaskMemFree(symbolicLink);
+            }
+            const bool matchingName =
+                label.find(L"AvCam Research Virtual USB Camera") != std::wstring::npos ||
+                label.find(L"AvCam Virtual USB Camera") != std::wstring::npos;
+            const bool matchingUsbId =
+                link.find(L"vid_1234&pid_5678") != std::wstring::npos ||
+                link.find(L"VID_1234&PID_5678") != std::wstring::npos;
+            if (matchingName || matchingUsbId) {
                 camera = device;
             }
             CoTaskMemFree(name);
