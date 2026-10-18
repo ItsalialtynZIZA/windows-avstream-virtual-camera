@@ -5,6 +5,9 @@
  */
 #include <ntddk.h>
 #include <wdf.h>
+#include <usb.h>
+#include <wdfusb.h>
+#include <usbdlib.h>
 #include <initguid.h>
 #include <usbioctl.h>
 #include <ude/1.0/UdeCx.h>
