@@ -87,6 +87,17 @@ int main()
                     sawMjpegFrame = true;
                     Require(ReadLe16(&g_AvCamUsbConfigurationDescriptor[offset + 5]) == AVCAM_UVC_WIDTH, "MJPEG width mismatch.");
                     Require(ReadLe16(&g_AvCamUsbConfigurationDescriptor[offset + 7]) == AVCAM_UVC_HEIGHT, "MJPEG height mismatch.");
+                    const auto minBitRate = ReadLe32(&g_AvCamUsbConfigurationDescriptor[offset + 9]);
+                    const auto maxBitRate = ReadLe32(&g_AvCamUsbConfigurationDescriptor[offset + 13]);
+                    const auto maxFrameBytes = ReadLe32(&g_AvCamUsbConfigurationDescriptor[offset + 17]);
+                    Require(minBitRate > 0 && maxBitRate >= minBitRate,
+                            "MJPEG descriptor bitrate range invalid.");
+                    Require(maxBitRate >= 63937u * 8u * 30u,
+                            "MJPEG max bitrate smaller than verified test-frame stream.");
+                    Require(maxBitRate <= 3072u * 8000u * 8u,
+                            "MJPEG max bitrate exceeds high-speed ISO endpoint bandwidth.");
+                    Require(maxFrameBytes == 2068480u,
+                            "Descriptor maximum MJPEG frame size disagrees with UVC Probe/Commit.");
                     Require(ReadLe32(&g_AvCamUsbConfigurationDescriptor[offset + 26]) == AVCAM_UVC_FRAME_INTERVAL_100NS, "MJPEG frame interval mismatch.");
                 }
             }
