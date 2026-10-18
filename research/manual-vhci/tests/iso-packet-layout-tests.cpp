@@ -37,7 +37,16 @@ int main() {
         Check(buffer[offset+length]==0xCC &&
               buffer[offset+AVCAM_ISO_MAX_MICROFRAME_BYTES]==0xCC,
               "Short packet corrupted the next packet's offset");
-        std::cout << "ISO window/bounds/short-packet tests passed.\n";
+        Check(AvCamIsoSparseExtentBytes(42766u, 42766u) == 0u,
+              "Packed first-slot ISO payload falsely sparse");
+        Check(AvCamIsoSparseExtentBytes(20u*3072u + 42766u, 42766u)
+                  == 20u*3072u,
+              "Sparse frame beginning after slot 0 was not detected");
+        Check(AvCamIsoSparseExtentBytes(393216u, 0u) == 393216u,
+              "Maximal sparse extent lost");
+        Check(AvCamIsoSparseExtentBytes(0u, 0u) == 0u,
+              "Empty URB reported a sparse extent");
+        std::cout << "ISO window/bounds/short-packet/sparse-extent tests passed.\n";
         return 0;
     } catch (const std::exception& ex) {
         std::cerr << ex.what() << '\n';
