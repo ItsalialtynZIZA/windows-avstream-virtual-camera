@@ -45,7 +45,21 @@ AvCamUdeEvtEndpointIo(
     }
 
     endpoint = AvCamUdeEndpointQueueGetContext(queue);
-    if (endpoint->EndpointAddress != 0x00 || endpoint->UsbDevice == NULL) {
+    if (endpoint->UsbDevice == NULL) {
+        UdecxUrbCompleteWithNtStatus(request, STATUS_INVALID_DEVICE_STATE);
+        return;
+    }
+    if (endpoint->EndpointAddress == 0x81) {
+        /* Validate a real ISO URB, but never fake a completed MJPEG frame.
+         * Async completion, cancellation, and immutable frame storage
+         * must be in place before enabling this transfer endpoint.
+         */
+        status = AvCamUdeInspectIsoUrb(request);
+        UdecxUrbCompleteWithNtStatus(
+            request, NT_SUCCESS(status) ? STATUS_NOT_SUPPORTED : status);
+        return;
+    }
+    if (endpoint->EndpointAddress != 0x00) {
         UdecxUrbCompleteWithNtStatus(request, STATUS_NOT_SUPPORTED);
         return;
     }
