@@ -70,6 +70,8 @@ Assert-Contains $source 'URB_FUNCTION_ISOCH_TRANSFER' 'ISO stream URBs must be c
 Assert-Contains $source 'AvCamTraceIsochRequest' 'ISO stream diagnostics are missing.'
 Assert-Contains $source 'AvCamProcessIsochTransfer' 'ISO IN transfer handler missing.'
 Assert-Contains $source 'AvCamUvcPacketizeMjpeg' 'ISO MJPEG packetizer is not used.'
+Assert-Contains $source 'AvCamUvcPacedPacketCapacity' 'MJPEG samples must be paced over a 30fps frame interval.'
+Assert-NotContains $source 'BOOLEAN eof = FALSE;' 'Premature one-frame-per-URB gating would suppress continuous video.'
 Assert-Contains $source 'AvCamWriteMjpegFrame' 'MJPEG upload handler missing.'
 Assert-Contains $source 'IOCTL_INTERNAL_USB_GET_PORT_STATUS' 'USB port status IOCTL handler missing.'
 Assert-Contains $source 'USBD_PORT_ENABLED\s*\|\s*USBD_PORT_CONNECTED' 'Port status must accurately report enabled and connected.'
