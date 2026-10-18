@@ -186,7 +186,8 @@ int wmain(int argc, wchar_t** argv)
         if (SUCCEEDED(hr)) {
             std::wstring label(name, length);
             std::wcout << L"Camera: " << label << L"\n";
-            if (label.find(L"AvCam Research Virtual USB Camera") != std::wstring::npos) {
+            if (label.find(L"AvCam Research Virtual USB Camera") != std::wstring::npos ||
+                label.find(L"AvCam Virtual USB Camera") != std::wstring::npos) {
                 camera = device;
             }
             CoTaskMemFree(name);
