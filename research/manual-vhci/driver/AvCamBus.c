@@ -978,7 +978,6 @@ AvCamProcessIsochTransfer(
     ULONG highestOccupiedEnd = 0;
     ULONG sparseExtentBytes;
     ULONG reportedStartFrame;
-    BOOLEAN eof = FALSE;
     ULONGLONG now;
     LARGE_INTEGER delay;
     const ULONGLONG handlerStarted100ns = AvCamIsoPreciseNow100ns();
@@ -1032,7 +1031,7 @@ AvCamProcessIsochTransfer(
             now + ((ULONGLONG)i * AVCAM_ISO_MICROFRAME_100NS);
         packet->Length = 0;
         packet->Status = USBD_STATUS_SUCCESS;
-        if (!eof && ChildContext->Packetizer.Offset == 0 &&
+        if (ChildContext->Packetizer.Offset == 0 &&
             packetTime100ns >= ChildContext->NextFrameDue100ns &&
             g_AvCamPendingReady) {
             PUCHAR swap = g_AvCamActiveFrame;
@@ -1042,12 +1041,13 @@ AvCamProcessIsochTransfer(
             g_AvCamPendingReady = FALSE;
             ++g_AvCamStats.FrameSwaps;
         }
-        if (g_AvCamActiveBytes > 0 && !eof &&
+        if (g_AvCamActiveBytes > 0 &&
             (ChildContext->Packetizer.Offset != 0 ||
              packetTime100ns >= ChildContext->NextFrameDue100ns)) {
             ULONG capacity = i + 1 < packets ?
                 transfer->IsoPacket[i + 1].Offset - packet->Offset :
                 originalBytes - packet->Offset;
+            unsigned int pacedCapacity;
             unsigned int written = 0;
             int result;
             if (ChildContext->Packetizer.Offset == 0) {
@@ -1055,10 +1055,19 @@ AvCamProcessIsochTransfer(
                     ChildContext->NextFrameDue100ns, packetTime100ns,
                     AVCAM_UVC_FRAME_INTERVAL_100NS);
             }
+            /* Real UVC streams consume many microframes per MJPEG frame.
+             * The previous implementation burst the entire 42KB frame
+             * into only 14 slots and left the following slots empty.
+             * Pace bytes across one frame interval while respecting the
+             * host-provided per-microframe buffer capacity. */
+            pacedCapacity = AvCamUvcPacedPacketCapacity(
+                g_AvCamActiveBytes, capacity,
+                AVCAM_UVC_FRAME_INTERVAL_100NS,
+                (unsigned int)AVCAM_ISO_MICROFRAME_100NS);
             result = AvCamUvcPacketizeMjpeg(
                 &ChildContext->Packetizer, g_AvCamActiveFrame,
                 g_AvCamActiveBytes, buffer + packet->Offset,
-                capacity, &written);
+                pacedCapacity, &written);
             if (result == AVCAM_UVC_PACKET_OK) {
                 if (filled == 0) {
                     firstFilledPacket = i;
@@ -1068,7 +1077,6 @@ AvCamProcessIsochTransfer(
                 highestOccupiedEnd = packet->Offset + written;
                 ++filled;
                 if (ChildContext->Packetizer.Offset == 0) {
-                    eof = TRUE;
                     ++g_AvCamStats.MjpegFramesCompleted;
                 }
             }
