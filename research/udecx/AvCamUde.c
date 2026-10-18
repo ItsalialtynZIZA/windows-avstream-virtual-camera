@@ -14,7 +14,7 @@
 #include "AvCamUdeUsb.h"
 
 /* Explicit safety gate: this build does not enumerate a USB child. */
-#define AVCAM_UDECX_ENABLE_AUTOPLUG 0
+static BOOLEAN g_AvCamUdeEnableAutoplug = FALSE;
 
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD AvCamUdeEvtDeviceAdd;
@@ -104,7 +104,7 @@ AvCamUdeEvtD0Entry(_In_ WDFDEVICE device,
 
     /* Deliberately disabled until UVC endpoints, class controls, resets,
      * and cancellation are implemented and independently validated. */
-    if (AVCAM_UDECX_ENABLE_AUTOPLUG == 0) {
+    if (!g_AvCamUdeEnableAutoplug) {
         return STATUS_SUCCESS;
     }
     return AvCamUdeUsbCreateAndPlug(device);
