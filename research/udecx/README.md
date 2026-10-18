@@ -100,3 +100,14 @@ Microsoft documents PASSIVE_LEVEL for `UdecxUrbRetrieveBuffer`,
 `UdecxUrbSetBytesCompleted` and `UdecxUrbComplete`; a naive completion from
 the endpoint callback/DPC is not valid. Do not enable auto-plug or install
 this scaffold on the primary Windows 11 machine.
+
+## Endpoint START/PURGE callbacks (compile-only)
+
+The dynamic endpoint registration now includes explicit
+`EvtUsbEndpointStart` and `EvtUsbEndpointPurge` callbacks. This version
+has only the UdeCx-managed endpoint queue: no request is forwarded or
+retained asynchronously, so purge calls `UdecxUsbEndpointPurgeComplete`
+directly. The start callback does not call `WdfIoQueueStart`; UdeCx owns the
+state of its associated queue. This implementation MUST be revisited before
+enabling a worker/forwarding queue: purge will then need to await a drained
+and cancellation-safe worker path rather than acknowledge immediately.
