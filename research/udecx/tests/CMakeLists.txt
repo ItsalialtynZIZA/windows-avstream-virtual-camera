@@ -18,3 +18,13 @@ else()
     target_compile_options(AvCamUdeIsoTests PRIVATE -Wall -Wextra -Werror)
 endif()
 add_test(NAME udecx-iso-packet-bounds COMMAND AvCamUdeIsoTests)
+
+
+add_executable(AvCamUdeIsoUrbLayoutTests iso-urb-layout-tests.cpp)
+target_compile_features(AvCamUdeIsoUrbLayoutTests PRIVATE cxx_std_17)
+if(MSVC)
+    target_compile_options(AvCamUdeIsoUrbLayoutTests PRIVATE /W4 /WX)
+else()
+    target_compile_options(AvCamUdeIsoUrbLayoutTests PRIVATE -Wall -Wextra -Werror)
+endif()
+add_test(NAME udecx-iso-urb-preflight COMMAND AvCamUdeIsoUrbLayoutTests)
