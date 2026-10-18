@@ -37,6 +37,8 @@ typedef struct _AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT {
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(
     AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT, AvCamUdeEndpointQueueGetContext);
 
+NTSTATUS AvCamUdeInspectIsoUrb(_In_ WDFREQUEST Request);
+
 NTSTATUS AvCamUdeUsbCreateAndPlug(_In_ WDFDEVICE Controller);
 VOID AvCamUdeUsbDisconnect(_In_ WDFDEVICE Controller);
 
