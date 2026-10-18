@@ -48,6 +48,7 @@ KmdfLibraryVersion = 1.33
 [Strings]
 SPSVCINST_ASSOCSERVICE = 0x00000002
 Provider = "AvCam Research"
+Manufacturer = "AvCam Research"
 DiskName = "AvCam UdeCx Experimental Controller"
 DeviceDescription = "AvCam UdeCx Research USB Host Controller"
 ServiceDescription = "AvCam UdeCx Research Controller"
