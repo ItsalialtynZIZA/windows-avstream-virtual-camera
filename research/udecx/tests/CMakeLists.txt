@@ -74,3 +74,13 @@ else()
     target_compile_options(AvCamUdeUploadProtocolTests PRIVATE -Wall -Wextra -Werror)
 endif()
 add_test(NAME udecx-mjpeg-upload-protocol COMMAND AvCamUdeUploadProtocolTests)
+
+# A research-only Windows user-mode feeder. CI compiles it but does not run,
+# install, sign, upload, or publish the binary.
+if(WIN32)
+    add_executable(AvCamUdeUploadTool ../tools/AvCamUdeUpload.cpp)
+    target_compile_features(AvCamUdeUploadTool PRIVATE cxx_std_17)
+    if(MSVC)
+        target_compile_options(AvCamUdeUploadTool PRIVATE /W4 /WX)
+    endif()
+endif()
