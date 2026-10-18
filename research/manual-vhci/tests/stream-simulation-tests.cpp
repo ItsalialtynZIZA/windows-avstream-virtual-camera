@@ -62,8 +62,8 @@ int main()
                         "Malformed UVC packet header");
                 Require((transfer[offset+1] & AVCAM_UVC_PAYLOAD_FID)==lastFid,
                         "Frame ID changed before EOF");
-                Require(transfer[offset+written]==0xCD ||
-                        written==packetCapacity,
+                Require(written==packetCapacity ||
+                        transfer[offset+written]==0xCD,
                         "Packet write crossed its length");
                 reconstructed.insert(reconstructed.end(),
                     transfer.begin()+offset+AVCAM_UVC_PAYLOAD_HEADER_BYTES,
