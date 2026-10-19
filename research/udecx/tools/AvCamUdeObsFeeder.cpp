@@ -24,6 +24,15 @@
 using Microsoft::WRL::ComPtr;
 
 namespace {
+volatile LONG gStopRequested = 0;
+BOOL WINAPI OnCtrlC(DWORD kind) {
+    if (kind == CTRL_C_EVENT || kind == CTRL_BREAK_EVENT ||
+        kind == CTRL_CLOSE_EVENT) {
+        InterlockedExchange(&gStopRequested, 1);
+        return TRUE;
+    }
+    return FALSE;
+}
 constexpr wchar_t kControllerName[] = LR"(\\.\AvCamUdeController0)";
 struct Com {
     HRESULT hr = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -39,7 +48,7 @@ struct Handle {
 void Usage() {
     std::wcout
         << L"AvCamUdeObsFeeder --device-name \"OBS Virtual Camera\" "
-        << L"[--source-usb-id VID_046D&PID_0825] [--frames 120] [--dry-run]\\n"
+        << L"[--source-usb-id VID_046D&PID_0825] [--frames 120 | --continuous] [--dry-run]\\n"
         << L"Research VM only. --dry-run does not open the UdeCx controller.\n";
 }
 bool ParsePositive(const wchar_t* value, unsigned& count) {
@@ -62,6 +71,8 @@ int wmain(int argc, wchar_t** argv) {
     std::wstring sourceUsbId;
     unsigned frames = 120u;
     bool dryRun = false;
+    bool continuous = false;
+    bool explicitFrames = false;
     for (int index = 1; index < argc; ++index) {
         const std::wstring arg = argv[index];
         if (arg == L"--device-name" && index + 1 < argc) {
@@ -77,6 +88,9 @@ int wmain(int argc, wchar_t** argv) {
                 Usage();
                 return 2;
             }
+            explicitFrames = true;
+        } else if (arg == L"--continuous") {
+            continuous = true;
         } else if (arg == L"--dry-run") {
             dryRun = true;
         } else if (arg == L"--help") {
@@ -87,8 +101,12 @@ int wmain(int argc, wchar_t** argv) {
             return 2;
         }
     }
-    if (deviceName.empty()) return 2;
+    if (deviceName.empty() || (continuous && explicitFrames)) return 2;
 
+    if (continuous && !SetConsoleCtrlHandler(OnCtrlC, TRUE)) {
+        std::wcerr << L"Could not register Ctrl+C shutdown handler\n";
+        return 3;
+    }
     Com com;
     if (FAILED(com.hr)) {
         std::wcerr << L"COM MTA initialization failed\n";
@@ -127,7 +145,12 @@ int wmain(int argc, wchar_t** argv) {
     std::vector<unsigned char> packet;
     unsigned accepted = 0;
     unsigned busy = 0;
-    for (unsigned index = 0; index < frames; ++index) {
+    unsigned long long seen = 0;
+    unsigned long long lastReportTick = GetTickCount64();
+    while ((continuous || seen < frames) &&
+           InterlockedCompareExchange(&gStopRequested, 0, 0) == 0) {
+        const unsigned index = static_cast<unsigned>(seen);
+        ++seen;
         std::uint64_t timestamp = 0;
         if (!source.ReadFrame(bgra.data(), bgra.size(), timestamp)) {
             std::wcerr << L"Capture failed at frame " << index << L"\n";
@@ -170,6 +193,17 @@ int wmain(int argc, wchar_t** argv) {
             }
         }
         ++accepted;
+        if (continuous) {
+            const unsigned long long tick = GetTickCount64();
+            if (tick - lastReportTick >= 5000ull) {
+                std::wcout << L"AVCAM_FEEDER_LIVE frames_read=" << seen
+                           << L" accepted=" << accepted
+                           << L" skipped_busy=" << busy
+               << L" frames_read=" << seen
+                           << L" source=" << deviceName << L"\n";
+                lastReportTick = tick;
+            }
+        }
     }
     source.Stop();
     std::wcout << L"Capture/encode completed. Frames=" << accepted
