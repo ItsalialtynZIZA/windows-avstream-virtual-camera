@@ -255,4 +255,8 @@ if ($usb -match 'WdfObjectDelete\(queue\)') {
 Assert-Matches $queuedCancel 'ctx->QueueCancelTail = request' 'Canceled queue requests need FIFO storage until DPC owns them.'
 Assert-Matches $queuedCancel 'WdfRequestCompleteWithInformation\(request, STATUS_CANCELLED, 0\)' 'Queue cancellations must complete from their own DPC.'
 Assert-Matches $usb 'ctx->QueueCancelOutstanding == 0' 'Queued-cancel completion count must gate PURGE.'
+Assert-Matches $usb 'WdfDpcCancel\(ctx->QueueCancelDpc, TRUE\)' 'PURGE must wait for queue-cancel DPC return.'
+Assert-Matches $usb 'WdfDpcCancel\(ctx->IsoCompleteDpc, TRUE\)' 'PURGE must wait for ISO completion DPC return.'
+Assert-Matches $usb 'ctx->QueueCancelDpcScheduled = TRUE' 'Canceled URBs arriving during purge quiescence must be rescheduled.'
+Assert-Matches $usb 'AvCamUdeDrainClaimPurgeAck' 'Final PURGE claim missing after DPC quiescence.'
 Write-Host "UdeCx guarded USB child contract: passed"
