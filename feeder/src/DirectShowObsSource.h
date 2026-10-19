@@ -14,6 +14,8 @@ public:
     ~DirectShowObsSource() override { Stop(); }
     const wchar_t* Name() const noexcept override { return L"OBS Virtual Camera (DirectShow)"; }
     bool Start() override;
+    DWORD LastErrorCode() const noexcept { return errorCode_; }
+    const wchar_t* FailureStage() const noexcept { return failureStage_; }
     void Stop() noexcept override;
     bool ReadFrame(unsigned char* dst, std::size_t size, std::uint64_t& timestamp) override;
 private:
@@ -25,4 +27,6 @@ private:
     Microsoft::WRL::ComPtr<IUnknown> grabberUnknown_;
     std::vector<unsigned char> buffer_;
     ULONGLONG lastFrameTick_ = 0;
+    DWORD errorCode_ = 0;
+    const wchar_t* failureStage_ = L"";
 };
