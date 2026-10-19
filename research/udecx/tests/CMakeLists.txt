@@ -187,3 +187,29 @@ else()
 endif()
 add_test(NAME udecx-physical-c270-source-selection
          COMMAND AvCamUdeMfSelectorTests)
+
+
+# Standalone user-mode camera SMOKE executable for physical Logitech C270.
+# Can read Media Foundation and encode MJPEG but contains NO kernel-driver,
+# registry, PnP, UdeCx controller or USB device access. Safe to distribute
+# separately from all experimental kernel artifacts.
+if(WIN32)
+    add_executable(AvCamUdeCaptureSmoke
+        ../tools/AvCamUdeCaptureSmoke.cpp
+        ../tools/AvCamUdeMjpegEncoder.cpp
+        ../../../feeder/src/MediaFoundationFrameSource.cpp)
+    target_include_directories(AvCamUdeCaptureSmoke PRIVATE ../../../shared)
+    target_compile_features(AvCamUdeCaptureSmoke PRIVATE cxx_std_17)
+    target_compile_definitions(AvCamUdeCaptureSmoke PRIVATE
+        WINVER=0x0A00 _WIN32_WINNT=0x0A00)
+    target_link_libraries(AvCamUdeCaptureSmoke PRIVATE
+        windowscodecs ole32 mf mfplat mfreadwrite mfuuid)
+    if(MSVC)
+        target_compile_options(AvCamUdeCaptureSmoke PRIVATE
+            /W4 /WX /permissive-)
+        # Ship user-mode smoke test without requiring an external
+        # Visual C++ runtime install on the user's host.
+        set_property(TARGET AvCamUdeCaptureSmoke PROPERTY
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+endif()
