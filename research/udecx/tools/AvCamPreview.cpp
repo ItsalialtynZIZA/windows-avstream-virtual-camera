@@ -23,6 +23,7 @@
 #include <vector>
 #include "../../../feeder/src/MediaFoundationFrameSource.h"
 #include "../../../feeder/src/DirectShowObsSource.h"
+#include "../../../feeder/src/ObsSharedMemorySource.h"
 #include <memory>
 #include "../../../shared/VirtualCameraProtocol.h"
 #include "../AvCamUdeUploadProtocol.h"
@@ -96,28 +97,16 @@ void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
 
     std::unique_ptr<IFrameSource> source;
     if (name == L"OBS Virtual Camera") {
-        source = std::make_unique<DirectShowObsSource>();
+        source = std::make_unique<ObsSharedMemorySource>();
     } else {
         source = std::make_unique<MediaFoundationFrameSource>(std::move(name), std::move(usbId));
     }
     const bool opened = source->Start();
     if (!opened) {
         if (name == L"OBS Virtual Camera") {
-            const auto* obs = static_cast<DirectShowObsSource*>(source.get());
+            const auto* obs = static_cast<ObsSharedMemorySource*>(source.get());
             g.captureHresult.store(obs->LastErrorCode());
-            const std::wstring stage = obs->FailureStage();
-            if (stage == L"OBS filter enumeration/binding") g.captureStage.store(1);
-            else if (stage == L"DirectShow graph/filter creation") g.captureStage.store(2);
-            else if (stage == L"SampleGrabber interface") g.captureStage.store(3);
-            else if (stage == L"OBS graph RenderStream/RGB32") g.captureStage.store(4);
-            else if (stage == L"OBS negotiated format is not 1280x720 RGB32") g.captureStage.store(5);
-            else if (stage == L"Graph IMediaControl") g.captureStage.store(6);
-            else if (stage == L"DirectShow graph Run") g.captureStage.store(7);
-            else if (stage == L"OBS SampleGrabber media type/callback") g.captureStage.store(9);
-            else if (stage == L"OBS output or SampleGrabber pin missing") g.captureStage.store(10);
-            else if (stage == L"OBS output pin to SampleGrabber connection") g.captureStage.store(11);
-            else if (stage == L"OBS SampleGrabber to renderer connection") g.captureStage.store(12);
-            else if (stage == L"OBS direct pins and RenderStream fallback failed") g.captureStage.store(13);
+            g.captureStage.store(14);
         }
         g.captureFailed.store(true);
         g.running.store(false);
@@ -152,9 +141,9 @@ void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
         std::uint64_t timestamp = 0;
         if (!source->ReadFrame(sample.data(), sample.size(), timestamp)) {
             if (name == L"OBS Virtual Camera") {
-                const auto* obs = static_cast<DirectShowObsSource*>(source.get());
+                const auto* obs = static_cast<ObsSharedMemorySource*>(source.get());
                 g.captureHresult.store(obs->LastErrorCode());
-                g.captureStage.store(8);
+                g.captureStage.store(15);
             }
             if (!g.stop.load()) g.captureFailed.store(true);
             break;
@@ -331,7 +320,7 @@ void UpdateStatus() {
         EnableWindow(g.refreshButton, TRUE);
         if (g.selectedName == L"OBS Virtual Camera") {
             wchar_t diagnostic[220]{};
-            swprintf_s(diagnostic, L"OBS DirectShow: этап %d, код 0x%08lX (сообщи эти числа)",
+            swprintf_s(diagnostic, L"OBS shared memory: этап %d, код 0x%08lX",
                 g.captureStage.load(), static_cast<unsigned long>(g.captureHresult.load()));
             SetControlStatus(diagnostic);
         } else {
