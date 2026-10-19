@@ -176,6 +176,8 @@ bool DirectShowObsSource::Start() {
         Stop(); return false;
     }
     if (FAILED(graph_.As(&control_))) { failureStage_ = L"Graph IMediaControl"; errorCode_ = static_cast<DWORD>(E_NOINTERFACE); Stop(); return false; }
+    // Some capture graphs require a real synchronization clock to start source delivery.
+    // Keep DirectShow clock defaults; retrieve filter events on read timeout.
     const HRESULT runResult = control_->Run();
     if (FAILED(runResult)) { failureStage_ = L"DirectShow graph Run"; errorCode_ = static_cast<DWORD>(runResult); Stop(); return false; }
     lastSequence_ = 0;
@@ -221,8 +223,28 @@ bool DirectShowObsSource::ReadFrame(unsigned char* dst, std::size_t size,
                 failureStage_ = L"OBS graph is stopped or paused";
                 errorCode_ = static_cast<DWORD>(state);
             } else {
-                failureStage_ = L"OBS graph running but no samples";
-                errorCode_ = static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_TIMEOUT));
+                ComPtr<IMediaEvent> events;
+                if (SUCCEEDED(graph_.As(&events))) {
+                    long eventCode = 0;
+                    LONG_PTR param1 = 0;
+                    LONG_PTR param2 = 0;
+                    if (SUCCEEDED(events->GetEvent(&eventCode, &param1, &param2, 0))) {
+                        if (eventCode == EC_ERRORABORT || eventCode == EC_STREAM_ERROR_STOPPED || eventCode == EC_STREAM_ERROR_STILLPLAYING) {
+                            failureStage_ = L"OBS graph streaming error event";
+                            errorCode_ = static_cast<DWORD>(param1);
+                        } else {
+                            failureStage_ = L"OBS graph emitted event without frames";
+                            errorCode_ = static_cast<DWORD>(eventCode);
+                        }
+                        events->FreeEventParams(eventCode, param1, param2);
+                    } else {
+                        failureStage_ = L"OBS graph running but no samples/events";
+                        errorCode_ = static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_TIMEOUT));
+                    }
+                } else {
+                    failureStage_ = L"OBS graph running but no samples (no IMediaEvent)";
+                    errorCode_ = static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_TIMEOUT));
+                }
             }
         }
         return false;
