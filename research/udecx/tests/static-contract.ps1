@@ -294,6 +294,20 @@ Assert-Matches $usb 'ctx->PumpQuarantined = TRUE;' 'PURGE reset failure must qua
 Assert-Matches $usb 'ctx->PumpQuarantined = FALSE;' 'New endpoint must initialize the quarantine latch.'
 Assert-Matches $nativeIso 'if \(endpoint->PumpQuarantined\)' 'Native ISO must refuse quarantined frame pumps.'
 Assert-Matches $nativeIso 'endpoint->PumpQuarantined = TRUE;' 'Failed native JPEG lease reset must fail closed.'
+$vmInstaller = Get-Content (Join-Path $root 'tools/AvCamUdeVmRootInstall.cpp') -Raw
+$vmEnumeration = Get-Content (Join-Path $root 'tools/AvCamUdeVmEnumerationReport.ps1') -Raw
+Assert-Matches $vmInstaller 'Root\\AvCamUdeController' 'Guest-only installer must use isolated new root identity.'
+Assert-Matches $vmInstaller 'RequireDisposableVmHardware' 'Guest-only root installer must enforce SMBIOS safety gate.'
+Assert-Matches $vmInstaller 'I_UNDERSTAND_DISPOSABLE_VM_ONLY' 'Guest-only root installer requires explicit acknowledgment.'
+if ($vmInstaller -match 'Root\\AvCamVirtualUsbHost|oem61\.inf|VID_046D&PID_0825') {
+    throw 'VM installer must never refer to legacy AvCamBus or physical Logitech camera.'
+}
+Assert-Matches $vmEnumeration 'VM_UDECX_ENUMERATION_ONLY_PASSED' 'VM report must distinguish enumeration from MF video.'
+Assert-Matches $vmEnumeration 'VID_1234&PID_5679' 'VM report must target isolated test PID.'
+if ($vmEnumeration -match '(?i)\bpnputil\s+/(add-driver|delete-driver|install)|New-PnpDevice|Disable-PnpDevice|Enable-PnpDevice|UpdateDriverForPlugAndPlayDevices') {
+    throw 'VM enumeration report must remain read-only.'
+}
+Assert-Matches $udecxTests 'AvCamUdeVmRootInstall.cpp' 'VM root installation tool must be independently compiled.'
 $udecxMfProbe = Get-Content (Join-Path $root 'tools/AvCamUdeMfProbe.cpp') -Raw
 $udecxTests = Get-Content (Join-Path $root 'tests/CMakeLists.txt') -Raw
 Assert-Matches $udecxMfProbe 'link.find\(L"vid_1234&pid_5679"\)' 'MF acceptance must check isolated UdeCx symbolic-link PID.'
