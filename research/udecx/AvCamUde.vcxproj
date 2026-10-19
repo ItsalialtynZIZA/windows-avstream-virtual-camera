@@ -42,6 +42,7 @@
     <ClCompile Include="AvCamUdeUsb.c" />
     <ClCompile Include="AvCamUdeIsoUrb.c" />
     <ClCompile Include="AvCamUdeIsoAdapter.c" />
+    <ClCompile Include="AvCamUdeIsoNative.c" />
   </ItemGroup>
   <ItemGroup>
     <Inf Include="AvCamUde.inf" />
