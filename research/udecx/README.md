@@ -216,3 +216,15 @@ than a false success. An idle reset increments the endpoint generation.
 This is safe for the current synchronous fail-closed queue; once asynchronous
 workers are introduced, they must extend the active barrier before reset can
 succeed. Do not install this experimental driver on the primary machine.
+
+### Completion callback return barrier
+
+The asynchronous ownership model now distinguishes `READY` (worker no
+longer touches the mapped URB) from `COMPLETING` (a single native completion
+owner has been claimed). **Claiming completion does not decrement
+`Drain.Active`.** The native adapter must call
+`AvCamUdeAsyncCompletionReturned` only after its WDF/UdeCx completion API
+has returned, without accessing the potentially freed WDFREQUEST again.
+This prevents PURGE or RESET from considering the endpoint idle while
+the completion call is still unwinding and triggering reentrant callbacks.
+The model's cancellation decision is immutable once claimed.
