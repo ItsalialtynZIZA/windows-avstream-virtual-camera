@@ -45,7 +45,11 @@ public:
     }
     HRESULT STDMETHODCALLTYPE SampleCB(double, IMediaSample*) override { return E_NOTIMPL; }
     HRESULT STDMETHODCALLTYPE BufferCB(double, BYTE* data, long length) override {
-        if (!data || length != static_cast<long>(AVCAM_FRAME_BYTES_BGRA32)) return S_OK;
+        ++callbackCount_;
+        if (!data || length != static_cast<long>(AVCAM_FRAME_BYTES_BGRA32)) {
+            rejectedLength_.store(length);
+            return S_OK;
+        }
         {
             std::lock_guard<std::mutex> lock(mutex_);
             frame_.assign(data, data + length);
@@ -54,6 +58,8 @@ public:
         ready_.notify_one();
         return S_OK;
     }
+    unsigned CallbackCount() const noexcept { return callbackCount_.load(); }
+    long RejectedLength() const noexcept { return rejectedLength_.load(); }
     bool WaitForFrame(std::uint64_t& previous, unsigned char* output, bool bottomUp) {
         std::unique_lock<std::mutex> lock(mutex_);
         if (!ready_.wait_for(lock, std::chrono::milliseconds(2500),
@@ -69,6 +75,8 @@ public:
     }
 private:
     std::atomic<ULONG> refs_{1};
+    std::atomic<unsigned> callbackCount_{0};
+    std::atomic<long> rejectedLength_{0};
     std::mutex mutex_;
     std::condition_variable ready_;
     std::vector<unsigned char> frame_;
@@ -199,8 +207,24 @@ bool DirectShowObsSource::ReadFrame(unsigned char* dst, std::size_t size,
     // potentially unavailable GetCurrentBuffer polling state.
     auto* callback = static_cast<FrameCallback*>(callback_.Get());
     if (!callback->WaitForFrame(lastSequence_, dst, bottomUp_)) {
-        failureStage_ = L"OBS callback frame timeout";
-        errorCode_ = static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_TIMEOUT));
+        const unsigned count = callback->CallbackCount();
+        if (count > 0) {
+            failureStage_ = L"OBS callback delivered wrong frame length";
+            errorCode_ = static_cast<DWORD>(callback->RejectedLength());
+        } else {
+            OAFilterState state = State_Stopped;
+            const HRESULT stateResult = control_ ? control_->GetState(1000, &state) : E_POINTER;
+            if (FAILED(stateResult)) {
+                failureStage_ = L"OBS graph not running/GetState failed";
+                errorCode_ = static_cast<DWORD>(stateResult);
+            } else if (state != State_Running) {
+                failureStage_ = L"OBS graph is stopped or paused";
+                errorCode_ = static_cast<DWORD>(state);
+            } else {
+                failureStage_ = L"OBS graph running but no samples";
+                errorCode_ = static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_TIMEOUT));
+            }
+        }
         return false;
     }
     timestamp = static_cast<std::uint64_t>(GetTickCount64()) * 10000ull;
