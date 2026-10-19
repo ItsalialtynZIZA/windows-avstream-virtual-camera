@@ -136,6 +136,12 @@ ExitLocked:
     /* The sequential UdeCx endpoint queue only hands us one in-flight
      * request until WdfRequestComplete. Never replace a pending WDFREQUEST.
      */
+    /* WdfRequestComplete can reenter the sequential queue before the
+     * previous DPC returns. Therefore enqueue and reserve the new request
+     * under ONE spinlock. When the DPC is already running it will loop
+     * and consume this request; do not requeue or mistake FALSE from
+     * WdfDpcEnqueue for a safe request-completion decision.
+     */
     WdfSpinLockAcquire(endpoint->Lock);
     if (endpoint->PendingIsoRequest != NULL ||
         endpoint->Drain.PurgePending) {
@@ -143,20 +149,16 @@ ExitLocked:
         return STATUS_DEVICE_BUSY;
     }
     endpoint->PendingIsoRequest = request;
-    WdfSpinLockRelease(endpoint->Lock);
-
-    if (!WdfDpcEnqueue(endpoint->IsoCompleteDpc)) {
-        /* The DPC could already be queued/executing. Clear only our own
-         * reservation; do not complete here. The outer callback will
-         * complete the request via its existing error path.
+    if (!endpoint->IsoDpcRunning &&
+        !WdfDpcEnqueue(endpoint->IsoCompleteDpc)) {
+        /* The lock prevents a DPC from stealing our request between
+         * scheduling failure and rollback. Caller still owns it.
          */
-        WdfSpinLockAcquire(endpoint->Lock);
-        if (endpoint->PendingIsoRequest == request) {
-            endpoint->PendingIsoRequest = NULL;
-        }
+        endpoint->PendingIsoRequest = NULL;
         WdfSpinLockRelease(endpoint->Lock);
         return STATUS_DEVICE_BUSY;
     }
+    WdfSpinLockRelease(endpoint->Lock);
     return STATUS_SUCCESS;
 }
 
@@ -169,30 +171,49 @@ AvCamUdeEvtIsoCompleteDpc(_In_ WDFDPC dpc)
         AvCamUdeEndpointGetContext(usbEndpoint);
     WDFREQUEST request;
     BOOLEAN purging;
-    BOOLEAN signalPurge = FALSE;
+    BOOLEAN signalPurge;
     NTSTATUS completion;
 
-    /* Do not hold an endpoint lock across WDF request completion. */
-    WdfSpinLockAcquire(ctx->Lock);
-    request = ctx->PendingIsoRequest;
-    ctx->PendingIsoRequest = NULL;
-    purging = ctx->Drain.PurgePending;
-    WdfSpinLockRelease(ctx->Lock);
-    if (request == NULL) {
-        return;
-    }
-    completion = (purging || WdfRequestIsCanceled(request)) ?
-        STATUS_CANCELLED : STATUS_SUCCESS;
-    WdfRequestComplete(request, completion);
-
-    /* Only AFTER WdfRequestComplete returns is PURGE allowed to claim
-     * that this request is fully gone. The WDFREQUEST is now invalid.
+    /* A completion can synchronously dispatch the next queued URB.
+     * Keep the DPC active and drain each handoff rather than exiting
+     * after one request and leaving a reentrant request stranded.
      */
-    WdfSpinLockAcquire(ctx->Lock);
-    (VOID)AvCamUdeDrainLeave(&ctx->Drain);
-    signalPurge = ctx->Drain.PurgePending && ctx->Drain.Active == 0;
-    WdfSpinLockRelease(ctx->Lock);
-    if (signalPurge) {
-        WdfWorkItemEnqueue(ctx->PurgeWorkItem);
+    for (;;) {
+        WdfSpinLockAcquire(ctx->Lock);
+        ctx->IsoDpcRunning = TRUE;
+        request = ctx->PendingIsoRequest;
+        ctx->PendingIsoRequest = NULL;
+        purging = ctx->Drain.PurgePending;
+        if (request == NULL) {
+            ctx->IsoDpcRunning = FALSE;
+            WdfSpinLockRelease(ctx->Lock);
+            return;
+        }
+        WdfSpinLockRelease(ctx->Lock);
+
+        completion = (purging || WdfRequestIsCanceled(request)) ?
+            STATUS_CANCELLED : STATUS_SUCCESS;
+
+        if (completion == STATUS_CANCELLED) {
+            /* The staged JPEG's EOF may never have reached the host.
+             * Force the next URB to start a new frame, never resume
+             * abandoned MJPEG bytes after a canceled completion.
+             */
+            WdfSpinLockAcquire(ctx->Lock);
+            ctx->PumpResetPending = TRUE;
+            WdfSpinLockRelease(ctx->Lock);
+        }
+        WdfRequestComplete(request, completion);
+
+        /* The request is invalid after WdfRequestComplete. Only now may
+         * PURGE observe that its owned I/O has drained.
+         */
+        WdfSpinLockAcquire(ctx->Lock);
+        (VOID)AvCamUdeDrainLeave(&ctx->Drain);
+        signalPurge = ctx->Drain.PurgePending && ctx->Drain.Active == 0;
+        WdfSpinLockRelease(ctx->Lock);
+        if (signalPurge) {
+            WdfWorkItemEnqueue(ctx->PurgeWorkItem);
+        }
     }
 }
