@@ -47,9 +47,6 @@ bool LocateObsFilter(IBaseFilter** out) {
         }
         VariantClear(&name);
     }
-    failureStage_ = L"OBS GetCurrentBuffer no usable frames";
-    errorCode_ = FAILED(lastHr) ? static_cast<DWORD>(lastHr) :
-        (lastLength == 0 ? static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_TIMEOUT)) : static_cast<DWORD>(VFW_E_TYPE_NOT_ACCEPTED));
     return false;
 }
 }
@@ -163,5 +160,8 @@ bool DirectShowObsSource::ReadFrame(unsigned char* dst, std::size_t size,
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
+    failureStage_ = L"OBS GetCurrentBuffer no usable frames";
+    errorCode_ = FAILED(lastHr) ? static_cast<DWORD>(lastHr) :
+        (lastLength == 0 ? static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_TIMEOUT)) : static_cast<DWORD>(VFW_E_TYPE_NOT_ACCEPTED));
     return false;
 }
