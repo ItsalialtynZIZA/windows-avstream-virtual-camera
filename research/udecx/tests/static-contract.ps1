@@ -219,4 +219,9 @@ Assert-Matches $usb '++device->CommitEpoch' 'Successful UVC commit must advance 
 Assert-Matches $native 'SeenCommitEpoch != usb->CommitEpoch' 'Native ISO staging must detect renegotiation.'
 Assert-Matches $native 'endpoint->SeenCommitEpoch = usb->CommitEpoch' 'Reset must record the active commit generation.'
 Assert-Matches $native 'endpoint->PumpResetPending = TRUE' 'Discard a staged but never delivered ISO frame on DPC handoff failure.'
+Assert-Matches $header 'WDFDEVICE Controller;' 'Endpoint must retain a stable parent controller identity.'
+Assert-Matches $usb 'ctx->Controller = controller' 'Endpoint controller identity not initialized.'
+Assert-Matches $usb 'AvCamUdeFramePumpReset\(&ctx->Pump\)' 'Purge must release incomplete MJPEG source leases.'
+Assert-Matches $usb 'WdfWaitLockAcquire\(controller->FrameLock' 'Purge lease release must serialize with frame publication.'
+Assert-Matches $usb 'UdecxUsbEndpointPurgeComplete\(endpoint\)' 'Purge acknowledgement must remain present.'
 Write-Host "UdeCx guarded USB child contract: passed"
