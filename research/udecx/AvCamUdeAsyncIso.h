@@ -28,6 +28,7 @@
 #define AVCAM_UDE_ASYNC_WAITING 1u
 #define AVCAM_UDE_ASYNC_WORKING 2u
 #define AVCAM_UDE_ASYNC_READY 3u
+#define AVCAM_UDE_ASYNC_COMPLETING 4u
 
 #define AVCAM_UDE_ASYNC_FINISH_NONE 0u
 #define AVCAM_UDE_ASYNC_FINISH_DATA 1u
@@ -38,6 +39,7 @@ typedef struct _AVCAM_UDE_ASYNC_SLOT {
     unsigned long long Generation;
     unsigned char Phase;
     unsigned char CancelRequested;
+    unsigned char CompletionDecision;
 } AVCAM_UDE_ASYNC_SLOT;
 
 typedef struct _AVCAM_UDE_ASYNC_ISO {
@@ -60,6 +62,7 @@ AvCamUdeAsyncInit(AVCAM_UDE_ASYNC_ISO* endpoint)
         endpoint->Slots[i].Generation = 0;
         endpoint->Slots[i].Phase = AVCAM_UDE_ASYNC_FREE;
         endpoint->Slots[i].CancelRequested = 0;
+        endpoint->Slots[i].CompletionDecision = AVCAM_UDE_ASYNC_FINISH_NONE;
     }
 }
 
@@ -117,6 +120,7 @@ AvCamUdeAsyncSubmit(
     slot->Generation = endpoint->Drain.Generation;
     slot->Phase = AVCAM_UDE_ASYNC_WAITING;
     slot->CancelRequested = 0;
+    slot->CompletionDecision = AVCAM_UDE_ASYNC_FINISH_NONE;
     *token = slot->Token;
     return AVCAM_UDE_ASYNC_OK;
 }
@@ -127,6 +131,9 @@ AvCamUdeAsyncCancel(
 {
     AVCAM_UDE_ASYNC_SLOT* slot = AvCamUdeAsyncFind(endpoint, token);
     if (slot == 0) return AVCAM_UDE_ASYNC_NOT_FOUND;
+    if (slot->Phase == AVCAM_UDE_ASYNC_COMPLETING) {
+        return AVCAM_UDE_ASYNC_BUSY;
+    }
     slot->CancelRequested = 1;
     return AVCAM_UDE_ASYNC_OK;
 }
@@ -168,31 +175,52 @@ AvCamUdeAsyncWorkerDone(
     return AVCAM_UDE_ASYNC_BUSY;
 }
 
-/* Exactly one terminal decision and active-counter decrement. WDF cancellation
- * ownership still has to be resolved separately by the native adapter.
+/* Claim reserves exactly ONE completion owner, but does not decrement
+ * Drain.Active or release the slot. A callback may run synchronously inside
+ * the native completion call; the I/O remains owned until that call RETURNS.
+ * Native WDF cancelable ownership must be resolved before this transition.
  */
 static __inline unsigned int
 AvCamUdeAsyncClaimCompletion(
     AVCAM_UDE_ASYNC_ISO* endpoint, unsigned long long token)
 {
     AVCAM_UDE_ASYNC_SLOT* slot = AvCamUdeAsyncFind(endpoint, token);
-    unsigned int result;
     if (slot == 0 || slot->Phase != AVCAM_UDE_ASYNC_READY) {
         return AVCAM_UDE_ASYNC_FINISH_NONE;
     }
-    result = (slot->CancelRequested || endpoint->Drain.PurgePending ||
-              endpoint->ResetPending ||
-              slot->Generation != endpoint->Drain.Generation) ?
+    slot->CompletionDecision =
+        (slot->CancelRequested || endpoint->Drain.PurgePending ||
+         endpoint->ResetPending ||
+         slot->Generation != endpoint->Drain.Generation) ?
         AVCAM_UDE_ASYNC_FINISH_CANCELLED :
         AVCAM_UDE_ASYNC_FINISH_DATA;
+    slot->Phase = AVCAM_UDE_ASYNC_COMPLETING;
+    return slot->CompletionDecision;
+}
+
+/* Call ONLY AFTER the native completion call has returned and the callback
+ * no longer accesses the WDFREQUEST. This is the true purge/reset barrier.
+ * Never pass the potentially freed request object into this method.
+ */
+static __inline int
+AvCamUdeAsyncCompletionReturned(
+    AVCAM_UDE_ASYNC_ISO* endpoint, unsigned long long token)
+{
+    AVCAM_UDE_ASYNC_SLOT* slot = AvCamUdeAsyncFind(endpoint, token);
+    if (slot == 0 || slot->Phase != AVCAM_UDE_ASYNC_COMPLETING ||
+        (slot->CompletionDecision != AVCAM_UDE_ASYNC_FINISH_CANCELLED &&
+         slot->CompletionDecision != AVCAM_UDE_ASYNC_FINISH_DATA)) {
+        return AVCAM_UDE_ASYNC_INVALID;
+    }
     if (AvCamUdeDrainLeave(&endpoint->Drain) != AVCAM_UDE_DRAIN_OK) {
-        return AVCAM_UDE_ASYNC_FINISH_NONE;
+        return AVCAM_UDE_ASYNC_INVALID;
     }
     slot->Token = 0;
     slot->Generation = 0;
     slot->Phase = AVCAM_UDE_ASYNC_FREE;
     slot->CancelRequested = 0;
-    return result;
+    slot->CompletionDecision = AVCAM_UDE_ASYNC_FINISH_NONE;
+    return AVCAM_UDE_ASYNC_OK;
 }
 
 static __inline int
@@ -204,7 +232,8 @@ AvCamUdeAsyncBeginPurge(AVCAM_UDE_ASYNC_ISO* endpoint)
         return AVCAM_UDE_ASYNC_BUSY;
     }
     for (i = 0; i < AVCAM_UDE_ASYNC_MAX_REQUESTS; ++i) {
-        if (endpoint->Slots[i].Phase != AVCAM_UDE_ASYNC_FREE) {
+        if (endpoint->Slots[i].Phase != AVCAM_UDE_ASYNC_FREE &&
+            endpoint->Slots[i].Phase != AVCAM_UDE_ASYNC_COMPLETING) {
             endpoint->Slots[i].CancelRequested = 1;
         }
     }
