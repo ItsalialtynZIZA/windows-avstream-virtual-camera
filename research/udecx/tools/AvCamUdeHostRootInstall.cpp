@@ -42,12 +42,12 @@ bool IsElevated() {
 bool RequirePhysicalWindows11() {
     /* Use RtlGetVersion through ntdll: GetVersionEx can return a
        compatibility-lied version without an appropriate manifest. */
-    using VersionFn = LONG (WINAPI*)(PRTL_OSVERSIONINFOW);
+    using VersionFn = LONG (WINAPI*)(OSVERSIONINFOW*);
     HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
     const auto rtlGetVersion = ntdll != nullptr ?
         reinterpret_cast<VersionFn>(GetProcAddress(ntdll, "RtlGetVersion")) : nullptr;
     if (rtlGetVersion == nullptr) return false;
-    RTL_OSVERSIONINFOW version{};
+    OSVERSIONINFOW version{};
     version.dwOSVersionInfoSize = sizeof(version);
     if (rtlGetVersion(&version) != 0 ||
         version.dwBuildNumber < 22000 || version.dwMajorVersion != 10) {
