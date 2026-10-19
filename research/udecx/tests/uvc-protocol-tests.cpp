@@ -5,9 +5,39 @@
 #include <stdexcept>
 #include <vector>
 #include "../AvCamUdeControl.h"
+#include "../AvCamUdeTestIdentity.h"
 
 static void Assert(bool ok, const char* message) {
     if (!ok) throw std::runtime_error(message);
+}
+
+static void VerifyUsbIdentityIsolation() {
+    static_assert(AVCAM_USB_VID == AVCAM_UDE_TEST_VID,
+        "Only the research product ID changes");
+    static_assert(AVCAM_USB_PID == 0x5678u,
+        "Do not mutate the installed legacy AvCamBus identity");
+    static_assert(AVCAM_UDE_TEST_PID == 0x5679u,
+        "The isolated UdeCx child requires its own research PID");
+    static_assert(AVCAM_UDE_TEST_PID != AVCAM_USB_PID,
+        "The experimental UdeCx PID must never collide with legacy AvCamBus");
+    static_assert(sizeof(g_AvCamUdeIsolatedDeviceDescriptor) ==
+        sizeof(g_AvCamUsbDeviceDescriptor),
+        "Isolated descriptor must preserve the USB descriptor size");
+
+    const auto* legacy = g_AvCamUsbDeviceDescriptor;
+    const auto* isolated = g_AvCamUdeIsolatedDeviceDescriptor;
+    for (std::size_t i = 0; i < sizeof(g_AvCamUsbDeviceDescriptor); ++i) {
+        if (i != 10u && i != 11u) {
+            Assert(isolated[i] == legacy[i],
+                "Isolated UdeCx descriptor changed more than the PID");
+        }
+    }
+    Assert(isolated[8] == 0x34u && isolated[9] == 0x12u,
+        "Isolated UdeCx USB VID bytes are incorrect");
+    Assert(isolated[10] == 0x79u && isolated[11] == 0x56u,
+        "Isolated UdeCx USB PID bytes are incorrect");
+    Assert(legacy[10] == 0x78u && legacy[11] == 0x56u,
+        "Legacy USB PID must remain unchanged");
 }
 
 static void VerifyAlternateSettings() {
@@ -128,6 +158,7 @@ static void VerifyUvcClassControl() {
 
 int main() {
     try {
+        VerifyUsbIdentityIsolation();
         VerifyAlternateSettings();
         VerifyUvcClassControl();
         std::cout << "UdeCx UVC descriptors and Probe/Commit contracts passed\n";
