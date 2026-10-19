@@ -208,4 +208,9 @@ Assert-Matches $usb 'g_AvCamUdeEnableNativeIso\s*=\s*FALSE' 'Do not enable nativ
 if ($native -match 'NextMicroframe100ns\s*\+=') {
     throw 'Synthetic-only packet clock is prohibited once StartFrame support exists.'
 }
+Assert-Matches $native 'AvCamUdeCancelPreparedIsoAtDpc' 'Canceled URB packet metadata must not report success.'
+Assert-Matches $native 'USBD_STATUS_CANCELED' 'Canceled host ISO packets must use USB failure status.'
+Assert-Matches $native 'UrbIsochronousTransfer.ErrorCount = count' 'All canceled packets must be counted.'
+Assert-Matches $native 'urb->UrbIsochronousTransfer.TransferBufferLength = 0' 'Canceled byte count must be zero.'
+Assert-Matches $native 'FrameLock serializes publication and leased ISO source access' 'ISO staging must retain the frame lock.'
 Write-Host "UdeCx guarded USB child contract: passed"
