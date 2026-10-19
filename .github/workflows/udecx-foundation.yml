@@ -24,6 +24,9 @@ jobs:
       - name: Validate isolated UdeCx USB child contract
         shell: pwsh
         run: ./research/udecx/tests/static-contract.ps1
+      - name: Validate VM acceptance script syntax and read-only safety
+        shell: pwsh
+        run: ./research/udecx/tests/vm-acceptance-contract-tests.ps1
       - name: Build and run portable UVC protocol tests
         shell: pwsh
         run: |
