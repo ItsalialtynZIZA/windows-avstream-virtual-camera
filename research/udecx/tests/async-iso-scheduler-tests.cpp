@@ -12,11 +12,17 @@ static void AssertInvariants(const AVCAM_UDE_ASYNC_ISO& e) {
         const auto& s = e.Slots[i];
         if (s.Phase == AVCAM_UDE_ASYNC_FREE) {
             Need(s.Token == 0 && s.Generation == 0 &&
-                 s.CancelRequested == 0, "Freed slot retained stale identity");
+                 s.CancelRequested == 0 &&
+                 s.CompletionDecision == AVCAM_UDE_ASYNC_FINISH_NONE,
+                 "Freed slot retained stale identity");
         } else {
             ++active;
             Need(s.Token != 0 && s.Generation != 0 &&
-                 s.Phase <= AVCAM_UDE_ASYNC_READY, "Invalid owned request");
+                 s.Phase <= AVCAM_UDE_ASYNC_COMPLETING,
+                 "Invalid owned request");
+            Need((s.Phase == AVCAM_UDE_ASYNC_COMPLETING) ==
+                 (s.CompletionDecision != AVCAM_UDE_ASYNC_FINISH_NONE),
+                 "Completion decision/phase mismatch");
             for (unsigned j = i + 1; j < AVCAM_UDE_ASYNC_MAX_REQUESTS; ++j) {
                 const auto& t = e.Slots[j];
                 Need(t.Phase == AVCAM_UDE_ASYNC_FREE ||
@@ -49,8 +55,15 @@ static void NormalAndCancelRace() {
          "Worker did not release buffer");
     Need(AvCamUdeAsyncClaimCompletion(&e, token) ==
          AVCAM_UDE_ASYNC_FINISH_DATA, "Successful URB not reported");
+    Need(e.Drain.Active == 1, "Completion claim prematurely drained URB");
     Need(AvCamUdeAsyncClaimCompletion(&e, token) ==
          AVCAM_UDE_ASYNC_FINISH_NONE, "Double completion");
+    Need(AvCamUdeAsyncCancel(&e, token) == AVCAM_UDE_ASYNC_BUSY,
+         "Cancellation modified already claimed completion");
+    Need(AvCamUdeAsyncCompletionReturned(&e, token) == AVCAM_UDE_ASYNC_OK,
+         "Completed request did not leave drain after WDF return");
+    Need(AvCamUdeAsyncCompletionReturned(&e, token) == AVCAM_UDE_ASYNC_INVALID,
+         "Double completion return accepted");
     Need(AvCamUdeAsyncCancel(&e, token) == AVCAM_UDE_ASYNC_NOT_FOUND,
          "Already completed request accepted stale cancellation");
 
@@ -69,6 +82,8 @@ static void NormalAndCancelRace() {
          "Worker could not abandon canceled waiting request");
     Need(AvCamUdeAsyncClaimCompletion(&e, token) ==
          AVCAM_UDE_ASYNC_FINISH_CANCELLED, "Cancellation lost");
+    Need(AvCamUdeAsyncCompletionReturned(&e, token) == AVCAM_UDE_ASYNC_OK,
+         "Cancelled waiting completion never drained");
     AssertInvariants(e);
 
     Need(AvCamUdeAsyncSubmit(&e, &token) == AVCAM_UDE_ASYNC_OK,
@@ -85,6 +100,8 @@ static void NormalAndCancelRace() {
     Need(AvCamUdeAsyncClaimCompletion(&e, token) ==
          AVCAM_UDE_ASYNC_FINISH_CANCELLED,
          "In-flight cancellation not honored");
+    Need(AvCamUdeAsyncCompletionReturned(&e, token) == AVCAM_UDE_ASYNC_OK,
+         "In-flight cancel completion did not finish");
     AssertInvariants(e);
 }
 
@@ -118,6 +135,11 @@ static void PurgeAndReset() {
         Need(AvCamUdeAsyncClaimCompletion(&e, tokens[i]) ==
              AVCAM_UDE_ASYNC_FINISH_CANCELLED,
              "Purge allowed successful stale completion");
+        Need(AvCamUdeAsyncClaimPurgeAck(&e) == 0,
+             "PURGE acknowledged before native completion returned");
+        Need(AvCamUdeAsyncCompletionReturned(&e, tokens[i]) ==
+             AVCAM_UDE_ASYNC_OK,
+             "Purged request completion did not return");
         Need(AvCamUdeAsyncClaimPurgeAck(&e) ==
              (i == AVCAM_UDE_ASYNC_MAX_REQUESTS - 1 ? 1 : 0),
              "Purge acknowledged too early or not at all");
@@ -142,6 +164,10 @@ static void PurgeAndReset() {
     Need(AvCamUdeAsyncClaimCompletion(&e, token) ==
          AVCAM_UDE_ASYNC_FINISH_CANCELLED,
          "Reset returned pre-reset JPEG bytes");
+    Need(AvCamUdeAsyncFinishReset(&e) == AVCAM_UDE_ASYNC_BUSY,
+         "RESET allowed while native completion still in progress");
+    Need(AvCamUdeAsyncCompletionReturned(&e, token) == AVCAM_UDE_ASYNC_OK,
+         "Reset-request completion did not drain");
     Need(AvCamUdeAsyncFinishReset(&e) == AVCAM_UDE_ASYNC_OK,
          "RESET could not establish new generation");
     Need(e.Drain.Generation == epoch + 1,
@@ -154,7 +180,7 @@ static void PurgeAndReset() {
 static void BoundedInterleavings(AVCAM_UDE_ASYNC_ISO e, unsigned depth) {
     AssertInvariants(e);
     if (depth == 0) return;
-    for (unsigned action = 0; action < 10; ++action) {
+    for (unsigned action = 0; action < 11; ++action) {
         auto next = e;
         unsigned long long token = 0;
         for (const auto& slot : next.Slots) {
@@ -170,9 +196,10 @@ static void BoundedInterleavings(AVCAM_UDE_ASYNC_ISO e, unsigned depth) {
         case 3: (void)AvCamUdeAsyncWorkerStart(&next, token); break;
         case 4: (void)AvCamUdeAsyncWorkerDone(&next, token); break;
         case 5: (void)AvCamUdeAsyncClaimCompletion(&next, token); break;
-        case 6: (void)AvCamUdeAsyncBeginPurge(&next); break;
-        case 7: (void)AvCamUdeAsyncClaimPurgeAck(&next); break;
-        case 8: (void)AvCamUdeAsyncBeginReset(&next); break;
+        case 6: (void)AvCamUdeAsyncCompletionReturned(&next, token); break;
+        case 7: (void)AvCamUdeAsyncBeginPurge(&next); break;
+        case 8: (void)AvCamUdeAsyncClaimPurgeAck(&next); break;
+        case 9: (void)AvCamUdeAsyncBeginReset(&next); break;
         default: (void)AvCamUdeAsyncFinishReset(&next); break;
         }
         BoundedInterleavings(next, depth - 1);
