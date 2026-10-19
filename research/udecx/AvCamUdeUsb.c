@@ -348,20 +348,11 @@ AvCamUdeCreateDynamicEndpoint(
     }
 
     *endpoint = NULL;
-    WDF_IO_QUEUE_CONFIG_INIT(&queueConfig, WdfIoQueueDispatchSequential);
-    queueConfig.EvtIoInternalDeviceControl = AvCamUdeEvtEndpointIo;
-    queueConfig.EvtIoCanceledOnQueue = AvCamUdeEvtEndpointCanceledOnQueue;
-    queueConfig.PowerManaged = WdfFalse;
-    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
-        &queueAttributes, AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT);
-    status = WdfIoQueueCreate(controller, &queueConfig,
-                              &queueAttributes, &queue);
-    if (!NT_SUCCESS(status)) {
-        return status;
-    }
-    AvCamUdeEndpointQueueGetContext(queue)->UsbDevice = usbDevice;
-    AvCamUdeEndpointQueueGetContext(queue)->EndpointAddress = address;
-
+    /* UdeCx dynamically destroys/recreates 0x81 on alternate-setting
+     * changes. The endpoint MUST own its associated WDF queue, otherwise
+     * the controller could retain a queue with a stale Endpoint handle.
+     * Create the endpoint first and attach its child queue afterwards.
+     */
     UdecxUsbEndpointInitSetEndpointAddress(localInit, address);
     UDECX_USB_ENDPOINT_CALLBACKS_INIT(&callbacks, AvCamUdeEvtEndpointReset);
     callbacks.EvtUsbEndpointStart = AvCamUdeEvtEndpointStart;
@@ -373,7 +364,6 @@ AvCamUdeCreateDynamicEndpoint(
         &localInit, &endpointAttributes, endpoint);
     if (!NT_SUCCESS(status)) {
         /* The endpoint init belongs to the UdeCx callback, not this helper. */
-        WdfObjectDelete(queue);
         return status;
     }
 
@@ -414,14 +404,30 @@ AvCamUdeCreateDynamicEndpoint(
             goto FailEndpoint;
         }
     }
+    WDF_IO_QUEUE_CONFIG_INIT(&queueConfig, WdfIoQueueDispatchSequential);
+    queueConfig.EvtIoInternalDeviceControl = AvCamUdeEvtEndpointIo;
+    queueConfig.EvtIoCanceledOnQueue = AvCamUdeEvtEndpointCanceledOnQueue;
+    queueConfig.PowerManaged = WdfFalse;
+    WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
+        &queueAttributes, AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT);
+    queueAttributes.ParentObject = (WDFOBJECT)*endpoint;
+    status = WdfIoQueueCreate(
+        controller, &queueConfig, &queueAttributes, &queue);
+    if (!NT_SUCCESS(status)) {
+        goto FailEndpoint;
+    }
+    AvCamUdeEndpointQueueGetContext(queue)->UsbDevice = usbDevice;
+    AvCamUdeEndpointQueueGetContext(queue)->EndpointAddress = address;
     AvCamUdeEndpointQueueGetContext(queue)->Endpoint = *endpoint;
     UdecxUsbEndpointSetWdfIoQueue(*endpoint, queue);
     return STATUS_SUCCESS;
 
 FailEndpoint:
+    /* The endpoint also owns any successfully created child queue,
+     * work item, DPC and spinlock. No second delete of queue is legal.
+     */
     WdfObjectDelete(*endpoint);
     *endpoint = NULL;
-    WdfObjectDelete(queue);
     return status;
 }
 
