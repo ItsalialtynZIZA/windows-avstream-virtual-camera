@@ -29,6 +29,10 @@
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <TreatWarningAsError>true</TreatWarningAsError>
+      <!-- Never activate emulation in default Release builds. Only a
+           separately acknowledged, disposable-VM research build may
+           enumerate the new PID_5679 child; video ISO remains disabled. -->
+      <PreprocessorDefinitions Condition="'$(AvCamUdeVmEnumerationTest)'=='I_UNDERSTAND_DISPOSABLE_VM_ONLY'">AVCAM_UDE_VM_ENUMERATION_ONLY;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>$(DDK_LIB_PATH)\ude\1.0\udecxstub.lib;%(AdditionalDependencies)</AdditionalDependencies>
