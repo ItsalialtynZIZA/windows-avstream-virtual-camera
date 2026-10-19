@@ -222,8 +222,22 @@ AvCamUdeEvtEndpointReset(
     _In_ UDECXUSBENDPOINT endpoint,
     _In_ WDFREQUEST request)
 {
-    UNREFERENCED_PARAMETER(endpoint);
-    WdfRequestComplete(request, STATUS_SUCCESS);
+    PAVCAM_UDE_ENDPOINT_CONTEXT ctx =
+        AvCamUdeEndpointGetContext(endpoint);
+    BOOLEAN resetSafe;
+
+    /* UdeCx can issue RESET while callbacks still own request buffers.
+     * We do not report a successful reset until every inline request has
+     * finished and no PURGE is outstanding. Future async workers must also
+     * be counted in this same Drain before enabling ISO streaming.
+     */
+    WdfSpinLockAcquire(ctx->Lock);
+    resetSafe = (AvCamUdeDrainResetWhenIdle(&ctx->Drain) ==
+        AVCAM_UDE_DRAIN_OK);
+    WdfSpinLockRelease(ctx->Lock);
+
+    WdfRequestCompleteWithInformation(
+        request, resetSafe ? STATUS_SUCCESS : STATUS_DEVICE_BUSY, 0);
 }
 
 /*
