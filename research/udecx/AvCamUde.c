@@ -15,8 +15,25 @@
 
 #define AVCAM_UDE_FRAME_POOL_TAG 'fUcA'
 
-/* Explicit safety gate: this build does not enumerate a USB child. */
+/* Default release/research image: NO USB child, and ISO remains OFF.
+ *
+ * The separate, explicit I_UNDERSTAND_DISPOSABLE_VM_ONLY build setting
+ * below can test UdeCx enumeration in a throwaway VM. That mode does not
+ * enable streaming or camera output. Never ship/install its SYS on the
+ * user's primary Windows host. This guard is compile-time only, not an
+ * assertion that the machine actually runs under a hypervisor.
+ */
 static BOOLEAN g_AvCamUdeEnableAutoplug = FALSE;
+
+static BOOLEAN
+AvCamUdeAutoplugEnabled(VOID)
+{
+#if defined(AVCAM_UDE_VM_ENUMERATION_ONLY)
+    return TRUE;
+#else
+    return g_AvCamUdeEnableAutoplug;
+#endif
+}
 
 DRIVER_INITIALIZE DriverEntry;
 EVT_WDF_DRIVER_DEVICE_ADD AvCamUdeEvtDeviceAdd;
@@ -125,7 +142,7 @@ AvCamUdeEvtD0Entry(_In_ WDFDEVICE device,
 
     /* Deliberately disabled until UVC endpoints, class controls, resets,
      * and cancellation are implemented and independently validated. */
-    if (!g_AvCamUdeEnableAutoplug) {
+    if (!AvCamUdeAutoplugEnabled()) {
         return STATUS_SUCCESS;
     }
     return AvCamUdeUsbCreateAndPlug(device);
