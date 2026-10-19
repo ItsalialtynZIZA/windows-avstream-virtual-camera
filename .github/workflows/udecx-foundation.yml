@@ -108,5 +108,13 @@ jobs:
           msbuild research/udecx/AvCamUde.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath" /p:AvCamUdeVmEnumerationTest=I_UNDERSTAND_DISPOSABLE_VM_ONLY
           if ($LASTEXITCODE -ne 0) { throw 'VM-only UdeCx enumeration variant failed compilation.' }
           Write-Host "UDECX_VM_ENUMERATION_COMPILE_ONLY_PASSED"
+      - name: Compile explicitly gated Windows 11 host video variant (NO INSTALL)
+        shell: pwsh
+        run: |
+          # Validates both UdeCx autoplug and the actual native ISO dispatcher,
+          # without loading a SYS on the build runner.
+          msbuild research/udecx/AvCamUde.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath" /p:AvCamUdeHostVideoTest=I_ACCEPT_NATIVE_UDECX_ON_PRIMARY_WINDOWS
+          if ($LASTEXITCODE -ne 0) { throw 'Host live-video UdeCx variant did not compile.' }
+          Write-Host 'UDECX_HOST_VIDEO_COMPILE_ONLY_PASSED'
       # Intentionally NO upload-artifact or deployment step.
       # Neither the default nor VM-only build is installed as a camera.
