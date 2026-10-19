@@ -104,30 +104,58 @@ if (@(Get-ChildItem $backup -Filter '*.sys' -Recurse -File).Count -eq 0) {
 }
 Write-Host "Original driver backup: $backup"
 
-$work = Join-Path $backup 'candidate-signed'
+# Inf2Cat.exe on Windows PowerShell 5.1 can misparse an embedded /driver:
+# argument when the directory contains spaces (e.g. a user profile name).
+# Sign in a dedicated, short, space-free temporary folder, not in Documents.
+$work = Join-Path $env:SystemDrive ('AvCamC270Stage-' + [guid]::NewGuid().ToString('N'))
+$candidateBackup = Join-Path $backup 'candidate-signed'
 New-Item -ItemType Directory -Path $work -Force | Out-Null
-foreach ($name in @('AvCamUde.sys', 'AvCamUde.inf', 'avcamude.cat')) {
-    Copy-Item (Join-Path $PSScriptRoot $name) $work
-}
-$sys = Join-Path $work 'AvCamUde.sys'
-$inf = Join-Path $work 'AvCamUde.inf'
-$cat = Join-Path $work 'avcamude.cat'
-$thumb = $cert.Thumbprint
-Invoke-External $signTool @('sign', '/as', '/sm', '/s', 'My', '/sha1',
-    $thumb, '/fd', 'SHA256', $sys)
-# SYS has changed; regenerate a catalog so it hashes the locally signed SYS.
-Remove-Item -LiteralPath $cat -Force
-Invoke-External $inf2cat @('/driver:' + $work, '/os:10_X64')
-if (-not (Test-Path $cat)) { throw 'Inf2Cat did not generate matching catalog; old driver preserved' }
-Invoke-External $signTool @('sign', '/sm', '/s', 'My', '/sha1',
-    $thumb, '/fd', 'SHA256', $cat)
-Invoke-External $signTool @('verify', '/pa', $sys)
-Invoke-External $signTool @('verify', '/pa', $cat)
-Write-Host 'Locally signed driver and catalog verified.'
-Write-Host 'Installing only ROOT\AvCamUdeController via guarded SetupAPI tool.'
-& (Join-Path $PSScriptRoot 'AvCamUdeHostRootInstall.exe') 'install' $inf 'I_ACCEPT_KERNEL_TEST_ON_PRIMARY_WINDOWS'
-if ($LASTEXITCODE -ne 0) {
-    throw "Installer failed, original driver export remains at $backup"
+try {
+    foreach ($name in @('AvCamUde.sys', 'AvCamUde.inf', 'avcamude.cat')) {
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot $name) -Destination $work
+    }
+    if ($work -match '\s') {
+        throw "Signing staging path unexpectedly contains spaces: $work"
+    }
+    $sys = Join-Path $work 'AvCamUde.sys'
+    $inf = Join-Path $work 'AvCamUde.inf'
+    $cat = Join-Path $work 'avcamude.cat'
+    $thumb = $cert.Thumbprint
+    Write-Host "Signing stage: $work"
+    Invoke-External $signTool @('sign', '/as', '/sm', '/s', 'My', '/sha1',
+        $thumb, '/fd', 'SHA256', $sys)
+
+    # Signed SYS bytes differ from the original catalog manifest.
+    # Regenerate the catalog from the exact signed SYS and matching INF.
+    Remove-Item -LiteralPath $cat -Force
+    $inf2catArgs = @("/driver:$work", '/os:10_X64')
+    Write-Host "Inf2Cat arguments: $($inf2catArgs -join ' ')"
+    Invoke-External $inf2cat $inf2catArgs
+    if (-not (Test-Path -LiteralPath $cat -PathType Leaf)) {
+        throw 'Inf2Cat did not generate matching catalog; existing controller untouched'
+    }
+    Invoke-External $signTool @('sign', '/sm', '/s', 'My', '/sha1',
+        $thumb, '/fd', 'SHA256', $cat)
+    Invoke-External $signTool @('verify', '/pa', $sys)
+    Invoke-External $signTool @('verify', '/pa', $cat)
+    Write-Host 'Locally signed driver and catalog verified.'
+
+    # Preserve the fully signed candidate for repeatable rollback diagnostics.
+    New-Item -ItemType Directory -Path $candidateBackup -Force | Out-Null
+    Copy-Item -LiteralPath $sys -Destination $candidateBackup
+    Copy-Item -LiteralPath $inf -Destination $candidateBackup
+    Copy-Item -LiteralPath $cat -Destination $candidateBackup
+
+    Write-Host 'Installing only ROOT\AvCamUdeController via guarded SetupAPI tool.'
+    & (Join-Path $PSScriptRoot 'AvCamUdeHostRootInstall.exe') 'install' $inf 'I_ACCEPT_KERNEL_TEST_ON_PRIMARY_WINDOWS'
+    if ($LASTEXITCODE -ne 0) {
+        throw "Installer failed, original driver export remains at $backup"
+    }
+} finally {
+    # Do not leave staged kernel binaries in the filesystem root.
+    if (Test-Path -LiteralPath $work -PathType Container) {
+        Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 Write-Host 'C270_PROFILE_INSTALL_ATTEMPT_COMPLETE'
 Write-Host "Backup for rollback: $backup"
