@@ -85,6 +85,24 @@ private:
 const GUID kSampleGrabber = {0xC1F400A0,0x3F08,0x11D3,{0x9F,0x0B,0x00,0x60,0x08,0x03,0x9E,0x37}};
 const GUID kNullRenderer = {0xC1F400A4,0x3F08,0x11D3,{0x9F,0x0B,0x00,0x60,0x08,0x03,0x9E,0x37}};
 
+bool GetDisconnectedPin(IBaseFilter* filter, PIN_DIRECTION desired, IPin** out) {
+    if (!filter || !out) return false;
+    *out = nullptr;
+    ComPtr<IEnumPins> pins;
+    if (FAILED(filter->EnumPins(&pins))) return false;
+    ComPtr<IPin> pin;
+    ULONG fetched = 0;
+    while (pins->Next(1, pin.ReleaseAndGetAddressOf(), &fetched) == S_OK) {
+        PIN_DIRECTION direction{};
+        ComPtr<IPin> peer;
+        if (SUCCEEDED(pin->QueryDirection(&direction)) && direction == desired &&
+            pin->ConnectedTo(&peer) == VFW_E_NOT_CONNECTED) {
+            *out = pin.Detach();
+            return true;
+        }
+    }
+    return false;
+}
 bool LocateObsFilter(IBaseFilter** out) {
     if (!out) return false;
     *out = nullptr;
@@ -121,12 +139,8 @@ bool DirectShowObsSource::Start() {
     if (!LocateObsFilter(sourceFilter_.ReleaseAndGetAddressOf())) {
         failureStage_ = L"OBS filter enumeration/binding"; errorCode_ = HRESULT_FROM_WIN32(ERROR_NOT_FOUND); return false;
     }
-    ComPtr<ICaptureGraphBuilder2> builder;
     if (FAILED(CoCreateInstance(CLSID_FilterGraph, nullptr, CLSCTX_INPROC_SERVER,
             IID_PPV_ARGS(&graph_))) ||
-        FAILED(CoCreateInstance(CLSID_CaptureGraphBuilder2, nullptr, CLSCTX_INPROC_SERVER,
-            IID_PPV_ARGS(&builder))) ||
-        FAILED(builder->SetFiltergraph(graph_.Get())) ||
         FAILED(graph_->AddFilter(sourceFilter_.Get(), L"OBS Virtual Camera")) ||
         FAILED(CoCreateInstance(kSampleGrabber, nullptr, CLSCTX_INPROC_SERVER,
             IID_PPV_ARGS(&grabberFilter_))) ||
@@ -146,12 +160,42 @@ bool DirectShowObsSource::Start() {
     wanted.formattype = FORMAT_VideoInfo;
     auto* callback = new FrameCallback();
     callback_.Attach(static_cast<IUnknown*>(callback));
-    if (FAILED(grabber->SetMediaType(&wanted)) ||
-        FAILED(grabber->SetOneShot(FALSE)) ||
-        FAILED(grabber->SetCallback(callback, 1)) ||
-        FAILED(builder->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video,
-            sourceFilter_.Get(), grabberFilter_.Get(), sinkFilter_.Get()))) {
-        failureStage_ = L"OBS graph RenderStream/RGB32"; errorCode_ = static_cast<DWORD>(VFW_E_CANNOT_CONNECT);
+    const HRESULT mediaResult = grabber->SetMediaType(&wanted);
+    const HRESULT oneShotResult = grabber->SetOneShot(FALSE);
+    const HRESULT callbackResult = grabber->SetCallback(callback, 1);
+    if (FAILED(mediaResult) || FAILED(oneShotResult) || FAILED(callbackResult)) {
+        failureStage_ = L"OBS SampleGrabber media type/callback";
+        errorCode_ = static_cast<DWORD>(FAILED(mediaResult) ? mediaResult :
+            (FAILED(oneShotResult) ? oneShotResult : callbackResult));
+        Stop();
+        return false;
+    }
+    // Explicitly connect the OBS output pin. RenderStream may choose a
+    // preview pin or insert unexpected intermediate filters.
+    ComPtr<IPin> sourceOut;
+    ComPtr<IPin> grabberIn;
+    ComPtr<IPin> grabberOut;
+    ComPtr<IPin> rendererIn;
+    if (!GetDisconnectedPin(sourceFilter_.Get(), PINDIR_OUTPUT, &sourceOut) ||
+        !GetDisconnectedPin(grabberFilter_.Get(), PINDIR_INPUT, &grabberIn) ||
+        !GetDisconnectedPin(grabberFilter_.Get(), PINDIR_OUTPUT, &grabberOut) ||
+        !GetDisconnectedPin(sinkFilter_.Get(), PINDIR_INPUT, &rendererIn)) {
+        failureStage_ = L"OBS output or SampleGrabber pin missing";
+        errorCode_ = static_cast<DWORD>(VFW_E_NOT_FOUND);
+        Stop();
+        return false;
+    }
+    const HRESULT sourceConnectResult = graph_->Connect(sourceOut.Get(), grabberIn.Get());
+    if (FAILED(sourceConnectResult)) {
+        failureStage_ = L"OBS output pin to SampleGrabber connection";
+        errorCode_ = static_cast<DWORD>(sourceConnectResult);
+        Stop();
+        return false;
+    }
+    const HRESULT sinkConnectResult = graph_->Connect(grabberOut.Get(), rendererIn.Get());
+    if (FAILED(sinkConnectResult)) {
+        failureStage_ = L"OBS SampleGrabber to renderer connection";
+        errorCode_ = static_cast<DWORD>(sinkConnectResult);
         Stop();
         return false;
     }
