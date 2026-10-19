@@ -99,5 +99,14 @@ jobs:
             $warnings | ForEach-Object { Write-Host $_.Line }
             throw "UdeCx PREfast emitted $($warnings.Count) warning(s)"
           }
+      - name: Compile isolated VM-only enumeration variant (never install or publish)
+        shell: pwsh
+        run: |
+          # A separate WDK compile pass with an explicit test-only property.
+          # This binary is NOT uploaded, signed for distribution, installed,
+          # enabled on the runner, or used as the normal safety-gated build.
+          msbuild research/udecx/AvCamUde.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath" /p:AvCamUdeVmEnumerationTest=I_UNDERSTAND_DISPOSABLE_VM_ONLY
+          if ($LASTEXITCODE -ne 0) { throw 'VM-only UdeCx enumeration variant failed compilation.' }
+          Write-Host "UDECX_VM_ENUMERATION_COMPILE_ONLY_PASSED"
       # Intentionally NO upload-artifact or deployment step.
-      # Compile-only scaffold MUST NOT be installed as a camera.
+      # Neither the default nor VM-only build is installed as a camera.
