@@ -5,6 +5,7 @@
 #include <wrl/client.h>
 #include <string>
 #include <vector>
+#include <atomic>
 
 // Legacy OBS virtual-camera filter is exposed through DirectShow, not
 // necessarily through MF's source-reader capture path.
@@ -24,9 +25,9 @@ private:
     Microsoft::WRL::ComPtr<IBaseFilter> grabberFilter_;
     Microsoft::WRL::ComPtr<IBaseFilter> sourceFilter_;
     Microsoft::WRL::ComPtr<IBaseFilter> sinkFilter_;
-    Microsoft::WRL::ComPtr<IUnknown> grabberUnknown_;
-    std::vector<unsigned char> buffer_;
-    ULONGLONG lastFrameTick_ = 0;
+    Microsoft::WRL::ComPtr<IUnknown> callback_;
+    bool bottomUp_ = true;
+    std::uint64_t lastSequence_ = 0;
     DWORD errorCode_ = 0;
     const wchar_t* failureStage_ = L"";
 };
