@@ -166,3 +166,78 @@ AvCamUdePrepareIsoUrbFromPump(
     return AvCamUdePrepareIsoUrbCore(
         request, NULL, NULL, 0, pump, firstMicroframe100ns, bytesFilled);
 }
+
+/*
+ * PASSIVE_LEVEL-only final metadata preflight for an already staged ISO URB.
+ * This does NOT complete WDFREQUEST or choose its cancellation owner.
+ * It prepares UdeCx's actual transfer byte count for a separate native
+ * completion mechanism after the worker has released the JPEG lease.
+ *
+ * WDF request must still be owned exclusively and NOT be cancel-completed
+ * elsewhere. Call only once, after AvCamUdePrepareIsoUrbFromPump succeeded.
+ */
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS
+AvCamUdeSealPreparedIsoUrbPassive(
+    _In_ WDFREQUEST request,
+    _In_ ULONG reportedBytes)
+{
+    WDF_REQUEST_PARAMETERS params;
+    PURB urb;
+    ULONG packets;
+    ULONG capacity;
+    ULONG i;
+    ULONG sum = 0;
+    NTSTATUS status;
+
+    if (KeGetCurrentIrql() != PASSIVE_LEVEL) {
+        return STATUS_INVALID_DEVICE_STATE;
+    }
+    status = AvCamUdeInspectIsoUrb(request);
+    if (!NT_SUCCESS(status)) {
+        return status;
+    }
+
+    WDF_REQUEST_PARAMETERS_INIT(&params);
+    WdfRequestGetParameters(request, &params);
+    urb = (PURB)params.Parameters.Others.Arg1;
+    if (urb == NULL) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    packets = urb->UrbIsochronousTransfer.NumberOfPackets;
+    capacity = urb->UrbIsochronousTransfer.TransferBufferLength;
+    if (reportedBytes > capacity ||
+        urb->UrbIsochronousTransfer.ErrorCount != 0) {
+        return STATUS_INVALID_BUFFER_SIZE;
+    }
+
+    /* Do not change the original host offsets or compact sparse buffers. */
+    for (i = 0; i < packets; ++i) {
+        const ULONG start = urb->UrbIsochronousTransfer.IsoPacket[i].Offset;
+        const ULONG end = (i + 1u < packets) ?
+            urb->UrbIsochronousTransfer.IsoPacket[i + 1u].Offset :
+            capacity;
+        const ULONG length = urb->UrbIsochronousTransfer.IsoPacket[i].Length;
+
+        if (AvCamUdeIsoCompletionPacketValid(
+                start, end, capacity, length) !=
+                AVCAM_UDE_ISO_URB_VALID ||
+            urb->UrbIsochronousTransfer.IsoPacket[i].Status !=
+                USBD_STATUS_SUCCESS ||
+            length > reportedBytes - sum) {
+            return STATUS_DATA_ERROR;
+        }
+        sum += length;
+    }
+    if (sum != reportedBytes) {
+        return STATUS_DATA_ERROR;
+    }
+
+    /* UdeCx requires PASSIVE_LEVEL for this metadata operation.
+     * A separate, cancellation-safe completion owner must handle the
+     * actual request completion later (the live endpoint remains disabled).
+     */
+    UdecxUrbSetBytesCompleted(request, reportedBytes);
+    urb->UrbHeader.Status = USBD_STATUS_SUCCESS;
+    return STATUS_SUCCESS;
+}
