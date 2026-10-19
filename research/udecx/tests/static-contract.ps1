@@ -259,4 +259,19 @@ Assert-Matches $usb 'WdfDpcCancel\(ctx->QueueCancelDpc, TRUE\)' 'PURGE must wait
 Assert-Matches $usb 'WdfDpcCancel\(ctx->IsoCompleteDpc, TRUE\)' 'PURGE must wait for ISO completion DPC return.'
 Assert-Matches $usb 'ctx->QueueCancelDpcScheduled = TRUE' 'Canceled URBs arriving during purge quiescence must be rescheduled.'
 Assert-Matches $usb 'AvCamUdeDrainClaimPurgeAck' 'Final PURGE claim missing after DPC quiescence.'
+# The endpoint may not claim PURGE while the last MJPEG lease is still
+# held: reclaiming it after clearing PurgePending creates a START race.
+$purgeBegin = $usb.IndexOf("VOID" + [Environment]::NewLine + "AvCamUdeEvtEndpointPurgeWorkItem")
+$purgeFinish = $usb.IndexOf("VOID" + [Environment]::NewLine + "AvCamUdeEvtEndpointReset", $purgeBegin)
+if ($purgeBegin -lt 0 -or $purgeFinish -le $purgeBegin) {
+    throw 'Cannot isolate endpoint PURGE completion for lifetime audit.'
+}
+$purgeBody = $usb.Substring($purgeBegin, $purgeFinish - $purgeBegin)
+$resetPosition = $purgeBody.IndexOf('AvCamUdeFramePumpReset(&ctx->Pump)')
+$claimPosition = $purgeBody.IndexOf('AvCamUdeDrainClaimPurgeAck(&ctx->Drain)')
+$ackPosition = $purgeBody.IndexOf('UdecxUsbEndpointPurgeComplete(endpoint)')
+if ($resetPosition -lt 0 -or $claimPosition -le $resetPosition -or
+    $ackPosition -le $claimPosition) {
+    throw 'Unsafe PURGE order: free leased JPEG, claim ACK under lock, then notify UdeCx.'
+}
 Write-Host "UdeCx guarded USB child contract: passed"
