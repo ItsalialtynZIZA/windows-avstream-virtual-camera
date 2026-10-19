@@ -141,7 +141,7 @@ Assert-Matches $controller 'if \(!g_AvCamUdeEnableAutoplug\)' 'Experimental USB 
 
 $vm = Get-Content (Join-Path $root 'tools/AvCamUdeVmAcceptance.ps1') -Raw
 Assert-Matches $vm 'Win32_ComputerSystem' 'VM acceptance must check virtualization.'
-Assert-Matches $vm 'VID_1234&PID_5678' 'VM acceptance must target UdeCx research VID/PID.'
+Assert-Matches $vm 'VID_1234&PID_5679' 'VM acceptance must target UdeCx research VID/PID.'
 Assert-Matches $vm 'usbvideo' 'VM acceptance must confirm real Windows USB video binding.'
 Assert-Matches $vm 'MEDIA_FOUNDATION_SAMPLE_RECEIVED' 'VM acceptance must require an MF sample.'
 if ($vm -match '(?i)\bpnputil\s+/(add-driver|delete-driver|install)|New-PnpDevice|Disable-PnpDevice|Enable-PnpDevice') {
