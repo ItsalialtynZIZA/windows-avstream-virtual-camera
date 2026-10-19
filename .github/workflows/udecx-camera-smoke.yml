@@ -45,6 +45,10 @@ jobs:
           if ($LASTEXITCODE -ne 2) { throw 'Invalid frame-count gate failed' }
           & $exe --frames 301
           if ($LASTEXITCODE -ne 2) { throw 'Maximum frame-count gate failed' }
+          & $exe --profile unknown
+          if ($LASTEXITCODE -ne 2) { throw 'Invalid profile gate failed' }
+          & $exe --profile
+          if ($LASTEXITCODE -ne 2) { throw 'Missing profile gate failed' }
           Write-Host "CAMERA_SMOKE_CLI_CONTRACT_PASSED"
           # Use a deterministic in-memory 720p pattern so the COMPLETE
           # WIC JPEG encode/decode path runs without physical camera access.
