@@ -376,10 +376,23 @@ bool MediaFoundationFrameSource::ConfigureReader()
         return false;
     }
 
-    if (FAILED(reader_->SetCurrentMediaType(
+    // Hardware capture usually accepts an explicit 30 FPS output type.
+    // OBS Virtual Camera may expose a source rate that cannot be set as an
+    // output-rate constraint, even though RGB32 conversion is available.
+    // Retry without MF_MT_FRAME_RATE instead of rejecting the OBS source.
+    HRESULT setType = reader_->SetCurrentMediaType(
+        static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+        nullptr,
+        outputType.Get());
+    if (FAILED(setType))
+    {
+        outputType->DeleteItem(MF_MT_FRAME_RATE);
+        setType = reader_->SetCurrentMediaType(
             static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
             nullptr,
-            outputType.Get())))
+            outputType.Get());
+    }
+    if (FAILED(setType))
     {
         return false;
     }
@@ -426,9 +439,12 @@ bool MediaFoundationFrameSource::ValidateCurrentOutputType()
         &frameRateNumerator,
         &frameRateDenominator);
 
+    // Source rate is not necessarily the requested output cadence.
+    // The UdeCx MJPEG pump timestamps frames independently, so accepting
+    // a negotiated OBS rate does not affect the fixed BGRA frame contract.
     const bool frameRateAcceptable =
         FAILED(frameRateResult) || frameRateDenominator == 0 ||
-        (frameRateNumerator == 30u * frameRateDenominator);
+        (frameRateNumerator > 0u && frameRateDenominator > 0u);
 
     if (!IsEqualGUID(majorType, MFMediaType_Video) ||
         !IsEqualGUID(subtype, MFVideoFormat_RGB32) ||
