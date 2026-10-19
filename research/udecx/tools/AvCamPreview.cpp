@@ -55,6 +55,8 @@ struct Controller {
     std::atomic<bool> running{false};
     std::atomic<bool> frameAvailable{false};
     std::atomic<bool> captureFailed{false};
+    std::atomic<DWORD> captureHresult{0};
+    std::atomic<int> captureStage{0};
     std::atomic<bool> usbUnavailable{false};
     std::atomic<bool> encodeFailed{false};
     std::atomic<DWORD> controllerError{ERROR_SUCCESS};
@@ -100,6 +102,18 @@ void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
     }
     const bool opened = source->Start();
     if (!opened) {
+        if (name == L"OBS Virtual Camera") {
+            const auto* obs = static_cast<DirectShowObsSource*>(source.get());
+            g.captureHresult.store(obs->LastErrorCode());
+            const std::wstring stage = obs->FailureStage();
+            if (stage == L"OBS filter enumeration/binding") g.captureStage.store(1);
+            else if (stage == L"DirectShow graph/filter creation") g.captureStage.store(2);
+            else if (stage == L"SampleGrabber interface") g.captureStage.store(3);
+            else if (stage == L"OBS graph RenderStream/RGB32") g.captureStage.store(4);
+            else if (stage == L"OBS negotiated format is not 1280x720 RGB32") g.captureStage.store(5);
+            else if (stage == L"Graph IMediaControl") g.captureStage.store(6);
+            else if (stage == L"DirectShow graph Run") g.captureStage.store(7);
+        }
         g.captureFailed.store(true);
         g.running.store(false);
         PostMessageW(g.window, kPreviewReady, 0, 0);
@@ -247,6 +261,8 @@ void StartCapture() {
     g.upload = SendMessageW(g.usbCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
     g.stop.store(false);
     g.captureFailed.store(false);
+    g.captureStage.store(0);
+    g.captureHresult.store(0);
     g.usbUnavailable.store(false);
     g.encodeFailed.store(false);
     g.controllerError.store(ERROR_SUCCESS);
@@ -303,7 +319,14 @@ void UpdateStatus() {
         EnableWindow(g.sourceCombo, TRUE);
         EnableWindow(g.usbCheck, TRUE);
         EnableWindow(g.refreshButton, TRUE);
-        SetControlStatus(L"Ошибка захвата: камера отсутствует, занята или формат неподдерживаем");
+        if (g.selectedName == L"OBS Virtual Camera") {
+            wchar_t diagnostic[220]{};
+            swprintf_s(diagnostic, L"OBS DirectShow: этап %d, код 0x%08lX (сообщи эти числа)",
+                g.captureStage.load(), static_cast<unsigned long>(g.captureHresult.load()));
+            SetControlStatus(diagnostic);
+        } else {
+            SetControlStatus(L"Ошибка захвата: камера отсутствует, занята или формат неподдерживаем");
+        }
     } else if (g.running.load()) {
         wchar_t text[220]{};
         if (g.upload && g.usbUnavailable.load()) {
