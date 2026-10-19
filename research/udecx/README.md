@@ -385,3 +385,23 @@ to avoid losing ownership of the WDF request. That exceptional fallback,
 potential cancellation/PURGE callback ordering, and device removal remain
 **VM Driver Verifier release blockers**; the new code must not be enabled
 on the primary computer. Neither native ISO nor child autoplug are enabled.
+
+
+### Allocation-free queued-cancellation completion
+
+The canceled-on-queue handler now keeps a single-linked FIFO of WDFREQUEST
+handles, without `ExAllocatePool2` or per-request kernel allocations.
+While each canceled request is exclusively owned by the endpoint, its
+driver-defined `WdfRequestSetInformation` field temporarily points to the
+next request; the DPC restores that completion information to **zero**
+before passing the request to the USB stack with
+`WdfRequestCompleteWithInformation(..., STATUS_CANCELLED, 0)`.
+This removes the former immediate-completion fallback when nonpaged
+pool allocation failed. The dedicated DPC still decrements
+`QueueCancelOutstanding` only after completion returns; PURGE retains
+the existing final-I/O barrier.
+
+This relies on the WDF completion-information field remaining private
+until completion, and must be challenged by Driver Verifier, cancellation
+storms and device removal in the isolated Windows 11 VM. It is not an
+authorization to enable either experimental deployment flag.
