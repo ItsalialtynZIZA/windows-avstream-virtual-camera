@@ -1,4 +1,4 @@
-#include "../..//../feeder/src/MediaFoundationDeviceSelector.h"
+#include "../../../feeder/src/MediaFoundationDeviceSelector.h"
 #include <iostream>
 #include <stdexcept>
 #include <string>
