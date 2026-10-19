@@ -224,4 +224,20 @@ Assert-Matches $usb 'ctx->Controller = controller' 'Endpoint controller identity
 Assert-Matches $usb 'AvCamUdeFramePumpReset\(&ctx->Pump\)' 'Purge must release incomplete MJPEG source leases.'
 Assert-Matches $usb 'WdfWaitLockAcquire\(controller->FrameLock' 'Purge lease release must serialize with frame publication.'
 Assert-Matches $usb 'UdecxUsbEndpointPurgeComplete\(endpoint\)' 'Purge acknowledgement must remain present.'
+$queuedCancel = Get-Content (Join-Path $root 'AvCamUdeQueueCancel.c') -Raw
+Assert-Matches $project 'AvCamUdeQueueCancel.c' 'Queued-cancellation DPC must be WDK compiled.'
+Assert-Matches $usb 'queueConfig.EvtIoCanceledOnQueue\s*=\s*AvCamUdeEvtEndpointCanceledOnQueue' 'Queued URBs require explicit cancellation ownership.'
+Assert-Matches $usb 'WDF_DPC_CONFIG_INIT\(&dpcConfig, AvCamUdeEvtQueuedCancelDpc\)' 'Separate queue-cancel completion DPC missing.'
+Assert-Matches $header 'QueueCancelOutstanding' 'Queued cancellations must block premature PURGE.'
+Assert-Matches $usb 'ctx->QueueCancelOutstanding == 0' 'PURGE must wait for canceled URB completions.'
+Assert-Matches $queuedCancel 'WdfDpcEnqueue\(ctx->QueueCancelDpc\)' 'Canceled URBs must be deferred into separate DPC.'
+Assert-Matches $queuedCancel 'AvCamUdeEvtQueuedCancelDpc' 'Queue-cancel DPC callback missing.'
+Assert-Matches $queuedCancel 'USBD_STATUS_CANCELED' 'Canceled queued USB URBs require failure metadata.'
+Assert-Matches $queuedCancel 'WdfRequestComplete\(node->Request, STATUS_CANCELLED\)' 'DPC must finish canceled URBs.'
+Assert-Matches $queuedCancel '--ctx->QueueCancelOutstanding' 'Queue cancellation drain must happen after completion.'
+Assert-Matches $queuedCancel 'ctx->QueueCancelDpcScheduled = FALSE' 'Reentrant DPC schedule must reset when empty.'
+Assert-Matches $queuedCancel 'POOL_FLAG_NON_PAGED' 'Canceled request nodes must be nonpaged.'
+if ($usb -match '(?s)AvCamUdeEvtEndpointCanceledOnQueue\s*\([^)]*\)\s*\{[^}]*WdfRequestComplete\(') {
+    throw 'UdeCx queue cancellation must use a separate DPC, not inline completion.'
+}
 Write-Host "UdeCx guarded USB child contract: passed"
