@@ -77,10 +77,12 @@ jobs:
         run: |
           cmake -S research/udecx/tests -B build/c270-compat -A x64
           if ($LASTEXITCODE -ne 0) { throw 'C270 CMake configure failed' }
-          cmake --build build/c270-compat --config Release --target AvCamPreviewC270 AvCamC270ProfileTests AvCamObsSharedMemorySmoke
+          cmake --build build/c270-compat --config Release --target AvCamPreviewC270 AvCamC270ProfileTests AvCamC270JpegSmoke AvCamObsSharedMemorySmoke
           if ($LASTEXITCODE -ne 0) { throw 'C270 preview/descriptor test compile failed' }
           & 'build/c270-compat/Release/AvCamC270ProfileTests.exe'
           if ($LASTEXITCODE -ne 0) { throw 'UVC 720p compatibility descriptor tests failed' }
+          & 'build/c270-compat/Release/AvCamC270JpegSmoke.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'Real C270 720p JPEG encode/decode failed' }
           & 'build/c270-compat/Release/AvCamObsSharedMemorySmoke.exe'
           if ($LASTEXITCODE -ne 0) { throw 'OBS NV12 shared memory test failed' }
           Write-Host 'AVCAM_C270_720P_PREVIEW_AND_DESCRIPTOR_VALIDATED'
