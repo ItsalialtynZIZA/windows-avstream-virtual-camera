@@ -113,6 +113,10 @@ void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
             else if (stage == L"OBS negotiated format is not 1280x720 RGB32") g.captureStage.store(5);
             else if (stage == L"Graph IMediaControl") g.captureStage.store(6);
             else if (stage == L"DirectShow graph Run") g.captureStage.store(7);
+            else if (stage == L"OBS SampleGrabber media type/callback") g.captureStage.store(9);
+            else if (stage == L"OBS output or SampleGrabber pin missing") g.captureStage.store(10);
+            else if (stage == L"OBS output pin to SampleGrabber connection") g.captureStage.store(11);
+            else if (stage == L"OBS SampleGrabber to renderer connection") g.captureStage.store(12);
         }
         g.captureFailed.store(true);
         g.running.store(false);
