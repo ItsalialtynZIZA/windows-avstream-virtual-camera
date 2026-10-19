@@ -290,4 +290,19 @@ Assert-Matches $udecxTests '\.\./tools/AvCamUdeMfProbe\.cpp' 'Build must use iso
 if ($udecxTests -match '\.\./\.\./manual-vhci/tools/AvCamMfProbe\.cpp') {
     throw 'UdeCx acceptance must not compile the legacy AvCamBus camera selector.'
 }
+# Physical Logitech C270 must be an unambiguous, read-only user-mode
+# source. Never choose a USB camera solely by its friendly name.
+$selector = Get-Content (Join-Path $root '../../feeder/src/MediaFoundationDeviceSelector.h') -Raw
+$capture = Get-Content (Join-Path $root '../../feeder/src/MediaFoundationFrameSource.cpp') -Raw
+$feeder = Get-Content (Join-Path $root 'tools/AvCamUdeObsFeeder.cpp') -Raw
+Assert-Matches $selector 'HasUsbIdentity' 'Physical USB identity matcher missing.'
+Assert-Matches $selector 'IsVidPidPair' 'Source VID/PID must be strictly validated.'
+Assert-Matches $capture 'MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK' 'Physical source must validate MF symbolic-link identity.'
+Assert-Matches $capture 'MatchesSource' 'Physical MF source must require BOTH display name and VID/PID.'
+Assert-Matches $capture 'matches != 1u' 'Ambiguous physical camera matches must fail closed.'
+Assert-Matches $feeder '--source-usb-id' 'Feeder must expose an explicit real USB source selector.'
+Assert-Matches $feeder 'sourceUsbId' 'Feeder must pass source USB identity to MF source.'
+Assert-Matches $feeder 'bool dryRun = false' 'Source smoke test must not silently become a device upload.'
+Assert-Matches $udecxTests 'mf-device-selector-tests.cpp' 'Portable physical C270 selector tests must be wired to CI.'
+Assert-Matches $udecxTests 'udecx-physical-c270-source-selection' 'Physical identity regression CTest target missing.'
 Write-Host "UdeCx guarded USB child contract: passed"
