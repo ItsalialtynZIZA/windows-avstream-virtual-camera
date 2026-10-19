@@ -1,0 +1,74 @@
+name: AvCam C270 Capture Smoke (user-mode only)
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev/manual-vhci
+    paths:
+      - 'research/udecx/tools/AvCamUdeCaptureSmoke.cpp'
+      - 'research/udecx/tools/AvCamUdeMjpegEncoder.cpp'
+      - 'research/udecx/tools/AvCamUdeMjpegEncoder.h'
+      - 'research/udecx/tools/README_CAPTURE_SMOKE.txt'
+      - 'research/udecx/tests/CMakeLists.txt'
+      - 'feeder/src/MediaFoundationFrameSource.cpp'
+      - 'feeder/src/MediaFoundationFrameSource.h'
+      - 'feeder/src/MediaFoundationDeviceSelector.h'
+      - 'shared/VirtualCameraProtocol.h'
+      - '.github/workflows/udecx-camera-smoke.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-user-mode-only:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure Windows user-mode-only build
+        shell: pwsh
+        run: cmake -S research/udecx/tests -B build/camera-smoke -A x64
+      - name: Build C270 capture tool (no UdeCx kernel driver)
+        shell: pwsh
+        run: |
+          cmake --build build/camera-smoke --config Release --target AvCamUdeCaptureSmoke
+          if ($LASTEXITCODE -ne 0) {
+            throw "Standalone user-mode C270 capture tool did not compile."
+          }
+      - name: Smoke-test argument parsing without camera access
+        shell: pwsh
+        run: |
+          $exe = (Resolve-Path './build/camera-smoke/Release/AvCamUdeCaptureSmoke.exe').ProviderPath
+          & $exe --help
+          if ($LASTEXITCODE -ne 0) { throw 'Help mode unexpectedly failed' }
+          & $exe --frames 0
+          if ($LASTEXITCODE -ne 2) { throw 'Invalid frame-count gate failed' }
+          & $exe --frames 301
+          if ($LASTEXITCODE -ne 2) { throw 'Maximum frame-count gate failed' }
+          Write-Host "CAMERA_SMOKE_CLI_CONTRACT_PASSED"
+      - name: Package ONLY the unprivileged executable and instructions
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $destination = 'dist/AvCam-C270-Capture-Smoke'
+          New-Item -ItemType Directory -Path $destination -Force | Out-Null
+          Copy-Item 'build/camera-smoke/Release/AvCamUdeCaptureSmoke.exe' $destination
+          Copy-Item 'research/udecx/tools/README_CAPTURE_SMOKE.txt' $destination
+          $exe = Join-Path $destination 'AvCamUdeCaptureSmoke.exe'
+          $checksum = (Get-FileHash -LiteralPath $exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$checksum  AvCamUdeCaptureSmoke.exe" |
+            Out-File (Join-Path $destination 'SHA256SUMS.txt') -Encoding ascii
+          Write-Host "C270_SMOKE_SHA256=$checksum"
+          $files = @(Get-ChildItem -LiteralPath $destination -File)
+          if ($files.Count -ne 3) { throw 'Unexpected artifact file count' }
+          if (@($files | Where-Object { $_.Extension -match '(?i)^\.(sys|inf|cat|dll|ps1)$' }).Count -ne 0) {
+            throw 'Kernel/driver or script file in user-mode artifact: refused'
+          }
+          Write-Host "USER_MODE_ONLY_PACKAGE_VALIDATED"
+      - name: Upload safe C270 smoke-tool artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AvCam-C270-Capture-Smoke-x64
+          path: dist/AvCam-C270-Capture-Smoke/
+          if-no-files-found: error
+          retention-days: 14
