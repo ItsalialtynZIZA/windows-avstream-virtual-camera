@@ -203,7 +203,12 @@ AvCamUdeEvtEndpointStart(_In_ UDECXUSBENDPOINT endpoint)
 {
     PAVCAM_UDE_ENDPOINT_CONTEXT ctx = AvCamUdeEndpointGetContext(endpoint);
     WdfSpinLockAcquire(ctx->Lock);
-    (VOID)AvCamUdeDrainStart(&ctx->Drain);
+    if (AvCamUdeDrainStart(&ctx->Drain) == AVCAM_UDE_DRAIN_OK) {
+        /* UdeCx may delete and recreate a dynamic video endpoint when
+         * alternate settings change; reset its *own* pump on START.
+         */
+        ctx->PumpResetPending = TRUE;
+    }
     WdfSpinLockRelease(ctx->Lock);
 }
 
@@ -418,28 +423,13 @@ AvCamUdeEvtEndpointsConfigure(
     _In_ WDFREQUEST request,
     _In_ PUDECX_ENDPOINTS_CONFIGURE_PARAMS params)
 {
-    PAVCAM_UDE_USB_DEVICE_CONTEXT device;
-    PAVCAM_UDE_CONTROLLER_CONTEXT controller;
-    UDECXUSBENDPOINT videoEndpoint;
-
+    UNREFERENCED_PARAMETER(usbDevice);
     UNREFERENCED_PARAMETER(params);
-    device = AvCamUdeUsbGetContext(usbDevice);
-    controller = AvCamUdeControllerGetContext(device->Controller);
-    videoEndpoint = controller->VideoEndpoint;
-
-    /* A new alternate setting must never continue the previous
-     * packetizer's half-transmitted JPEG. Mark the next PASSIVE worker
-     * to reset its leased frame, FID and microframe schedule.
-     * The flag is guarded by the endpoint spinlock, not FrameLock:
-     * UdeCx configuration callbacks are not guaranteed PASSIVE_LEVEL.
+    /* UdeCx owns dynamic endpoint creation/removal on alt setting changes.
+     * Never dereference controller->VideoEndpoint here: it may already
+     * refer to an endpoint deleted by the class extension. Each newly
+     * STARTed endpoint resets its own pump under its own lock instead.
      */
-    if (videoEndpoint != NULL) {
-        PAVCAM_UDE_ENDPOINT_CONTEXT ctx =
-            AvCamUdeEndpointGetContext(videoEndpoint);
-        WdfSpinLockAcquire(ctx->Lock);
-        ctx->PumpResetPending = TRUE;
-        WdfSpinLockRelease(ctx->Lock);
-    }
     WdfRequestComplete(request, STATUS_SUCCESS);
 }
 
