@@ -279,6 +279,14 @@ if ($resetPosition -lt 0 -or $claimPosition -le $resetPosition -or
     $ackPosition -le $claimPosition) {
     throw 'Unsafe PURGE order: free leased JPEG, claim ACK under lock, then notify UdeCx.'
 }
+# A failed MJPEG frame-lease reset must not permit stale ISO data after
+# UdeCx PURGE. Structural checks complement (not replace) VM concurrency tests.
+$nativeIso = Get-Content (Join-Path $root 'AvCamUdeIsoNative.c') -Raw
+Assert-Matches $header 'BOOLEAN PumpQuarantined;' 'Endpoint needs latched failed-pump safety state.'
+Assert-Matches $usb 'ctx->PumpQuarantined = TRUE;' 'PURGE reset failure must quarantine the endpoint.'
+Assert-Matches $usb 'ctx->PumpQuarantined = FALSE;' 'New endpoint must initialize the quarantine latch.'
+Assert-Matches $nativeIso 'if \(endpoint->PumpQuarantined\)' 'Native ISO must refuse quarantined frame pumps.'
+Assert-Matches $nativeIso 'endpoint->PumpQuarantined = TRUE;' 'Failed native JPEG lease reset must fail closed.'
 $udecxMfProbe = Get-Content (Join-Path $root 'tools/AvCamUdeMfProbe.cpp') -Raw
 $udecxTests = Get-Content (Join-Path $root 'tests/CMakeLists.txt') -Raw
 Assert-Matches $udecxMfProbe 'link.find\(L"vid_1234&pid_5679"\)' 'MF acceptance must check isolated UdeCx symbolic-link PID.'
