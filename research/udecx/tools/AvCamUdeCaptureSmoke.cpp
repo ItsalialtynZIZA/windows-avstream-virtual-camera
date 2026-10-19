@@ -24,6 +24,9 @@ using Microsoft::WRL::ComPtr;
 namespace {
 constexpr unsigned kDefaultFrames = 30u;
 constexpr unsigned kMaximumFrames = 300u;
+constexpr UINT kMjpegWidth = 1920u;
+constexpr UINT kMjpegHeight = 1080u;
+constexpr UINT kDecodedPixelStride = kMjpegWidth * 3u;
 
 struct ComApartment {
     HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -56,6 +59,58 @@ void PrintUsage() {
         L"No kernel drivers, USB IOCTLs, file output or admin access.\n";
 }
 
+
+/* Fully decode the generated JPEG to a 1920x1080 BGR raster in memory.
+ * Marker checks alone are insufficient: a truncated JPEG can contain SOI
+ * and EOI yet fail while a client attempts to decode actual pixels.
+ * No frame or buffer is written to disk.
+ */
+bool DecodeJpegPixels(IWICImagingFactory* factory,
+                      const std::vector<unsigned char>& jpeg,
+                      std::vector<unsigned char>& decoded) {
+    if (factory == nullptr || jpeg.size() < 4u ||
+        jpeg.size() > static_cast<std::size_t>(UINT32_MAX) ||
+        decoded.size() !=
+            static_cast<std::size_t>(kDecodedPixelStride) * kMjpegHeight) {
+        return false;
+    }
+    ComPtr<IWICStream> input;
+    if (FAILED(factory->CreateStream(&input)) ||
+        FAILED(input->InitializeFromMemory(
+            const_cast<BYTE*>(jpeg.data()), static_cast<DWORD>(jpeg.size())))) {
+        return false;
+    }
+    ComPtr<IWICBitmapDecoder> decoder;
+    if (FAILED(factory->CreateDecoderFromStream(
+            input.Get(), nullptr, WICDecodeMetadataCacheOnLoad, &decoder))) {
+        return false;
+    }
+    GUID container{};
+    UINT frameCount = 0;
+    if (FAILED(decoder->GetContainerFormat(&container)) ||
+        !IsEqualGUID(container, GUID_ContainerFormatJpeg) ||
+        FAILED(decoder->GetFrameCount(&frameCount)) || frameCount != 1u) {
+        return false;
+    }
+    ComPtr<IWICBitmapFrameDecode> image;
+    if (FAILED(decoder->GetFrame(0, &image))) return false;
+    UINT width = 0, height = 0;
+    if (FAILED(image->GetSize(&width, &height)) ||
+        width != kMjpegWidth || height != kMjpegHeight) return false;
+
+    ComPtr<IWICFormatConverter> converter;
+    if (FAILED(factory->CreateFormatConverter(&converter)) ||
+        FAILED(converter->Initialize(
+            image.Get(), GUID_WICPixelFormat24bppBGR,
+            WICBitmapDitherTypeNone, nullptr, 0.0,
+            WICBitmapPaletteTypeCustom))) {
+        return false;
+    }
+    return SUCCEEDED(converter->CopyPixels(
+        nullptr, kDecodedPixelStride,
+        static_cast<UINT>(decoded.size()), decoded.data()));
+}
+
 std::uint64_t Fnv1a(const std::vector<unsigned char>& bytes) {
     std::uint64_t hash = 14695981039346656037ull;
     for (unsigned char b : bytes) {
@@ -69,6 +124,7 @@ std::uint64_t Fnv1a(const std::vector<unsigned char>& bytes) {
 int wmain(int argc, wchar_t** argv) {
     bool useObs = false;
     bool list = false;
+    bool selfTest = false;
     unsigned targetFrames = kDefaultFrames;
     for (int i = 1; i < argc; ++i) {
         const std::wstring arg = argv[i];
@@ -80,6 +136,8 @@ int wmain(int argc, wchar_t** argv) {
             useObs = true;
         } else if (arg == L"--list") {
             list = true;
+        } else if (arg == L"--self-test") {
+            selfTest = true;
         } else if (arg == L"--frames" && i + 1 < argc) {
             if (!ParseFrameCount(argv[++i], targetFrames)) {
                 PrintUsage();
@@ -116,6 +174,38 @@ int wmain(int argc, wchar_t** argv) {
         return 4;
     }
 
+    if (selfTest) {
+        /* Deterministic 720p test pattern. CI can check WIC end-to-end
+         * without connecting to, opening, or claiming a physical camera.
+         */
+        std::vector<unsigned char> fixture(AVCAM_FRAME_BYTES_BGRA32);
+        for (unsigned y = 0; y < AVCAM_FRAME_HEIGHT; ++y) {
+            for (unsigned x = 0; x < AVCAM_FRAME_WIDTH; ++x) {
+                const std::size_t pos =
+                    (static_cast<std::size_t>(y) * AVCAM_FRAME_WIDTH + x) * 4u;
+                fixture[pos] = static_cast<unsigned char>(x & 0xffu);
+                fixture[pos + 1u] = static_cast<unsigned char>(y & 0xffu);
+                fixture[pos + 2u] = static_cast<unsigned char>((x + y) & 0xffu);
+                fixture[pos + 3u] = 0xffu;
+            }
+        }
+        std::vector<unsigned char> jpeg;
+        std::vector<unsigned char> decoded(
+            static_cast<std::size_t>(kDecodedPixelStride) * kMjpegHeight);
+        if (!AvCamUde::EncodeBgraToMjpeg(
+                wic.Get(), fixture.data(), AVCAM_FRAME_WIDTH,
+                AVCAM_FRAME_HEIGHT, AVCAM_FRAME_STRIDE_BGRA32, jpeg) ||
+            !DecodeJpegPixels(wic.Get(), jpeg, decoded)) {
+            std::wcerr << L"CAPTURE_SMOKE_OFFLINE_ROUNDTRIP_FAILED\n";
+            return 11;
+        }
+        std::wcout << L"OfflineJpegBytes=" << jpeg.size()
+                   << L" DecodedWidth=" << kMjpegWidth
+                   << L" DecodedHeight=" << kMjpegHeight << L"\n"
+                   << L"AVCAM_MJPEG_OFFLINE_SELF_TEST_PASSED\n";
+        return 0;
+    }
+
     const std::wstring name = useObs ?
         L"OBS Virtual Camera" : L"Logi C270 HD WebCam";
     const std::wstring usb = useObs ? L"" : L"VID_046D&PID_0825";
@@ -143,6 +233,8 @@ int wmain(int argc, wchar_t** argv) {
 
     std::vector<unsigned char> frame(AVCAM_FRAME_BYTES_BGRA32);
     std::vector<unsigned char> jpeg;
+    std::vector<unsigned char> decoded(
+        static_cast<std::size_t>(kDecodedPixelStride) * kMjpegHeight);
     unsigned samples = 0u;
     std::size_t minJpeg = static_cast<std::size_t>(-1);
     std::size_t maxJpeg = 0u;
@@ -171,6 +263,11 @@ int wmain(int argc, wchar_t** argv) {
                        << L"\n";
             return 9;
         }
+        if (!DecodeJpegPixels(wic.Get(), jpeg, decoded)) {
+            std::wcerr << L"CAPTURE_SMOKE_JPEG_DECODE_FAILED sample=" << i
+                       << L" expected=1920x1080\n";
+            return 11;
+        }
         const std::uint64_t hash = Fnv1a(jpeg);
         if (samples == 0u) firstHash = hash;
         if (hash != firstHash) ++distinct;
@@ -183,11 +280,13 @@ int wmain(int argc, wchar_t** argv) {
 
     std::wcout << L"FramesCaptured=" << samples
                << L" FramesEncoded=" << samples
+               << L" FramesDecoded=" << samples
                << L" JPEGMinBytes=" << minJpeg
                << L" JPEGMaxBytes=" << maxJpeg
                << L" DifferentFromFirst=" << distinct
                << L" ElapsedMs=" << elapsed << L"\n";
     if (samples != targetFrames) return 10;
+    std::wcout << L"AVCAM_C270_MF_MJPEG_DECODE_PASSED\n";
     std::wcout << L"AVCAM_C270_MF_MJPEG_SMOKE_PASSED\n";
     std::wcout << L"Physical capture and JPEG encoding only. "
                   L"NO UdeCx device or browser video was tested.\n";
