@@ -117,6 +117,7 @@ void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
             else if (stage == L"OBS output or SampleGrabber pin missing") g.captureStage.store(10);
             else if (stage == L"OBS output pin to SampleGrabber connection") g.captureStage.store(11);
             else if (stage == L"OBS SampleGrabber to renderer connection") g.captureStage.store(12);
+            else if (stage == L"OBS direct pins and RenderStream fallback failed") g.captureStage.store(13);
         }
         g.captureFailed.store(true);
         g.running.store(false);
