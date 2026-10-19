@@ -8,8 +8,13 @@ Run:
   AvCamPreview.exe
 
 Choose:
-  "Logi C270 HD WebCam (USB)" for the exact physical Logitech USB source
-  "OBS Virtual Camera" for the virtual OBS capture source
+  "Logi C270 HD WebCam" for the exact physical Logitech USB source
+  "OBS Virtual Camera" for OBS when its Virtual Camera is started
+  Other discovered Windows Media Foundation cameras also appear in the list.
+
+Click "Обновить камеры" to refresh the list after attaching a device. The
+Logitech C270 choice is matched by exact USB VID_046D&PID_0825 as well as
+the displayed name; other sources use their unique friendly name.
 
 Click "Начать" (Start). The live 1280x720 camera frame appears in the
 app window; the status line reports received frames and observed FPS.
