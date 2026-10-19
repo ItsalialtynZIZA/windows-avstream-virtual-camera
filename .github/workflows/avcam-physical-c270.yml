@@ -38,6 +38,11 @@ jobs:
         shell: pwsh
         run: |
           ./research/physical-c270/Adapt-Sample.ps1 -SampleDir upstream/avstream/sampledevicemft
+      - name: Test physical Logitech registry preflight without accessing protected subkeys
+        shell: powershell
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File research/physical-c270/RegistryPreflightTest.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Physical Logitech registry preflight regression failed' }
       - name: Compile user-mode OBS bridge and device MFT COM DLL
         shell: pwsh
         run: |
