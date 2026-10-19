@@ -33,6 +33,10 @@
            separately acknowledged, disposable-VM research build may
            enumerate the new PID_5679 child; video ISO remains disabled. -->
       <PreprocessorDefinitions Condition="'$(AvCamUdeVmEnumerationTest)'=='I_UNDERSTAND_DISPOSABLE_VM_ONLY'">AVCAM_UDE_VM_ENUMERATION_ONLY;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- Explicit experimental variant for REAL Windows 11 UdeCx MJPEG path.
+           Never set this property in ordinary builds; kernel changes require
+           recovery readiness and manual installation on the owning machine. -->
+      <PreprocessorDefinitions Condition="'$(AvCamUdeHostVideoTest)'=='I_ACCEPT_NATIVE_UDECX_ON_PRIMARY_WINDOWS'">AVCAM_UDE_HOST_VIDEO_TEST;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>$(DDK_LIB_PATH)\ude\1.0\udecxstub.lib;%(AdditionalDependencies)</AdditionalDependencies>
