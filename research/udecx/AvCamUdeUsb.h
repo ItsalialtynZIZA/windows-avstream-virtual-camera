@@ -64,6 +64,13 @@ typedef struct _AVCAM_UDE_ENDPOINT_CONTEXT {
     AVCAM_UDE_ENDPOINT_DRAIN Drain;
     /* One in-flight request in UdeCx's sequential ISO endpoint queue. */
     WDFDPC IsoCompleteDpc;
+    /* Canceled-on-queue URBs have NOT passed DrainEnter. They own a
+     * separate completion DPC and must drain before endpoint PURGE ack.
+     */
+    WDFDPC QueueCancelDpc;
+    LIST_ENTRY QueueCancelledRequests;
+    ULONG QueueCancelOutstanding;
+    BOOLEAN QueueCancelDpcScheduled;
     WDFREQUEST PendingIsoRequest;
     BOOLEAN IsoDpcRunning;
     AVCAM_UDE_FRAME_PUMP Pump;
@@ -83,6 +90,8 @@ NTSTATUS AvCamUdeStageIsoRequestPassive(
     _In_ WDFQUEUE Queue,
     _In_ WDFREQUEST Request);
 EVT_WDF_DPC AvCamUdeEvtIsoCompleteDpc;
+EVT_WDF_DPC AvCamUdeEvtQueuedCancelDpc;
+EVT_WDF_IO_QUEUE_IO_CANCELED_ON_QUEUE AvCamUdeEvtEndpointCanceledOnQueue;
 /* PASSIVE_LEVEL only. Prepares payload/packet descriptors, but never completes
  * or takes ownership of the WDF request. Caller owns cancellation and state. */
 NTSTATUS AvCamUdePrepareIsoUrb(
