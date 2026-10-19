@@ -46,6 +46,10 @@ jobs:
           & $exe --frames 301
           if ($LASTEXITCODE -ne 2) { throw 'Maximum frame-count gate failed' }
           Write-Host "CAMERA_SMOKE_CLI_CONTRACT_PASSED"
+          # PowerShell returns the last native exit code at the end of a
+          # GH Actions step; the expected invalid-CLI exit code was 2.
+          # All negative cases have already been explicitly asserted.
+          exit 0
       - name: Package ONLY the unprivileged executable and instructions
         shell: pwsh
         run: |
