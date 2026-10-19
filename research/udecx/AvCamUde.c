@@ -1,5 +1,5 @@
-/* AvCam UdeCx controller compile-only foundation.
- * This is not a camera yet: no emulated UDECXUSBDEVICE is plugged in.
+/* AvCam UdeCx controller foundation.
+ * Default build does not plug a USB child; experimental builds require an explicit opt-in.
  * A separate ROOT\AvCamUdeController identity prevents accidentally
  * replacing the installed legacy AvCamBus driver.
  */
@@ -23,12 +23,17 @@
  * user's primary Windows host. This guard is compile-time only, not an
  * assertion that the machine actually runs under a hypervisor.
  */
+/* Default stays fail-closed for all ordinary Release builds. */
 static BOOLEAN g_AvCamUdeEnableAutoplug = FALSE;
+
+#if defined(AVCAM_UDE_VM_ENUMERATION_ONLY) && defined(AVCAM_UDE_HOST_VIDEO_TEST)
+#error VM enumeration and native-host video modes cannot be combined.
+#endif
 
 static BOOLEAN
 AvCamUdeAutoplugEnabled(VOID)
 {
-#if defined(AVCAM_UDE_VM_ENUMERATION_ONLY)
+#if defined(AVCAM_UDE_VM_ENUMERATION_ONLY) || defined(AVCAM_UDE_HOST_VIDEO_TEST)
     return TRUE;
 #else
     return g_AvCamUdeEnableAutoplug;
@@ -140,8 +145,8 @@ AvCamUdeEvtD0Entry(_In_ WDFDEVICE device,
 {
     UNREFERENCED_PARAMETER(previousState);
 
-    /* Deliberately disabled until UVC endpoints, class controls, resets,
-     * and cancellation are implemented and independently validated. */
+    /* An ordinary Release build remains inert. An explicitly acknowledged
+     * experimental build may plug the isolated PID_5679 child. */
     if (!AvCamUdeAutoplugEnabled()) {
         return STATUS_SUCCESS;
     }
