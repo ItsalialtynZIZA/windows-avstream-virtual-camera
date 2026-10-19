@@ -1,0 +1,141 @@
+name: AvCam C270-Compatible USB 720p (experimental)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev/manual-vhci
+    paths:
+      - 'research/udecx/**'
+      - '.github/workflows/udecx-host-video.yml'
+      - 'packages.config'
+      - 'feeder/src/ObsSharedMemorySource.cpp'
+      - 'feeder/src/ObsSharedMemorySource.h'
+      - '.github/workflows/avcam-c270-compat.yml'
+permissions:
+  contents: read
+concurrency:
+  group: udecx-experimental-c270-compat
+  cancel-in-progress: true
+jobs:
+  package-host-test:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate default and VM paths remain fail-closed
+        shell: pwsh
+        run: ./research/udecx/tests/static-contract.ps1
+      - name: Restore WDK cache
+        uses: actions/cache/restore@v4
+        with:
+          path: packages
+          key: wdk-sdk-x64-10.0.26100.6584-v2
+      - name: Restore Windows WDK and SDK
+        shell: pwsh
+        run: |
+          nuget restore packages.config -PackagesDirectory packages -NonInteractive
+          if ($LASTEXITCODE -ne 0) { throw 'WDK/SDK NuGet restore failed' }
+      - uses: microsoft/setup-msbuild@v2
+        with:
+          msbuild-architecture: x64
+      - name: Locate the Windows Driver Kit INF tools
+        shell: pwsh
+        run: |
+          $stampInf = Get-ChildItem packages -Recurse -Filter stampinf.exe -File |
+            Where-Object { $_.FullName -match '\\x64\\stampinf\.exe$' } |
+            Select-Object -First 1
+          if (-not $stampInf) { throw 'WDK x64 stampinf.exe is missing' }
+          $infDll = Get-ChildItem packages -Recurse -Filter InfVerif.dll -File |
+            Where-Object { $_.FullName -match '\\build\\[^\\]+\\bin\\x64\\InfVerif\.dll$' } |
+            Select-Object -First 1
+          $toolDir = $stampInf.Directory.FullName
+          if ($infDll) {
+            $toolDir = $infDll.Directory.FullName
+            Copy-Item $stampInf.FullName (Join-Path $toolDir 'stampinf.exe') -Force
+          }
+          "StampInfToolPath=$toolDir\\" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          $toolDir | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+      - name: Build isolated C270-720p UdeCx profile (do NOT install)
+        shell: pwsh
+        run: |
+          msbuild research/udecx/AvCamUde.vcxproj /t:Rebuild /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath" /p:AvCamUdeHostVideoTest=I_ACCEPT_NATIVE_UDECX_ON_PRIMARY_WINDOWS /p:AvCamUdeC270Profile=I_ACCEPT_C270_COMPATIBILITY_TEST
+          if ($LASTEXITCODE -ne 0) { throw 'Opt-in host-video driver failed to compile' }
+          Write-Host 'UDECX_HOST_VIDEO_KERNEL_BUILD_COMPLETED'
+      - name: Compile guarded physical-host SetupAPI installer (do NOT run install)
+        shell: pwsh
+        run: |
+          cmake -S research/udecx/tests -B build/udecx-host-installer -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'Host installer CMake configure failed' }
+          cmake --build build/udecx-host-installer --config Release --target AvCamUdeHostRootInstall
+          if ($LASTEXITCODE -ne 0) { throw 'Host installer C++ compilation failed' }
+          $exe = 'build/udecx-host-installer/Release/AvCamUdeHostRootInstall.exe'
+          & $exe
+          if ($LASTEXITCODE -ne 2) { throw 'Installer did not reject missing explicit acknowledgment' }
+          Write-Host 'HOST_INSTALLER_MISSING_ACK_REFUSED'
+          exit 0
+      - name: Compile and validate 720p OBS preview and UVC descriptor contract
+        shell: pwsh
+        run: |
+          cmake -S research/udecx/tests -B build/c270-compat -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'C270 CMake configure failed' }
+          cmake --build build/c270-compat --config Release --target AvCamPreviewC270 AvCamC270ProfileTests AvCamObsSharedMemorySmoke
+          if ($LASTEXITCODE -ne 0) { throw 'C270 preview/descriptor test compile failed' }
+          & 'build/c270-compat/Release/AvCamC270ProfileTests.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'UVC 720p compatibility descriptor tests failed' }
+          & 'build/c270-compat/Release/AvCamObsSharedMemorySmoke.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'OBS NV12 shared memory test failed' }
+          Write-Host 'AVCAM_C270_720P_PREVIEW_AND_DESCRIPTOR_VALIDATED'
+      - name: Validate signatures and create experimental package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = 'research/udecx/x64/Release/AvCamUde'
+          $sys = Join-Path $output 'AvCamUde.sys'
+          $inf = Join-Path $output 'AvCamUde.inf'
+          $cat = Join-Path $output 'avcamude.cat'
+          foreach ($file in @($sys, $inf, $cat)) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing WDK output: $file" }
+          }
+          $text = Get-Content $inf -Raw
+          if ($text -notmatch 'Root\\AvCamUdeController' -or $text -match 'Root\\AvCamVirtualUsbHost') {
+            throw 'Host test INF must target only the isolated UdeCx controller'
+          }
+          $sysSig = Get-AuthenticodeSignature -LiteralPath $sys
+          $catSig = Get-AuthenticodeSignature -LiteralPath $cat
+          if (-not $sysSig.SignerCertificate -or -not $catSig.SignerCertificate -or
+              $sysSig.SignerCertificate.Thumbprint -ne $catSig.SignerCertificate.Thumbprint) {
+            throw 'Test-signed SYS/CAT signer mismatch'
+          }
+          $dest = 'dist/AvCam-C270-USB-720p-EXPERIMENTAL'
+          New-Item -ItemType Directory -Path $dest -Force | Out-Null
+          foreach ($file in @($sys, $inf, $cat)) { Copy-Item $file $dest }
+          Copy-Item 'build/udecx-host-installer/Release/AvCamUdeHostRootInstall.exe' $dest
+          Copy-Item 'build/c270-compat/Release/AvCamPreviewC270.exe' $dest
+          foreach ($name in @('AvCamUdeHostPreflight.ps1', 'AvCamUdeHostRollback.ps1', 'AvCamUdeHostAcceptance.ps1', 'README_HOST_VIDEO_EXPERIMENT.txt')) {
+            Copy-Item (Join-Path 'research/udecx/tools' $name) $dest
+          }
+          Copy-Item 'research/udecx/tools/AvCamCompareUsb.ps1' $dest
+          Copy-Item 'research/udecx/tools/README_C270_COMPATIBILITY.txt' $dest
+          Export-Certificate -Cert $sysSig.SignerCertificate -FilePath (Join-Path $dest 'AvCamUdeHostTestSigner.cer') | Out-Null
+          $files = @(Get-ChildItem -LiteralPath $dest -File)
+          if ($files.Count -ne 12) { throw 'Unexpected host-video package count' }
+          foreach ($file in $files) {
+            if ($file.Name -notin @('AvCamUde.sys','AvCamUde.inf','avcamude.cat',
+              'AvCamUdeHostRootInstall.exe','AvCamUdeHostPreflight.ps1','AvCamUdeHostRollback.ps1','AvCamUdeHostAcceptance.ps1',
+              'README_HOST_VIDEO_EXPERIMENT.txt','AvCamUdeHostTestSigner.cer',
+              'AvCamPreviewC270.exe','AvCamCompareUsb.ps1','README_C270_COMPATIBILITY.txt')) {
+              throw "Unexpected host-video package content: $($file.Name)"
+            }
+          }
+          $checksums = foreach ($file in $files) {
+            '{0}  {1}' -f (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $file.Name
+          }
+          $checksums | Set-Content -LiteralPath (Join-Path $dest 'SHA256SUMS.txt') -Encoding ascii
+          Write-Host "UDECX_HOST_VIDEO_SIGNER=$($sysSig.SignerCertificate.Thumbprint)"
+          Write-Host 'UDECX_HOST_VIDEO_PACKAGE_VALIDATED_NOT_INSTALLED'
+      - name: Upload experimental host-video artifacts for owner inspection only
+        uses: actions/upload-artifact@v4
+        with:
+          name: AvCam-C270-USB-720p-EXPERIMENTAL
+          path: dist/AvCam-C270-USB-720p-EXPERIMENTAL/
+          if-no-files-found: error
+          retention-days: 14
