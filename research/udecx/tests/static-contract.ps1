@@ -169,4 +169,8 @@ Assert-Matches $drain 'AvCamUdeDrainResetWhenIdle' 'Reset must reject active end
 Assert-Matches $usb 'AvCamUdeDrainResetWhenIdle' 'Native endpoint reset must use drain barrier.'
 Assert-Matches $usb 'WdfRequestCompleteWithInformation' 'UdeCx reset request must report explicit status.'
 Assert-Matches $usb 'STATUS_DEVICE_BUSY' 'A reset with outstanding URBs must not report success.'
+Assert-Matches $adapter 'AvCamUdeSealPreparedIsoUrbPassive' 'Native PASSIVE ISO sealing API missing.'
+Assert-Matches $adapter 'UdecxUrbSetBytesCompleted' 'Native ISO sealing must explicitly report transferred bytes.'
+Assert-Matches $adapter 'AvCamUdeIsoCompletionPacketValid' 'Sealed ISO URB must preserve host window boundaries.'
+Assert-Matches $header 'AvCamUdeSealPreparedIsoUrbPassive' 'PASSIVE ISO seal signature missing.'
 Write-Host "UdeCx guarded USB child contract: passed"
