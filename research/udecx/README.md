@@ -285,3 +285,28 @@ handle. Each endpoint's own `EvtUsbEndpointStart` sets
 resets the MJPEG lease, packetizer FID/EOF and stream clock. PURGE and
 idle RESET also invalidate the pump. All of this remains within the
 disabled, compile-only native ISO bridge pending VM/runtime validation.
+
+## Host USB StartFrame ordering and DPC handoff hardening
+
+`AvCamUdeIsoClock.h` interprets the high-speed host `StartFrame` field
+as a **1-ms USB frame**, advances eight 125-us ISO packets per frame,
+tracks explicit frame order across the 2048-frame wrap, and rejects stale
+(backward) windows. For `USBD_START_ISO_TRANSFER_ASAP`, the input
+StartFrame is not treated as a usable timestamp: the emulated stream advances
+on its monotonic microframe timeline instead. The clock is committed only
+after both ISO packet staging and PASSIVE_LEVEL UdeCx metadata sealing
+succeed. A failed URB, endpoint START, PURGE, or reset invalidates it.
+
+In `AvCamUdeIsoNative.c` a completed WDF request may reenter the sequential
+endpoint queue while its original DPC is still running. The DPC now loops
+over handoffs, and the next request is reserved and the completion DPC
+enqueued under one endpoint spinlock. An already-running DPC consumes a
+newly handed-off request without attempting to enqueue itself again. On
+cancelled completion the next frame pump is invalidated, to avoid continuing
+a JPEG whose EOF never reached the host.
+
+**Important remaining requirements:** live USB frame counter and late-ASAP
+behavior still require VM validation; queued-on-cancelled URB callback
+semantics, PnP removal and DPC teardown need Driver Verifier coverage.
+Both `g_AvCamUdeEnableNativeIso` and
+`g_AvCamUdeEnableAutoplug` remain FALSE.
