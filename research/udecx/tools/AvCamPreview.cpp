@@ -146,6 +146,11 @@ void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
     while (!g.stop.load()) {
         std::uint64_t timestamp = 0;
         if (!source->ReadFrame(sample.data(), sample.size(), timestamp)) {
+            if (name == L"OBS Virtual Camera") {
+                const auto* obs = static_cast<DirectShowObsSource*>(source.get());
+                g.captureHresult.store(obs->LastErrorCode());
+                g.captureStage.store(8);
+            }
             if (!g.stop.load()) g.captureFailed.store(true);
             break;
         }
