@@ -36,6 +36,7 @@ AvCamUdeProcessEndpointIo(
 {
     PAVCAM_UDE_ENDPOINT_QUEUE_CONTEXT endpoint;
     PAVCAM_UDE_USB_DEVICE_CONTEXT device;
+    PAVCAM_UDE_CONTROLLER_CONTEXT controller;
     WDF_USB_CONTROL_SETUP_PACKET setup;
     PUCHAR transferBuffer = NULL;
     ULONG transferCapacity = 0;
@@ -93,6 +94,11 @@ AvCamUdeProcessEndpointIo(
     }
 
     device = AvCamUdeUsbGetContext(endpoint->UsbDevice);
+    controller = AvCamUdeControllerGetContext(device->Controller);
+    /* The video packetizer checks Committed under FrameLock; use the same
+     * PASSIVE_LEVEL lock while processing Probe/Commit on EP0.
+     */
+    WdfWaitLockAcquire(controller->FrameLock, NULL);
     result = AvCamUdeHandleUvcInterfaceControl(
         &device->Stream,
         setup.Packet.bm.Byte,
@@ -103,6 +109,7 @@ AvCamUdeProcessEndpointIo(
         transferBuffer,
         transferCapacity,
         &transferred);
+    WdfWaitLockRelease(controller->FrameLock);
 
     if (result == AVCAM_UVC_RESULT_OK) {
         /* Never report a byte count larger than the mapped URB buffer. */
