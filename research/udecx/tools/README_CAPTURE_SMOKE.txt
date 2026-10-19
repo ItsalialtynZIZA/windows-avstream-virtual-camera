@@ -61,3 +61,14 @@ Check the executable's SHA256 hash using:
 The expected hash is published in the GitHub Actions run log AND in
 the downloadable SHA256SUMS.txt. The executable is not code-signed.
 Only use the artifact from your own repository CI.
+
+PERFORMANCE DIAGNOSTICS:
+- TimingCaptureMs: cumulative Media Foundation frame-read time.
+- TimingEncodeMs: cumulative BGRA->1920x1080 JPEG conversion time.
+- TimingDecodeMs: cumulative full 1920x1080 JPEG pixel decode time.
+- ObservedProcessingFPS: end-to-end smoke-test throughput, not necessarily
+  physical webcam sensor FPS. This includes test-only full decode overhead.
+- MfSampleTimestampSpan100ns: first-to-last sample timestamps from MF.
+- NonIncreasingTimestamps: repeated/decreasing MF sample timestamps.
+- AVCAM_SPEED_BELOW_25FPS: advisory only; successful correct frames still
+  result in exit code 0. Compare capture / encode / decode before tuning.
