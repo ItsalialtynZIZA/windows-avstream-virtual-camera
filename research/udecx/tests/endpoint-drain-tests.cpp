@@ -40,6 +40,42 @@ static void TestStartAndPurge() {
         "Unmatched completion accepted");
 }
 
+static void TestResetCannotRaceOwnedBuffer() {
+    AVCAM_UDE_ENDPOINT_DRAIN e{};
+    AvCamUdeDrainInit(&e);
+    Expect(AvCamUdeDrainStart(&e) == AVCAM_UDE_DRAIN_OK,
+        "Reset test START failed");
+    const auto before = e.Generation;
+    Expect(AvCamUdeDrainEnter(&e) == AVCAM_UDE_DRAIN_OK,
+        "Reset test I/O admission failed");
+    Expect(AvCamUdeDrainResetWhenIdle(&e) == AVCAM_UDE_DRAIN_INVALID,
+        "Reset cannot succeed during active URB access");
+    Expect(e.Generation == before,
+        "Rejected RESET must not advance generation");
+    Expect(AvCamUdeDrainLeave(&e) == AVCAM_UDE_DRAIN_OK,
+        "Reset test I/O drain failed");
+    Expect(AvCamUdeDrainResetWhenIdle(&e) == AVCAM_UDE_DRAIN_OK,
+        "Idle reset must succeed");
+    Expect(e.Generation == before + 1,
+        "Idle reset must advance generation exactly once");
+    Expect(AvCamUdeDrainBeginPurge(&e) == AVCAM_UDE_DRAIN_OK,
+        "Reset test PURGE failed");
+    const auto duringPurge = e.Generation;
+    Expect(AvCamUdeDrainResetWhenIdle(&e) == AVCAM_UDE_DRAIN_INVALID,
+        "Reset cannot succeed during PURGE");
+    Expect(e.Generation == duringPurge,
+        "Purge-blocked reset must not advance generation");
+    Expect(AvCamUdeDrainClaimPurgeAck(&e) == 1,
+        "Idle purge must acknowledge");
+    Expect(AvCamUdeDrainResetWhenIdle(&e) == AVCAM_UDE_DRAIN_OK,
+        "Reset after drained PURGE must be allowed");
+    e.Generation = ~0ull;
+    Expect(AvCamUdeDrainResetWhenIdle(&e) == AVCAM_UDE_DRAIN_INVALID,
+        "Reset must never wrap generation");
+    Expect(AvCamUdeDrainResetWhenIdle(nullptr) == AVCAM_UDE_DRAIN_INVALID,
+        "Null endpoint reset must fail");
+}
+
 static void TestEdgeCases() {
     AVCAM_UDE_ENDPOINT_DRAIN e{};
     AvCamUdeDrainInit(&e);
@@ -94,6 +130,7 @@ int main() {
     try {
         TestStartAndPurge();
         TestEdgeCases();
+        TestResetCannotRaceOwnedBuffer();
         AVCAM_UDE_ENDPOINT_DRAIN initial{};
         AvCamUdeDrainInit(&initial);
         Enumerate(initial, 7);
