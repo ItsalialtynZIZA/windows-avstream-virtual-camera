@@ -307,9 +307,9 @@ Assert-Matches $vmEnumeration 'VID_1234&PID_5679' 'VM report must target isolate
 if ($vmEnumeration -match '(?i)\bpnputil\s+/(add-driver|delete-driver|install)|New-PnpDevice|Disable-PnpDevice|Enable-PnpDevice|UpdateDriverForPlugAndPlayDevices') {
     throw 'VM enumeration report must remain read-only.'
 }
-Assert-Matches $udecxTests 'AvCamUdeVmRootInstall.cpp' 'VM root installation tool must be independently compiled.'
 $udecxMfProbe = Get-Content (Join-Path $root 'tools/AvCamUdeMfProbe.cpp') -Raw
 $udecxTests = Get-Content (Join-Path $root 'tests/CMakeLists.txt') -Raw
+Assert-Matches $udecxTests 'AvCamUdeVmRootInstall.cpp' 'VM root installation tool must be independently compiled.'
 Assert-Matches $udecxMfProbe 'link.find\(L"vid_1234&pid_5679"\)' 'MF acceptance must check isolated UdeCx symbolic-link PID.'
 Assert-Matches $udecxMfProbe 'const bool matchingUsbId' 'MF acceptance must identify its USB device, not merely a friendly name.'
 if ($udecxMfProbe -match 'if\s*\(matchingName\s*\|\|\s*matchingUsbId\)') {
