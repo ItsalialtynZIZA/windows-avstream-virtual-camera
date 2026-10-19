@@ -19,8 +19,7 @@ $all = @(Get-PnpDevice -ErrorAction Stop)
 # Root UdeCx controller, experimental USB child, and the Windows USB Video consumer only.
 $target = @($all | Where-Object {
     $_.InstanceId -match '(?i)^ROOT\\AVCAMUDECONTROLLER(\\|$)' -or
-    $_.InstanceId -match '(?i)^USB\\VID_1234&PID_5679(&|\\|$)' -or
-    ($_.Service -eq 'usbvideo' -and $_.InstanceId -match '(?i)VID_1234&PID_5679')
+    $_.InstanceId -match '(?i)^USB\\VID_1234&PID_5679(&|\\|$)'
 })
 $devices = @(
     foreach ($d in $target) {
