@@ -36,7 +36,7 @@ $camDevices = @($devices | Where-Object {
     $_.PNPDeviceID -match '(?i)^USB\\VID_1234&PID_5678([&\\]|$)'
 })
 
-$bootDisk = Get-PSDrive -Name $env:SystemDrive.TrimEnd(':') -ErrorAction Stop
+$bootDisk = Get-PSDrive -Name ($env:SystemDrive.TrimEnd(':')) -ErrorAction Stop
 $freeGiB = [Math]::Round($bootDisk.Free / 1GB, 1)
 $memoryGiB = [Math]::Round([double]$system.TotalPhysicalMemory / 1GB, 1)
 if ($memoryGiB -lt 4) {
