@@ -58,6 +58,13 @@ typedef struct _AVCAM_UDE_ENDPOINT_CONTEXT {
     WDFSPINLOCK Lock;
     WDFWORKITEM PurgeWorkItem;
     AVCAM_UDE_ENDPOINT_DRAIN Drain;
+    /* One in-flight request in UdeCx's sequential ISO endpoint queue. */
+    WDFDPC IsoCompleteDpc;
+    WDFREQUEST PendingIsoRequest;
+    AVCAM_UDE_FRAME_PUMP Pump;
+    BOOLEAN PumpInitialized;
+    BOOLEAN PumpResetPending;
+    ULONGLONG NextMicroframe100ns;
 } AVCAM_UDE_ENDPOINT_CONTEXT, *PAVCAM_UDE_ENDPOINT_CONTEXT;
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(
     AVCAM_UDE_ENDPOINT_CONTEXT, AvCamUdeEndpointGetContext);
@@ -65,6 +72,11 @@ WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(
     AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT, AvCamUdeEndpointQueueGetContext);
 
 NTSTATUS AvCamUdeInspectIsoUrb(_In_ WDFREQUEST Request);
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS AvCamUdeStageIsoRequestPassive(
+    _In_ WDFQUEUE Queue,
+    _In_ WDFREQUEST Request);
+EVT_WDF_DPC AvCamUdeEvtIsoCompleteDpc;
 /* PASSIVE_LEVEL only. Prepares payload/packet descriptors, but never completes
  * or takes ownership of the WDF request. Caller owns cancellation and state. */
 NTSTATUS AvCamUdePrepareIsoUrb(
