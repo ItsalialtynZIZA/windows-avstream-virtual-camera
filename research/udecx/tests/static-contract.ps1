@@ -240,4 +240,12 @@ Assert-Matches $queuedCancel 'POOL_FLAG_NON_PAGED' 'Canceled request nodes must 
 if ($usb -match '(?s)AvCamUdeEvtEndpointCanceledOnQueue\s*\([^)]*\)\s*\{[^}]*WdfRequestComplete\(') {
     throw 'UdeCx queue cancellation must use a separate DPC, not inline completion.'
 }
+Assert-Matches $usb 'queueAttributes.ParentObject = \(WDFOBJECT\)\*endpoint' 'Dynamic endpoint must own its request queue.'
+Assert-Matches $usb 'UdecxUsbEndpointSetWdfIoQueue\(\*endpoint, queue\)' 'New endpoint child queue must be registered with UdeCx.'
+if ($usb -match 'WdfObjectDelete\(queue\)') {
+    throw 'Endpoint-owned WDF queue must not be independently double deleted.'
+}
+Assert-Matches $queuedCancel 'InsertTailList' 'Canceled queue requests need FIFO storage until DPC owns them.'
+Assert-Matches $queuedCancel 'WdfRequestComplete\(node->Request, STATUS_CANCELLED\)' 'Queue cancellations must complete from their own DPC.'
+Assert-Matches $usb 'ctx->QueueCancelOutstanding == 0' 'Queued-cancel completion count must gate PURGE.'
 Write-Host "UdeCx guarded USB child contract: passed"
