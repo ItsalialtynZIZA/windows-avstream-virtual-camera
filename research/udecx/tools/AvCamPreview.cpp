@@ -15,6 +15,7 @@
 #include <cstring>
 #include <cwchar>
 #include <atomic>
+#include <algorithm>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -32,6 +33,7 @@ constexpr int kStartId = 102;
 constexpr int kStopId = 103;
 constexpr int kStatusId = 104;
 constexpr int kUsbId = 105;
+constexpr int kRefreshId = 106;
 constexpr wchar_t kControllerPath[] = LR"(\\.\AvCamUdeController0)";
 
 struct Controller {
@@ -41,6 +43,8 @@ struct Controller {
     HWND stopButton = nullptr;
     HWND status = nullptr;
     HWND usbCheck = nullptr;
+    HWND refreshButton = nullptr;
+    std::vector<std::wstring> availableSources;
     std::thread worker;
     std::mutex frameMutex;
     std::vector<unsigned char> latest;
@@ -53,7 +57,8 @@ struct Controller {
     std::atomic<std::uint64_t> captured{0};
     std::atomic<std::uint64_t> uploaded{0};
     std::atomic<std::uint64_t> busy{0};
-    int selected = 0;
+    std::wstring selectedName;
+    std::wstring selectedUsbId;
     bool upload = false;
 
     void Stop() {
@@ -73,7 +78,7 @@ void SetControlStatus(const wchar_t* message) {
     if (g.status) SetWindowTextW(g.status, message);
 }
 
-void CaptureThread(int selected, bool upload) {
+void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
     const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (FAILED(com)) {
         g.captureFailed.store(true);
@@ -82,10 +87,7 @@ void CaptureThread(int selected, bool upload) {
         return;
     }
 
-    const bool obs = selected == 1;
-    MediaFoundationFrameSource source(
-        obs ? L"OBS Virtual Camera" : L"Logi C270 HD WebCam",
-        obs ? L"" : L"VID_046D&PID_0825");
+    MediaFoundationFrameSource source(std::move(name), std::move(usbId));
     const bool opened = source.Start();
     if (!opened) {
         g.captureFailed.store(true);
@@ -176,10 +178,55 @@ void CaptureThread(int selected, bool upload) {
     PostMessageW(g.window, kPreviewReady, 0, 0);
 }
 
+void RefreshSources() {
+    if (g.running.load()) return;
+    const LRESULT selected = SendMessageW(g.sourceCombo, CB_GETCURSEL, 0, 0);
+    std::wstring oldName;
+    if (selected >= 0 &&
+        static_cast<std::size_t>(selected) < g.availableSources.size()) {
+        oldName = g.availableSources[static_cast<std::size_t>(selected)];
+    }
+    std::vector<std::wstring> sources = EnumerateMediaFoundationVideoSources();
+    /* Keep supported defaults available when devices are unplugged;
+     * clicking Start will report a normal capture error in that case.
+     */
+    for (const std::wstring& builtIn :
+         {std::wstring(L"Logi C270 HD WebCam"),
+          std::wstring(L"OBS Virtual Camera")}) {
+        if (std::find(sources.begin(), sources.end(), builtIn) ==
+            sources.end()) {
+            sources.push_back(builtIn);
+        }
+    }
+    g.availableSources = std::move(sources);
+    SendMessageW(g.sourceCombo, CB_RESETCONTENT, 0, 0);
+    int chosen = 0;
+    for (std::size_t i = 0; i < g.availableSources.size(); ++i) {
+        const std::wstring& candidate = g.availableSources[i];
+        SendMessageW(g.sourceCombo, CB_ADDSTRING, 0,
+                     reinterpret_cast<LPARAM>(candidate.c_str()));
+        if (!oldName.empty() && candidate == oldName) {
+            chosen = static_cast<int>(i);
+        } else if (oldName.empty() && candidate == L"Logi C270 HD WebCam") {
+            chosen = static_cast<int>(i);
+        }
+    }
+    SendMessageW(g.sourceCombo, CB_SETCURSEL,
+                 static_cast<WPARAM>(chosen), 0);
+    SetControlStatus(L"Выберите камеру и нажмите «Начать»");
+}
+
 void StartCapture() {
     g.Stop();
     const LRESULT idx = SendMessageW(g.sourceCombo, CB_GETCURSEL, 0, 0);
-    g.selected = idx == 1 ? 1 : 0;
+    if (idx < 0 ||
+        static_cast<std::size_t>(idx) >= g.availableSources.size()) {
+        SetControlStatus(L"Источник не выбран");
+        return;
+    }
+    g.selectedName = g.availableSources[static_cast<std::size_t>(idx)];
+    g.selectedUsbId = g.selectedName == L"Logi C270 HD WebCam" ?
+        L"VID_046D&PID_0825" : L"";
     g.upload = SendMessageW(g.usbCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
     g.stop.store(false);
     g.captureFailed.store(false);
@@ -198,8 +245,9 @@ void StartCapture() {
     EnableWindow(g.stopButton, TRUE);
     EnableWindow(g.sourceCombo, FALSE);
     EnableWindow(g.usbCheck, FALSE);
+    EnableWindow(g.refreshButton, FALSE);
     SetControlStatus(L"Подключение к камере...");
-    g.worker = std::thread(CaptureThread, g.selected, g.upload);
+    g.worker = std::thread(CaptureThread, g.selectedName, g.selectedUsbId, g.upload);
     InvalidateRect(g.window, nullptr, FALSE);
 }
 
@@ -209,6 +257,7 @@ void StopCapture() {
     EnableWindow(g.stopButton, FALSE);
     EnableWindow(g.sourceCombo, TRUE);
     EnableWindow(g.usbCheck, TRUE);
+    EnableWindow(g.refreshButton, TRUE);
     SetControlStatus(L"Остановлено");
     InvalidateRect(g.window, nullptr, FALSE);
 }
@@ -234,7 +283,8 @@ void UpdateStatus() {
         EnableWindow(g.stopButton, FALSE);
         EnableWindow(g.sourceCombo, TRUE);
         EnableWindow(g.usbCheck, TRUE);
-        SetControlStatus(L"Ошибка захвата: камера не найдена или занята");
+        EnableWindow(g.refreshButton, TRUE);
+        SetControlStatus(L"Ошибка захвата: камера отсутствует, занята или формат неподдерживаем");
     } else if (g.running.load()) {
         wchar_t text[220]{};
         if (g.upload && g.usbUnavailable.load()) {
@@ -312,11 +362,11 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             0, L"COMBOBOX", L"", WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
             135, 12, 385, 180, hwnd,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(kSourceId)), instance, nullptr);
-        SendMessageW(g.sourceCombo, CB_ADDSTRING, 0,
-                     reinterpret_cast<LPARAM>(L"Logi C270 HD WebCam (USB)"));
-        SendMessageW(g.sourceCombo, CB_ADDSTRING, 0,
-                     reinterpret_cast<LPARAM>(L"OBS Virtual Camera"));
-        SendMessageW(g.sourceCombo, CB_SETCURSEL, 0, 0);
+        g.refreshButton = CreateWindowW(
+            L"BUTTON", L"Обновить камеры", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+            530, 47, 231, 29, hwnd,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(kRefreshId)),
+            instance, nullptr);
         g.startButton = CreateWindowW(
             L"BUTTON", L"Начать", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
             530, 12, 110, 29, hwnd,
@@ -338,10 +388,15 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             16, 84, 820, 23, hwnd,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStatusId)),
             instance, nullptr);
+        RefreshSources();
         SetTimer(hwnd, kStatusTimer, 1000, nullptr);
         return 0;
     }
     case WM_COMMAND:
+        if (LOWORD(wParam) == kRefreshId && HIWORD(wParam) == BN_CLICKED) {
+            RefreshSources();
+            return 0;
+        }
         if (LOWORD(wParam) == kStartId && HIWORD(wParam) == BN_CLICKED) {
             StartCapture();
             return 0;
@@ -394,10 +449,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
     wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_BTNFACE + 1);
     if (!RegisterClassExW(&wc)) return 1;
+    const HRESULT uiCom = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
+    if (FAILED(uiCom)) return 3;
     HWND window = CreateWindowExW(
         0, cls, L"AvCam Preview | Logitech C270 / OBS", WS_OVERLAPPEDWINDOW,
         CW_USEDEFAULT, CW_USEDEFAULT, 930, 670, nullptr, nullptr, instance, nullptr);
-    if (!window) return 2;
+    if (!window) {
+        CoUninitialize();
+        return 2;
+    }
     ShowWindow(window, show);
     UpdateWindow(window);
     MSG message{};
@@ -405,5 +465,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int show) {
         TranslateMessage(&message);
         DispatchMessageW(&message);
     }
+    CoUninitialize();
     return static_cast<int>(message.wParam);
 }
