@@ -82,6 +82,14 @@ AvCamUdeStageIsoRequestPassive(
     endpoint->PumpResetPending = FALSE;
     WdfSpinLockRelease(endpoint->Lock);
 
+    /* Both Stream.Committed / CommitEpoch and FrameSource are protected
+     * by FrameLock. A new COMMIT is a new video session; a previously
+     * leased JPEG must not be resumed across that boundary.
+     */
+    if (endpoint->SeenCommitEpoch != usb->CommitEpoch) {
+        resetPump = TRUE;
+    }
+
     if (!endpoint->PumpInitialized) {
         if (AvCamUdeFramePumpInit(
                 &endpoint->Pump, &controller->FrameSource) !=
@@ -90,6 +98,7 @@ AvCamUdeStageIsoRequestPassive(
             goto ExitLocked;
         }
         endpoint->PumpInitialized = TRUE;
+        endpoint->SeenCommitEpoch = usb->CommitEpoch;
         AvCamUdeIsoClockReset(&endpoint->Clock);
     }
     if (resetPump) {
@@ -99,6 +108,7 @@ AvCamUdeStageIsoRequestPassive(
             goto ExitLocked;
         }
         AvCamUdeIsoClockReset(&endpoint->Clock);
+        endpoint->SeenCommitEpoch = usb->CommitEpoch;
     }
 
     /* High-speed bInterval=1 uses eight 125-us packets per 1-ms USB
@@ -148,6 +158,11 @@ ExitLocked:
     WdfSpinLockAcquire(endpoint->Lock);
     if (endpoint->PendingIsoRequest != NULL ||
         endpoint->Drain.PurgePending) {
+        /* The URB was already packetized and sealed. It will not reach
+         * the host, so the next successful request must start a fresh
+         * JPEG rather than continuing its partially emitted payload.
+         */
+        endpoint->PumpResetPending = TRUE;
         WdfSpinLockRelease(endpoint->Lock);
         return STATUS_DEVICE_BUSY;
     }
@@ -158,6 +173,7 @@ ExitLocked:
          * scheduling failure and rollback. Caller still owns it.
          */
         endpoint->PendingIsoRequest = NULL;
+        endpoint->PumpResetPending = TRUE;
         WdfSpinLockRelease(endpoint->Lock);
         return STATUS_DEVICE_BUSY;
     }
