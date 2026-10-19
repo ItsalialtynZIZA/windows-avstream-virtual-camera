@@ -40,7 +40,7 @@ bool RequireDisposableVmHardware() {
     }
     std::wstring combined = manufacturer + L" " + product;
     std::transform(combined.begin(), combined.end(), combined.begin(),
-        [](wchar_t ch) { return std::towlower(ch); });
+        [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
     constexpr const wchar_t* knownVm[] = {
         L"virtual machine", L"virtualbox", L"vmware", L"qemu",
         L"kvm", L"bochs", L"xen", L"parallels", L"hyper-v"
