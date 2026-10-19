@@ -41,8 +41,8 @@ jobs:
       - name: Compile user-mode OBS bridge and device MFT COM DLL
         shell: pwsh
         run: |
-          $s = (Resolve-Path upstream/avstream/sampledevicemft).Path
-          $wil = (Resolve-Path upstream/packages/Microsoft.Windows.ImplementationLibrary.1.0.210204.1/include).Path
+          $s = ((Resolve-Path upstream/avstream/sampledevicemft).Path -replace '\\', '/')
+          $wil = ((Resolve-Path upstream/packages/Microsoft.Windows.ImplementationLibrary.1.0.210204.1/include).Path -replace '\\', '/')
           cmake -S research/physical-c270 -B build/physical-c270 -A x64 -DMICROSOFT_DMFT_DIR="$s" -DMICROSOFT_WIL_INCLUDE="$wil"
           if ($LASTEXITCODE -ne 0) { throw 'Physical C270 CMake configure failed' }
           cmake --build build/physical-c270 --config Release --parallel 4
