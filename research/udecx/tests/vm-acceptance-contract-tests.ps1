@@ -73,4 +73,44 @@ $badErrors = $null
 if ($badErrors.Count -eq 0) {
     throw "PowerShell parser negative control failed"
 }
+
+# The guest-only prerequisite checker is just as safety critical as the
+# acceptance script. Parse its AST and deny any mutation/installer commands.
+$preflightPath = Join-Path $PSScriptRoot '../tools/AvCamUdeVmPreflight.ps1'
+$preflightTokens = $null
+$preflightParseErrors = $null
+$preflightAst = [System.Management.Automation.Language.Parser]::ParseFile(
+    (Resolve-Path -LiteralPath $preflightPath).ProviderPath,
+    [ref]$preflightTokens, [ref]$preflightParseErrors
+)
+if ($preflightParseErrors.Count -ne 0 -or $null -eq $preflightAst) {
+    throw 'VM guest preflight has invalid PowerShell syntax.'
+}
+$preflightText = Get-Content -LiteralPath $preflightPath -Raw
+$preflightChecks = @{
+    'VM-only manufacturer and model check' = 'VM_PREFLIGHT_REFUSED'
+    'Windows 11 guest build check' = 'Build -lt 22000'
+    '64-bit guest gate' = 'Is64BitOperatingSystem'
+    'Minimum memory safety gate' = 'memoryGiB -lt 4'
+    'Minimum free disk space gate' = 'freeGiB -lt 8'
+    'Expected research USB identity check' = 'VID_1234&PID_5678'
+    'Guest-only success marker' = 'VM_PREFLIGHT_GUEST_READY'
+    'Host-side checkpoint reminder' = 'snapshot on the HOST'
+}
+foreach ($check in $preflightChecks.GetEnumerator()) {
+    if ($preflightText -notmatch [regex]::Escape($check.Value)) {
+        throw "Guest preflight missing $($check.Key)"
+    }
+}
+$preflightCommands = @($preflightAst.FindAll({
+    param($node)
+    $node -is [System.Management.Automation.Language.CommandAst]
+}, $true))
+foreach ($command in $preflightCommands) {
+    $name = $command.GetCommandName()
+    if ($null -ne $name -and $badCommandNames -contains $name) {
+        throw "VM guest preflight cannot modify the machine: $name"
+    }
+}
+Write-Host "VM_PREFLIGHT_STATIC_CONTRACT_PASSED"
 Write-Host "VM_ACCEPTANCE_STATIC_CONTRACT_PASSED"
