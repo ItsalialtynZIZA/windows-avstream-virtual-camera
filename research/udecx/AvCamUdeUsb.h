@@ -68,8 +68,13 @@ typedef struct _AVCAM_UDE_ENDPOINT_CONTEXT {
      * separate completion DPC and must drain before endpoint PURGE ack.
      */
     WDFDPC QueueCancelDpc;
-    LIST_ENTRY QueueCancelledRequests;
-    ULONG QueueCancelOutstanding;
+    /* Intrusive WDF request chain; no per-cancellation pool allocations.
+     * Each queued request's temporary Information field is cleared before
+     * completion and never reaches the USB client stack.
+     */
+    WDFREQUEST QueueCancelHead;
+    WDFREQUEST QueueCancelTail;
+    ULONGLONG QueueCancelOutstanding;
     BOOLEAN QueueCancelDpcScheduled;
     WDFREQUEST PendingIsoRequest;
     BOOLEAN IsoDpcRunning;
