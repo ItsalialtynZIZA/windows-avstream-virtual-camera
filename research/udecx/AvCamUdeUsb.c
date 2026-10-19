@@ -8,6 +8,15 @@
  */
 #include "AvCamUdeUsb.h"
 #include "AvCamUdeTestIdentity.h"
+#include "AvCamUdeC270Profile.h"
+
+#if defined(AVCAM_UDE_C270_COMPAT_PROFILE) && !defined(AVCAM_UDE_HOST_VIDEO_TEST)
+#error C270 compatibility profile requires explicit native UdeCx host video testing mode
+#endif
+
+#if defined(AVCAM_UDE_C270_COMPAT_PROFILE)
+static unsigned char g_AvCamUdeC270Config[sizeof(g_AvCamUsbConfigurationDescriptor)];
+#endif
 
 /* Keep default binaries fail-closed. Native USB isochronous completion is
  * enabled ONLY in a separately acknowledged experimental host build;
@@ -594,9 +603,22 @@ AvCamUdeUsbCreateAndPlug(_In_ WDFDEVICE controller)
         sizeof(g_AvCamUdeIsolatedDeviceDescriptor));
     if (!NT_SUCCESS(status)) goto Fail;
 
+#if defined(AVCAM_UDE_C270_COMPAT_PROFILE)
+    if (!AvCamUdeBuildC270Configuration(
+            g_AvCamUsbConfigurationDescriptor,
+            sizeof(g_AvCamUsbConfigurationDescriptor),
+            g_AvCamUdeC270Config, sizeof(g_AvCamUdeC270Config))) {
+        status = STATUS_INVALID_PARAMETER;
+        goto Fail;
+    }
+    status = UdecxUsbDeviceInitAddDescriptor(
+        init, (PUCHAR)g_AvCamUdeC270Config,
+        sizeof(g_AvCamUdeC270Config));
+#else
     status = UdecxUsbDeviceInitAddDescriptor(
         init, (PUCHAR)g_AvCamUsbConfigurationDescriptor,
         sizeof(g_AvCamUsbConfigurationDescriptor));
+#endif
     if (!NT_SUCCESS(status)) goto Fail;
 
     status = UdecxUsbDeviceInitAddDescriptorWithIndex(
@@ -605,7 +627,11 @@ AvCamUdeUsbCreateAndPlug(_In_ WDFDEVICE controller)
     if (!NT_SUCCESS(status)) goto Fail;
 
     RtlInitUnicodeString(&manufacturer, L"AvCam Research");
+#if defined(AVCAM_UDE_C270_COMPAT_PROFILE)
+    RtlInitUnicodeString(&product, L"AvCam C270-Compatible USB Camera");
+#else
     RtlInitUnicodeString(&product, L"AvCam Virtual USB Camera");
+#endif
     RtlInitUnicodeString(&serial, L"AVCAM000");
 
     status = UdecxUsbDeviceInitAddStringDescriptor(
