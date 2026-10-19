@@ -48,6 +48,13 @@ currently requires Administrator privileges by design (SY/BA SDDL).
 Do not assume a connected browser camera just because the preview
 shows moving images or the UdeCx upload counter increments.
 
+READ-ONLY HOST ACCEPTANCE (before/after any authorized installation):
+  .\AvCamUdeHostAcceptance.ps1 -OutputPath .\AvCamHostReport.json
+This inventories ONLY the new research UdeCx controller and experimental
+VID_1234 PID_5679 USB child, including PnP errors and usbvideo.sys service
+binding. It never installs or changes drivers or captures Logitech frames.
+USBVIDEO_BINDING_DETECTED still does NOT prove a received MJPEG frame.
+
 ROLLBACK (elevated PowerShell, while Windows boots normally):
   .\AvCamUdeHostRollback.ps1
   .\AvCamUdeHostRollback.ps1 -Execute
