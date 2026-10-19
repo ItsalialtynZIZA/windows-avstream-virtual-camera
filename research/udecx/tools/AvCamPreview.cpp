@@ -22,6 +22,8 @@
 #include <thread>
 #include <vector>
 #include "../../../feeder/src/MediaFoundationFrameSource.h"
+#include "../../../feeder/src/DirectShowObsSource.h"
+#include <memory>
 #include "../../../shared/VirtualCameraProtocol.h"
 #include "../AvCamUdeUploadProtocol.h"
 #include "AvCamUdeMjpegEncoder.h"
@@ -90,8 +92,13 @@ void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
         return;
     }
 
-    MediaFoundationFrameSource source(std::move(name), std::move(usbId));
-    const bool opened = source.Start();
+    std::unique_ptr<IFrameSource> source;
+    if (name == L"OBS Virtual Camera") {
+        source = std::make_unique<DirectShowObsSource>();
+    } else {
+        source = std::make_unique<MediaFoundationFrameSource>(std::move(name), std::move(usbId));
+    }
+    const bool opened = source->Start();
     if (!opened) {
         g.captureFailed.store(true);
         g.running.store(false);
@@ -124,7 +131,7 @@ void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
     std::vector<unsigned char> sample(AVCAM_FRAME_BYTES_BGRA32);
     while (!g.stop.load()) {
         std::uint64_t timestamp = 0;
-        if (!source.ReadFrame(sample.data(), sample.size(), timestamp)) {
+        if (!source->ReadFrame(sample.data(), sample.size(), timestamp)) {
             if (!g.stop.load()) g.captureFailed.store(true);
             break;
         }
@@ -182,7 +189,7 @@ void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
         }
     }
     if (controller != INVALID_HANDLE_VALUE) CloseHandle(controller);
-    source.Stop();
+    source->Stop();
     CoUninitialize();
     g.running.store(false);
     PostMessageW(g.window, kPreviewReady, 0, 0);
