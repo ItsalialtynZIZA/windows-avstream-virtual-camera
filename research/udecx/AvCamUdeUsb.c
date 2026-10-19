@@ -7,7 +7,7 @@
  * semantics are implemented and individually regression-tested.
  */
 #include "AvCamUdeUsb.h"
-#include "../manual-vhci/shared/AvCamUsbDescriptors.h"
+#include "AvCamUdeTestIdentity.h"
 
 /* A compile-and-PREfast-only execution path until isolated VM validation.
  * No runtime mechanism can enable this flag in a shipped research build.
@@ -568,8 +568,8 @@ AvCamUdeUsbCreateAndPlug(_In_ WDFDEVICE controller)
     UdecxUsbDeviceInitSetEndpointsType(init, UdecxEndpointTypeDynamic);
 
     status = UdecxUsbDeviceInitAddDescriptor(
-        init, (PUCHAR)g_AvCamUsbDeviceDescriptor,
-        sizeof(g_AvCamUsbDeviceDescriptor));
+        init, (PUCHAR)g_AvCamUdeIsolatedDeviceDescriptor,
+        sizeof(g_AvCamUdeIsolatedDeviceDescriptor));
     if (!NT_SUCCESS(status)) goto Fail;
 
     status = UdecxUsbDeviceInitAddDescriptor(
