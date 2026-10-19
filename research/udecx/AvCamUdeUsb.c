@@ -283,41 +283,48 @@ AvCamUdeEvtEndpointPurgeWorkItem(_In_ WDFWORKITEM workItem)
         (VOID)WdfDpcCancel(ctx->IsoCompleteDpc, TRUE);
     }
 
+    /* Keep Drain.PurgePending asserted while tearing down the old
+     * frame lease. The previous implementation claimed PURGE before this
+     * cleanup, potentially allowing a new START to overlap the cleanup.
+     * FrameLock is PASSIVE_LEVEL and cannot be held inside the spinlock.
+     */
+    if (ctx->PumpInitialized && ctx->Controller != NULL) {
+        PAVCAM_UDE_CONTROLLER_CONTEXT controller =
+            AvCamUdeControllerGetContext(ctx->Controller);
+        WdfWaitLockAcquire(controller->FrameLock, NULL);
+        if (AvCamUdeFramePumpReset(&ctx->Pump) ==
+            AVCAM_UDE_PUMP_OK) {
+            ctx->PumpInitialized = FALSE;
+            ctx->SeenCommitEpoch = 0;
+            AvCamUdeIsoClockReset(&ctx->Clock);
+        }
+        WdfWaitLockRelease(controller->FrameLock);
+    }
+
+    /* Final claim happens AFTER completion callbacks have returned and
+     * the shared MJPEG source lease was released. The endpoint lock
+     * prevents an EvtIoCanceledOnQueue insertion between this last
+     * cancellation-count check and the claim.
+     */
     WdfSpinLockAcquire(ctx->Lock);
-    if (ctx->QueueCancelOutstanding != 0) {
-        /* An EvtIoCanceledOnQueue may have arrived while we waited.
-         * WdfDpcCancel could have removed its scheduled DPC. Restore
-         * progress by enqueueing it again, and defer PURGE ACK.
-         */
-        ctx->QueueCancelDpcScheduled = TRUE;
-        (VOID)WdfDpcEnqueue(ctx->QueueCancelDpc);
+    if (ctx->QueueCancelOutstanding != 0 ||
+        ctx->Drain.Active != 0) {
+        if (ctx->QueueCancelOutstanding != 0) {
+            /* WdfDpcCancel might have removed a pending callback while
+             * a new cancellation arrived; restore DPC forward progress.
+             */
+            ctx->QueueCancelDpcScheduled = TRUE;
+            (VOID)WdfDpcEnqueue(ctx->QueueCancelDpc);
+        }
         acknowledge = FALSE;
     } else {
         ctx->QueueCancelDpcScheduled = FALSE;
         acknowledge = (AvCamUdeDrainClaimPurgeAck(&ctx->Drain) != 0);
     }
     WdfSpinLockRelease(ctx->Lock);
+
     if (acknowledge) {
-        /* All endpoint-owned requests have completed, and UdeCx will
-         * not deliver new ones before PurgeComplete. This PASSIVE_LEVEL
-         * window is the last safe point to release a partial JPEG lease
-         * before UdeCx destroys the dynamic endpoint on alt-setting 0.
-         *
-         * Endpoint -> controller is a stable parent-chain lifetime here.
-         * Child plug-out releases FrameLock before invoking UdeCx.
-         */
-        if (ctx->PumpInitialized && ctx->Controller != NULL) {
-            PAVCAM_UDE_CONTROLLER_CONTEXT controller =
-                AvCamUdeControllerGetContext(ctx->Controller);
-            WdfWaitLockAcquire(controller->FrameLock, NULL);
-            if (AvCamUdeFramePumpReset(&ctx->Pump) ==
-                AVCAM_UDE_PUMP_OK) {
-                ctx->PumpInitialized = FALSE;
-                ctx->SeenCommitEpoch = 0;
-                AvCamUdeIsoClockReset(&ctx->Clock);
-            }
-            WdfWaitLockRelease(controller->FrameLock);
-        }
+        /* Never call UdeCx while holding either WDF lock. */
         UdecxUsbEndpointPurgeComplete(endpoint);
     }
 }
