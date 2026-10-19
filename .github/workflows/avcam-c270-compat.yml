@@ -126,6 +126,66 @@ jobs:
           } finally {
             Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
           }
+      - name: Regression test replacing CI kernel signature with locally trusted signature
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:SystemDrive ('AvCamSignCI-' + $env:GITHUB_RUN_ID)
+          $source = 'research/udecx/x64/Release/AvCamUde'
+          $signTool = Get-ChildItem 'packages' -Recurse -Filter 'signtool.exe' -File |
+            Where-Object { $_.FullName -match '(?i)\\x86\\' } | Select-Object -First 1
+          $inf2cat = Get-ChildItem 'packages' -Recurse -Filter 'inf2cat.exe' -File |
+            Where-Object { $_.FullName -match '(?i)\\x86\\' } | Select-Object -First 1
+          if (-not $signTool -or -not $inf2cat) { throw 'Signing tools unavailable' }
+          $cert = $null
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          try {
+            Copy-Item (Join-Path $source 'AvCamUde.sys') $stage
+            Copy-Item (Join-Path $source 'AvCamUde.inf') $stage
+            $sys = Join-Path $stage 'AvCamUde.sys'
+            $cat = Join-Path $stage 'avcamude.cat'
+            $prior = Get-AuthenticodeSignature -LiteralPath $sys
+            if (-not $prior.SignerCertificate) { throw 'Expected signed CI SYS' }
+            $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject ('CN=AvCam CI ReSign ' + $env:GITHUB_RUN_ID) -CertStoreLocation 'Cert:\LocalMachine\My' -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256
+            if (-not $cert.HasPrivateKey -or
+                $prior.SignerCertificate.Thumbprint -eq $cert.Thumbprint) {
+              throw 'Distinct local signing certificate not created'
+            }
+            $cer = Join-Path $stage 'local.cer'
+            Export-Certificate -Cert $cert -FilePath $cer | Out-Null
+            Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null
+            Import-Certificate -FilePath $cer -CertStoreLocation 'Cert:\LocalMachine\TrustedPublisher' | Out-Null
+            & $signTool.FullName remove /s $sys
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot remove old primary signature' }
+            & $signTool.FullName sign /sm /s My /sha1 $cert.Thumbprint /fd SHA256 $sys
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot sign driver with fresh local certificate' }
+            $current = Get-AuthenticodeSignature -LiteralPath $sys
+            if (-not $current.SignerCertificate -or
+                $current.SignerCertificate.Thumbprint -ne $cert.Thumbprint) {
+              throw 'Old CI certificate still primary after re-signing'
+            }
+            & $inf2cat.FullName "/driver:$stage" /os:10_X64
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $cat)) {
+              throw 'Local re-signed catalog generation failed'
+            }
+            & $signTool.FullName sign /sm /s My /sha1 $cert.Thumbprint /fd SHA256 $cat
+            if ($LASTEXITCODE -ne 0) { throw 'Local catalog signing failed' }
+            & $signTool.FullName verify /pa $sys
+            if ($LASTEXITCODE -ne 0) { throw 'Local SYS Authenticode verify failed' }
+            & $signTool.FullName verify /pa $cat
+            if ($LASTEXITCODE -ne 0) { throw 'Local CAT Authenticode verify failed' }
+            Write-Host 'AVCAM_REPLACE_CI_SIGNATURE_WITH_LOCAL_TRUSTED_PRIMARY_PASSED'
+          } finally {
+            if ($cert) {
+              foreach ($store in @('My','Root','TrustedPublisher')) {
+                $certificatePath = "Cert:\LocalMachine\$store\$($cert.Thumbprint)"
+                if (Test-Path $certificatePath) {
+                  Remove-Item -LiteralPath $certificatePath -Force -ErrorAction SilentlyContinue
+                }
+              }
+            }
+            Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+          }
       - name: Validate signatures and create experimental package
         shell: pwsh
         run: |
