@@ -173,4 +173,20 @@ Assert-Matches $adapter 'AvCamUdeSealPreparedIsoUrbPassive' 'Native PASSIVE ISO 
 Assert-Matches $adapter 'UdecxUrbSetBytesCompleted' 'Native ISO sealing must explicitly report transferred bytes.'
 Assert-Matches $adapter 'AvCamUdeIsoCompletionPacketValid' 'Sealed ISO URB must preserve host window boundaries.'
 Assert-Matches $header 'AvCamUdeSealPreparedIsoUrbPassive' 'PASSIVE ISO seal signature missing.'
+$native = Get-Content (Join-Path $root 'AvCamUdeIsoNative.c') -Raw
+Assert-Matches $project 'AvCamUdeIsoNative.c' 'Native ISO DPC must be WDK compiled.'
+Assert-Matches $usb 'g_AvCamUdeEnableNativeIso\s*=\s*FALSE' 'Unsafe: unfinished live ISO must remain disabled.'
+Assert-Matches $usb 'qctx->EndpointAddress == 0x81 && g_AvCamUdeEnableNativeIso' 'Native endpoint must retain fail-closed gate.'
+Assert-Matches $usb 'WDF_DPC_CONFIG_INIT\(&dpcConfig, AvCamUdeEvtIsoCompleteDpc\)' 'Separate DPC completion object is missing.'
+Assert-Matches $usb 'AvCamUdeStageIsoRequestPassive' 'ISO handler does not transfer ownership to native bridge.'
+Assert-Matches $native 'AvCamUdePrepareIsoUrbFromPump' 'Real ISO URB must use source-backed MJPEG encoder.'
+Assert-Matches $native 'AvCamUdeSealPreparedIsoUrbPassive' 'Native ISO worker must seal bytes on PASSIVE_LEVEL.'
+Assert-Matches $native 'WdfDpcEnqueue' 'Deferred WDF request completion must be independently queued.'
+Assert-Matches $native 'WdfRequestIsCanceled' 'DPC must check canceled requests.'
+Assert-Matches $native 'WdfRequestComplete\(request, completion\)' 'DPC must complete the native request.'
+Assert-Matches $native 'AvCamUdeDrainLeave' 'DPC must release active I/O only after WDF completion.'
+Assert-Matches $usb 'WdfWaitLockAcquire\(controller->FrameLock' 'EP0 commits must serialize against ISO staging.'
+if ($native -match 'UdecxUrbComplete(WithNtStatus)?\s*\(') {
+    throw 'Never call PASSIVE_LEVEL-only UdeCx URB completion from the DPC.'
+}
 Write-Host "UdeCx guarded USB child contract: passed"
