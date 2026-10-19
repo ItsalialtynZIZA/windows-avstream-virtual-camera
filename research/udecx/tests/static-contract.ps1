@@ -163,4 +163,8 @@ Assert-Matches $header 'AvCamUdeAsyncIso.h' 'WDK native header must compile port
 if ($usb -match '(?s)endpoint->EndpointAddress == 0x81.{0,600}AvCamUdePrepareIsoUrbFromPump\s*\(') {
     throw 'Research UdeCx endpoint must remain fail-closed until native WDF cancel/IRQL verified.'
 }
+Assert-Matches $drain 'AvCamUdeDrainResetWhenIdle' 'Reset must reject active endpoint I/O.'
+Assert-Matches $usb 'AvCamUdeDrainResetWhenIdle' 'Native endpoint reset must use drain barrier.'
+Assert-Matches $usb 'WdfRequestCompleteWithInformation' 'UdeCx reset request must report explicit status.'
+Assert-Matches $usb 'STATUS_DEVICE_BUSY' 'A reset with outstanding URBs must not report success.'
 Write-Host "UdeCx guarded USB child contract: passed"
