@@ -1,4 +1,5 @@
 #include "MediaFoundationFrameSource.h"
+#include "MediaFoundationDeviceSelector.h"
 #include "VirtualCameraProtocol.h"
 
 #include <mfapi.h>
@@ -184,8 +185,10 @@ std::vector<std::wstring> EnumerateMediaFoundationVideoSources()
     return names;
 }
 
-MediaFoundationFrameSource::MediaFoundationFrameSource(std::wstring friendlyNameContains)
-    : friendlyNameContains_(std::move(friendlyNameContains))
+MediaFoundationFrameSource::MediaFoundationFrameSource(
+    std::wstring friendlyNameContains, std::wstring usbVidPidPair)
+    : friendlyNameContains_(std::move(friendlyNameContains)),
+      usbVidPidPair_(std::move(usbVidPidPair))
 {
 }
 
@@ -258,34 +261,52 @@ bool MediaFoundationFrameSource::FindAndActivateDevice()
         return false;
     }
 
-    bool found = false;
+    ComPtr<IMFActivate> matched;
+    std::wstring matchedName;
+    unsigned matches = 0;
 
     for (UINT32 index = 0; index < deviceCount; ++index)
     {
         WCHAR* friendlyName = nullptr;
         UINT32 nameLength = 0;
-
         const HRESULT nameResult = devices[index]->GetAllocatedString(
             MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
-            &friendlyName,
-            &nameLength);
+            &friendlyName, &nameLength);
 
         std::wstring name;
         if (SUCCEEDED(nameResult) && friendlyName != nullptr)
         {
             name.assign(friendlyName, nameLength);
-            CoTaskMemFree(friendlyName);
+        }
+        CoTaskMemFree(friendlyName);
+
+        if (name.empty())
+        {
+            continue;
         }
 
-        if (!name.empty() && ContainsInsensitive(name, friendlyNameContains_))
+        std::wstring symbolicLink;
+        if (!usbVidPidPair_.empty())
         {
-            ComPtr<IMFMediaSource> source;
-            if (SUCCEEDED(devices[index]->ActivateObject(IID_PPV_ARGS(&source))))
+            WCHAR* rawLink = nullptr;
+            UINT32 linkLength = 0;
+            if (SUCCEEDED(devices[index]->GetAllocatedString(
+                    MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK,
+                    &rawLink, &linkLength)) && rawLink != nullptr)
             {
-                mediaSource_ = source;
-                selectedName_ = name;
-                found = true;
-                break;
+                symbolicLink.assign(rawLink, linkLength);
+            }
+            CoTaskMemFree(rawLink);
+        }
+
+        if (AvCamSourceSelection::MatchesSource(
+                name, symbolicLink, friendlyNameContains_, usbVidPidPair_))
+        {
+            ++matches;
+            if (matches == 1u)
+            {
+                matched = devices[index];
+                matchedName = name;
             }
         }
     }
@@ -298,7 +319,22 @@ bool MediaFoundationFrameSource::FindAndActivateDevice()
         }
     }
     CoTaskMemFree(devices);
-    return found;
+
+    /* Fail closed if two physical devices have the same name or filter.
+     * Opening the first one is not a reliable source selection strategy.
+     */
+    if (matches != 1u || !matched)
+    {
+        return false;
+    }
+    ComPtr<IMFMediaSource> source;
+    if (FAILED(matched->ActivateObject(IID_PPV_ARGS(&source))))
+    {
+        return false;
+    }
+    mediaSource_ = source;
+    selectedName_ = matchedName;
+    return true;
 }
 
 bool MediaFoundationFrameSource::ConfigureReader()
