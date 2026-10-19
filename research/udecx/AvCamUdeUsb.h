@@ -80,6 +80,11 @@ typedef struct _AVCAM_UDE_ENDPOINT_CONTEXT {
     BOOLEAN IsoDpcRunning;
     AVCAM_UDE_FRAME_PUMP Pump;
     BOOLEAN PumpInitialized;
+    /* Protected by controller FrameLock. If reset cannot release a
+     * leased MJPEG image, never permit ISO to reuse corrupt pump state.
+     * This is latched for this endpoint lifetime, including after PURGE.
+     */
+    BOOLEAN PumpQuarantined;
     BOOLEAN PumpResetPending;
     ULONGLONG SeenCommitEpoch;
     AVCAM_UDE_ISO_CLOCK Clock;
