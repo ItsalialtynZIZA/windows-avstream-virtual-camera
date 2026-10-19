@@ -279,4 +279,15 @@ if ($resetPosition -lt 0 -or $claimPosition -le $resetPosition -or
     $ackPosition -le $claimPosition) {
     throw 'Unsafe PURGE order: free leased JPEG, claim ACK under lock, then notify UdeCx.'
 }
+$udecxMfProbe = Get-Content (Join-Path $root 'tools/AvCamUdeMfProbe.cpp') -Raw
+$udecxTests = Get-Content (Join-Path $root 'tests/CMakeLists.txt') -Raw
+Assert-Matches $udecxMfProbe 'link.find\(L"vid_1234&pid_5679"\)' 'MF acceptance must check isolated UdeCx symbolic-link PID.'
+Assert-Matches $udecxMfProbe 'const bool matchingUsbId' 'MF acceptance must identify its USB device, not merely a friendly name.'
+if ($udecxMfProbe -match 'if\s*\(matchingName\s*\|\|\s*matchingUsbId\)') {
+    throw 'MF acceptance must not select legacy AvCamBus by friendly name.'
+}
+Assert-Matches $udecxTests '\.\./tools/AvCamUdeMfProbe\.cpp' 'Build must use isolated UdeCx-only MF acceptance source.'
+if ($udecxTests -match '\.\./\.\./manual-vhci/tools/AvCamMfProbe\.cpp') {
+    throw 'UdeCx acceptance must not compile the legacy AvCamBus camera selector.'
+}
 Write-Host "UdeCx guarded USB child contract: passed"
