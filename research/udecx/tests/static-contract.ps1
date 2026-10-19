@@ -233,11 +233,17 @@ Assert-Matches $usb 'ctx->QueueCancelOutstanding == 0' 'PURGE must wait for canc
 Assert-Matches $queuedCancel 'WdfDpcEnqueue\(ctx->QueueCancelDpc\)' 'Canceled URBs must be deferred into separate DPC.'
 Assert-Matches $queuedCancel 'AvCamUdeEvtQueuedCancelDpc' 'Queue-cancel DPC callback missing.'
 Assert-Matches $queuedCancel 'USBD_STATUS_CANCELED' 'Canceled queued USB URBs require failure metadata.'
-Assert-Matches $queuedCancel 'WdfRequestComplete\(canceledRequest, STATUS_CANCELLED\)' 'DPC must finish canceled URBs.'
+Assert-Matches $queuedCancel 'WdfRequestCompleteWithInformation\(request, STATUS_CANCELLED, 0\)' 'DPC must finish canceled URBs with zero transfer information.'
 Assert-Matches $queuedCancel '--ctx->QueueCancelOutstanding' 'Queue cancellation drain must happen after completion.'
 Assert-Matches $queuedCancel 'ctx->QueueCancelDpcScheduled = FALSE' 'Reentrant DPC schedule must reset when empty.'
-Assert-Matches $queuedCancel 'POOL_FLAG_NON_PAGED' 'Canceled request nodes must be nonpaged.'
-Assert-Matches $queuedCancel 'if \(canceledRequest != NULL\)' 'PREfast-safe canceled request handle validation missing.'
+Assert-Matches $queuedCancel 'WdfRequestGetInformation\(request\)' 'Cancellation FIFO must retrieve the next request without pool allocation.'
+Assert-Matches $queuedCancel 'WdfRequestSetInformation\(request, 0\)' 'Cancel chain must clear completion information.'
+Assert-Matches $queuedCancel 'ctx->QueueCancelHead = next' 'Cancellation FIFO must safely pop its head.'
+Assert-Matches $header 'WDFREQUEST QueueCancelHead;' 'Cancellation queue needs an allocation-free request head.'
+Assert-Matches $header 'WDFREQUEST QueueCancelTail;' 'Cancellation queue needs an allocation-free request tail.'
+if ($queuedCancel -match 'ExAllocatePool|ExFreePool|POOL_FLAG_|WdfObjectAllocateContext') {
+    throw 'Canceled-on-queue completion must not depend on extra allocations.'
+}
 if ($usb -match '(?s)AvCamUdeEvtEndpointCanceledOnQueue\s*\([^)]*\)\s*\{[^}]*WdfRequestComplete\(') {
     throw 'UdeCx queue cancellation must use a separate DPC, not inline completion.'
 }
@@ -246,7 +252,7 @@ Assert-Matches $usb 'UdecxUsbEndpointSetWdfIoQueue\(\*endpoint, queue\)' 'New en
 if ($usb -match 'WdfObjectDelete\(queue\)') {
     throw 'Endpoint-owned WDF queue must not be independently double deleted.'
 }
-Assert-Matches $queuedCancel 'InsertTailList' 'Canceled queue requests need FIFO storage until DPC owns them.'
-Assert-Matches $queuedCancel 'WdfRequestComplete\(canceledRequest, STATUS_CANCELLED\)' 'Queue cancellations must complete from their own DPC.'
+Assert-Matches $queuedCancel 'ctx->QueueCancelTail = request' 'Canceled queue requests need FIFO storage until DPC owns them.'
+Assert-Matches $queuedCancel 'WdfRequestCompleteWithInformation\(request, STATUS_CANCELLED, 0\)' 'Queue cancellations must complete from their own DPC.'
 Assert-Matches $usb 'ctx->QueueCancelOutstanding == 0' 'Queued-cancel completion count must gate PURGE.'
 Write-Host "UdeCx guarded USB child contract: passed"
