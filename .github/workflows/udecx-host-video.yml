@@ -68,6 +68,7 @@ jobs:
           & $exe
           if ($LASTEXITCODE -ne 2) { throw 'Installer did not reject missing explicit acknowledgment' }
           Write-Host 'HOST_INSTALLER_MISSING_ACK_REFUSED'
+          exit 0
       - name: Validate signatures and create experimental package
         shell: pwsh
         run: |
