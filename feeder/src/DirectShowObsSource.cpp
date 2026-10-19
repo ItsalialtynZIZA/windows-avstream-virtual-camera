@@ -221,7 +221,8 @@ bool DirectShowObsSource::ReadFrame(unsigned char* dst, std::size_t size,
                 errorCode_ = static_cast<DWORD>(stateResult);
             } else if (state != State_Running) {
                 failureStage_ = L"OBS graph is stopped or paused";
-                errorCode_ = static_cast<DWORD>(state);
+                // 0x1 can also mean EC_COMPLETE; reserve 0x10000 for graph states.
+                errorCode_ = 0x00010000u | static_cast<DWORD>(state);
             } else {
                 ComPtr<IMediaEvent> events;
                 if (SUCCEEDED(graph_.As(&events))) {
@@ -239,7 +240,9 @@ bool DirectShowObsSource::ReadFrame(unsigned char* dst, std::size_t size,
                             significant = true;
                         } else if (eventCode == EC_COMPLETE || eventCode == EC_USERABORT) {
                             failureStage_ = L"OBS graph completed/aborted without video";
-                            errorCode_ = static_cast<DWORD>(eventCode);
+                            // Reserve 0x20000 for graph events to avoid ambiguity
+                            // with OAFilterState (both use integer 1).
+                            errorCode_ = 0x00020000u | static_cast<DWORD>(eventCode);
                             significant = true;
                         }
                         // EC_CLOCK_CHANGED (0x0D) and other notifications are not
