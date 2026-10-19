@@ -60,6 +60,12 @@ $common=Join-Path $base 'common.h'
 # fallback semantics, preserving error propagation and goto labels.
 $commonText=[IO.File]::ReadAllText($common)
 $macros=@'
+#ifndef WPP_LEVEL_ENABLED
+#define WPP_LEVEL_ENABLED(flag) false
+#endif
+#ifndef DMFT_GENERAL
+#define DMFT_GENERAL 0
+#endif
 #ifndef DMFTCHECKHR_GOTO
 #define DMFTCHECKHR_GOTO(a,b,...) do { hr=(a); if(FAILED(hr)) { goto b; } } while(0)
 #endif
