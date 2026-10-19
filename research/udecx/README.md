@@ -322,3 +322,25 @@ will reset its MJPEG packetizer. A temporarily absent feeder no longer
 consumes a pending packetizer reset. This code remains guarded by the
 disabled native ISO execution flag; only kernel compilation and PREfast
 have been exercised, not runtime behavior under USBVIDEO/Driver Verifier.
+
+### VS COMMIT renegotiation and sealed-but-undelivered URBs
+
+The native EP0 handler now advances a 64-bit `CommitEpoch` after each
+successful UVC VideoStreaming `SET_CUR(COMMIT)`, under the same
+`FrameLock` that serializes ISO staging and JPEG publication. The video
+endpoint remembers `SeenCommitEpoch` and discards its old MJPEG frame
+lease and scheduling clock if the committed generation changes. It does
+not dereference a potentially deleted dynamic endpoint from the EP0 path.
+The portable frame-pump regression now covers partial old JPEG → new
+published JPEG → stream reset → new SOI, with no leaked leases.
+
+A second failure path is also handled: if a fully staged and sealed URB
+cannot be handed to the DPC (endpoint PURGE or failed DPC enqueue), the
+next ISO worker resets the frame pump. It must never continue streaming
+JPEG bytes from a request that never reached the USB host.
+
+**Still intentionally blocked:** complete canceled-on-queue handling,
+formal WDF cancellation ownership, final teardown with a leased frame,
+and validation under Driver Verifier in an isolated Windows VM. Compile
+and static-analysis success is not proof of a usable USB Video Class
+device or a Media Foundation sample.
