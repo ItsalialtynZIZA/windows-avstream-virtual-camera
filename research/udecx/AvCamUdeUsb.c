@@ -297,6 +297,14 @@ AvCamUdeEvtEndpointPurgeWorkItem(_In_ WDFWORKITEM workItem)
             ctx->PumpInitialized = FALSE;
             ctx->SeenCommitEpoch = 0;
             AvCamUdeIsoClockReset(&ctx->Clock);
+        } else {
+            /* A corrupt/stale frame lease cannot safely be resumed after
+             * UdeCx PURGE. The callback owners and DPCs have quiesced,
+             * so finish the PURGE barrier, but permanently refuse any
+             * new ISO transfer on this endpoint. Never reinitialize a
+             * pump that may still own a stale JPEG slot.
+             */
+            ctx->PumpQuarantined = TRUE;
         }
         WdfWaitLockRelease(controller->FrameLock);
     }
@@ -408,6 +416,10 @@ AvCamUdeCreateDynamicEndpoint(
 
     ctx = AvCamUdeEndpointGetContext(*endpoint);
     ctx->Controller = controller;
+    /* Endpoint context is freshly allocated and survives until UdeCx
+     * deletes this endpoint on configuration/alternate-setting teardown.
+     */
+    ctx->PumpQuarantined = FALSE;
     AvCamUdeDrainInit(&ctx->Drain);
     WDF_OBJECT_ATTRIBUTES_INIT(&childAttributes);
     childAttributes.ParentObject = (WDFOBJECT)*endpoint;
