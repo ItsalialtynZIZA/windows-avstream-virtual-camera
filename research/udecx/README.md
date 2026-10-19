@@ -187,3 +187,32 @@ enumerated the UVC child or that Media Foundation has read any USB frame.
 PASSIVE_LEVEL versus the separate-DPC recommendation, plus handling UVC
 stream reset/USB scheduling correctly. Endpoint 0x81 still rejects URBs.
 Do not enable child autoplug or install the research driver on the host PC.
+
+## Bounded async ISO cancellation/purge/reset model (no live endpoint yet)
+
+`AvCamUdeAsyncIso.h` now models a fixed, **eight-request maximum**
+asynchronous ISO outstanding set, with non-reusable 64-bit tickets,
+worker-start/worker-finished ownership transitions, cancellation, purge
+acknowledgement, and generation invalidation across reset. Source-frame
+buffers cannot be released by a cancellation path while a worker still owns
+them. The new `async-iso-scheduler-tests.cpp` explores adversarial state
+interleavings, including cancellation before and during an encode, a full
+queue, purge while one URB is active, reset while an URB is active, and
+stale-token/double-completion rejection.
+
+This is **not** a WDF request manager. In particular, a native implementation
+must still pair `WdfRequestMarkCancelableEx` with the correct
+`WdfRequestUnmarkCancelable` outcome, implement EvtIoCanceledOnQueue where
+needed, retain requests across workers, and obey the documented completion
+IRQL/dispatch contract. The UdeCx API documentation states PASSIVE_LEVEL
+for `UdecxUrbComplete` and `UdecxUrbCompleteWithNtStatus`, while the
+UdeCx client-driver guide recommends completing host URBs via a separate
+DISPATCH_LEVEL DPC. **Do not enable EP 0x81 based on this model alone.**
+
+The native `AvCamUdeEvtEndpointReset` now checks the same counted active
+request state protected by its endpoint spinlock. If a request still owns a
+buffer or purge is in progress, reset returns `STATUS_DEVICE_BUSY` rather
+than a false success. An idle reset increments the endpoint generation.
+This is safe for the current synchronous fail-closed queue; once asynchronous
+workers are introduced, they must extend the active barrier before reset can
+succeed. Do not install this experimental driver on the primary machine.
