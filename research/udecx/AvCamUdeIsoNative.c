@@ -32,6 +32,9 @@ AvCamUdeStageIsoRequestPassive(
     PURB urb;
     ULONG bytes = 0;
     ULONG packets;
+    ULONGLONG firstMicroframe100ns = 0;
+    AVCAM_UDE_ISO_CLOCK nextClock;
+    BOOLEAN asap;
     BOOLEAN resetPump;
     NTSTATUS status;
 
@@ -58,6 +61,8 @@ AvCamUdeStageIsoRequestPassive(
         return status;
     }
     packets = urb->UrbIsochronousTransfer.NumberOfPackets;
+    asap = (urb->UrbIsochronousTransfer.TransferFlags &
+        USBD_START_ISO_TRANSFER_ASAP) != 0;
 
     WdfSpinLockAcquire(endpoint->Lock);
     resetPump = endpoint->PumpResetPending;
@@ -82,7 +87,7 @@ AvCamUdeStageIsoRequestPassive(
             goto ExitLocked;
         }
         endpoint->PumpInitialized = TRUE;
-        endpoint->NextMicroframe100ns = 0;
+        AvCamUdeIsoClockReset(&endpoint->Clock);
     }
     if (resetPump) {
         if (AvCamUdeFramePumpReset(&endpoint->Pump) !=
@@ -90,24 +95,37 @@ AvCamUdeStageIsoRequestPassive(
             status = STATUS_DATA_ERROR;
             goto ExitLocked;
         }
-        endpoint->NextMicroframe100ns = 0;
+        AvCamUdeIsoClockReset(&endpoint->Clock);
     }
 
+    /* High-speed bInterval=1 uses eight 125-us packets per 1-ms USB
+     * frame. Never mistake a 1-ms StartFrame for a 125-us microframe.
+     * ASAP is deliberately mapped only to the monotonic emulation clock;
+     * actual late scheduling still requires a USB host VM acceptance.
+     */
+    if (AvCamUdeIsoClockPlan(
+            &endpoint->Clock, asap,
+            urb->UrbIsochronousTransfer.StartFrame, packets,
+            &firstMicroframe100ns, &nextClock) != AVCAM_UDE_CLOCK_OK) {
+        status = STATUS_INVALID_PARAMETER;
+        goto ResetFailedFrame;
+    }
     status = AvCamUdePrepareIsoUrbFromPump(
-        request, &endpoint->Pump, endpoint->NextMicroframe100ns, &bytes);
+        request, &endpoint->Pump, firstMicroframe100ns, &bytes);
     if (NT_SUCCESS(status)) {
         status = AvCamUdeSealPreparedIsoUrbPassive(request, bytes);
     }
     if (NT_SUCCESS(status)) {
-        /* Synthetic monotonic microframe timeline, not USB StartFrame.
-         * VM acceptance must verify real host scheduling before release.
+        /* Commit planned host-frame time ONLY after the payload and
+         * completion metadata were both validated successfully.
          */
-        endpoint->NextMicroframe100ns +=
-            (ULONGLONG)packets * AVCAM_UDE_ISO_MICROFRAME_100NS;
-    } else {
-        (VOID)AvCamUdeFramePumpReset(&endpoint->Pump);
-        endpoint->NextMicroframe100ns = 0;
+        endpoint->Clock = nextClock;
+        goto ExitLocked;
     }
+
+ResetFailedFrame:
+    (VOID)AvCamUdeFramePumpReset(&endpoint->Pump);
+    AvCamUdeIsoClockReset(&endpoint->Clock);
 
 ExitLocked:
     WdfWaitLockRelease(controller->FrameLock);
