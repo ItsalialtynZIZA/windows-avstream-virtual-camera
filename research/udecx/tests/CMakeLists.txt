@@ -230,3 +230,24 @@ if(WIN32)
             MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
 endif()
+
+
+# First usable AvCam desktop application: native live camera preview.
+# This user-mode EXE cannot access UdeCx or alter kernel drivers.
+if(WIN32)
+    add_executable(AvCamPreview WIN32
+        ../tools/AvCamPreview.cpp
+        ../../../feeder/src/MediaFoundationFrameSource.cpp)
+    target_include_directories(AvCamPreview PRIVATE ../../../shared)
+    target_compile_features(AvCamPreview PRIVATE cxx_std_17)
+    target_compile_definitions(AvCamPreview PRIVATE
+        UNICODE _UNICODE WINVER=0x0A00 _WIN32_WINNT=0x0A00)
+    target_link_libraries(AvCamPreview PRIVATE
+        user32 gdi32 ole32 mf mfplat mfreadwrite mfuuid)
+    if(MSVC)
+        target_compile_options(AvCamPreview PRIVATE
+            /W4 /WX /permissive- /utf-8)
+        set_property(TARGET AvCamPreview PROPERTY
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+endif()
