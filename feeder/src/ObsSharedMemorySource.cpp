@@ -40,7 +40,7 @@ void Nv12ToBgra(const unsigned char* nv12, std::uint32_t srcWidth,
         for (unsigned dx = 0; dx < AVCAM_FRAME_WIDTH; ++dx) {
             const std::uint32_t sx = static_cast<std::uint32_t>(
                 (static_cast<std::uint64_t>(dx) * srcWidth) / AVCAM_FRAME_WIDTH);
-            const int yy = std::max(0, static_cast<int>(yRow[sx]) - 16);
+            const int yy = (std::max)(0, static_cast<int>(yRow[sx]) - 16);
             const std::size_t uv = static_cast<std::size_t>(sx & ~1u);
             const int uu = static_cast<int>(uvRow[uv]) - 128;
             const int vv = static_cast<int>(uvRow[uv + 1]) - 128;
