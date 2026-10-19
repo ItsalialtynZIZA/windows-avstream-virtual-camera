@@ -99,6 +99,33 @@ jobs:
             throw 'Local C270 installer script parse failed'
           }
           Write-Host 'C270_LOCAL_INSTALLER_PARSE_PASSED_NO_INSTALL'
+      - name: Rebuild C270 catalog using Windows PowerShell 5.1 and space-free signing path
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tool = Get-ChildItem 'packages' -Recurse -Filter 'inf2cat.exe' -File |
+            Where-Object { $_.FullName -match '(?i)\\x86\\' } |
+            Select-Object -First 1
+          if (-not $tool) { throw 'WDK Inf2Cat.exe tool missing from restored kit' }
+          $source = 'research/udecx/x64/Release/AvCamUde'
+          $stage = Join-Path $env:SystemDrive ('AvCamC270CI-' + $env:GITHUB_RUN_ID)
+          if ($stage -match '\s') { throw 'CI signing stage has spaces' }
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          try {
+            Copy-Item (Join-Path $source 'AvCamUde.sys') $stage
+            Copy-Item (Join-Path $source 'AvCamUde.inf') $stage
+            $arguments = @("/driver:$stage", '/os:10_X64')
+            & $tool.FullName @arguments
+            if ($LASTEXITCODE -ne 0) {
+              throw "Inf2Cat failed with exit code $LASTEXITCODE"
+            }
+            if (-not (Test-Path (Join-Path $stage 'avcamude.cat'))) {
+              throw 'Inf2Cat did not generate a valid catalog'
+            }
+            Write-Host 'AVCAM_C270_INF2CAT_POWERSHELL51_STAGE_PASSED'
+          } finally {
+            Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
+          }
       - name: Validate signatures and create experimental package
         shell: pwsh
         run: |
