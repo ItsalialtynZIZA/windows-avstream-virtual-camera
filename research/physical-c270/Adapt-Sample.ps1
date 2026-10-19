@@ -55,6 +55,21 @@ Replace-Once $helpers @'
     ComPtr<CNullTee> spNulltee = new (std::nothrow) CNullTee(this);
 '@
 $common=Join-Path $base 'common.h'
+# Microsoft's reference relies on WPP-generated check macros. The CMake
+# standalone build runs without WPP, so enable upstream's documented
+# fallback semantics, preserving error propagation and goto labels.
+$commonText=[IO.File]::ReadAllText($common)
+$macros=@'
+#ifndef DMFTCHECKHR_GOTO
+#define DMFTCHECKHR_GOTO(a,b,...) do { hr=(a); if(FAILED(hr)) { goto b; } } while(0)
+#endif
+#ifndef DMFTCHECKNULL_GOTO
+#define DMFTCHECKNULL_GOTO(a,b,c,...) do { if(!(a)) { hr=(c); goto b; } } while(0)
+#endif
+'@
+$commonText=$commonText.Replace('#pragma once', "#pragma once" + [Environment]::NewLine + $macros)
+[IO.File]::WriteAllText($common,$commonText,[Text.UTF8Encoding]::new($false))
+
 Replace-Once $common @'
 DEFINE_GUID(CLSID_MultiPinMFT,
     0xe313280, 0x3169, 0x4f41, 0xa3, 0x29, 0x9e, 0x85, 0x41, 0x69, 0x63, 0x4f);
