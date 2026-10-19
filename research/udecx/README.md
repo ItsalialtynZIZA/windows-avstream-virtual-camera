@@ -247,3 +247,29 @@ This moves the isolated preparation path closer to actual UdeCx completion
 but does **not** install/enable video endpoint 0x81 or settle the DPC versus
 PASSIVE_LEVEL completion contract. Native async cancellation ownership,
 worker/DPC completion and runtime USBVIDEO verification are still required.
+
+## Compile-only native ISO DPC completion bridge
+
+`AvCamUdeIsoNative.c` now supplies a real **native kernel** integration
+path. It validates ISO URB packet layout, checks a negotiated UVC Commit
+and source availability, stages the MJPEG payload via
+`AvCamUdePrepareIsoUrbFromPump`, seals sparse transfer lengths via
+`UdecxUrbSetBytesCompleted` at `PASSIVE_LEVEL`, and queues a distinct
+`WDFDPC` for `WdfRequestComplete` at `DISPATCH_LEVEL`. The sequential
+UdeCx endpoint queue retains one pending URB. The DPC tests cancellation
+with `WdfRequestIsCanceled` before completion, and only decrements the
+endpoint's drain count **after** the completion call returns. A purge
+therefore cannot acknowledge an owned URB before that last return.
+
+The UVC Probe/Commit state is now read and modified under the same
+`FrameLock` as MJPEG publication/staging. The pump's time base is currently
+a synthetic monotonic microframe count and is not yet calibrated against
+the actual host URB `StartFrame`/frame-number scheduler.
+
+**Safety gate:** `g_AvCamUdeEnableNativeIso = FALSE` and
+`g_AvCamUdeEnableAutoplug = FALSE` remain in native source. The new
+bridge is compiled/analyzed by GitHub Actions but **will not execute
+against a real USB host** in these builds. Before enabling it, prove
+callback reentrancy, WDF cancellation/purge during queued DPC completion,
+usbvideo.sys isochronous frame timing and Driver Verifier behavior in an
+isolated VM. No installed host driver is altered by this milestone.
