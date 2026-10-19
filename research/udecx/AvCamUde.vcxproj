@@ -37,6 +37,8 @@
            Never set this property in ordinary builds; kernel changes require
            recovery readiness and manual installation on the owning machine. -->
       <PreprocessorDefinitions Condition="'$(AvCamUdeHostVideoTest)'=='I_ACCEPT_NATIVE_UDECX_ON_PRIMARY_WINDOWS'">AVCAM_UDE_HOST_VIDEO_TEST;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <!-- Separate C270-compatible MJPEG 720p profile: only with host video opt-in. -->
+      <PreprocessorDefinitions Condition="'$(AvCamUdeHostVideoTest)'=='I_ACCEPT_NATIVE_UDECX_ON_PRIMARY_WINDOWS' and '$(AvCamUdeC270Profile)'=='I_ACCEPT_C270_COMPATIBILITY_TEST'">AVCAM_UDE_C270_COMPAT_PROFILE;AVCAM_UDE_HOST_VIDEO_TEST;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
       <AdditionalDependencies>$(DDK_LIB_PATH)\ude\1.0\udecxstub.lib;%(AdditionalDependencies)</AdditionalDependencies>
