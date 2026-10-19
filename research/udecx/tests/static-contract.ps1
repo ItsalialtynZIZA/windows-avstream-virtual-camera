@@ -149,7 +149,7 @@ Assert-Matches $controller 'AvCamUdeFrameSourcePublish' 'Controller must publish
 Assert-Matches $controller 'AvCamUdeEnsureFrameStoreLocked' 'Source allocation must be lazy and bounded.'
 Assert-Matches $controller 'AvCamUdeEvtControllerCleanup' 'MJPEG slots need a controller cleanup callback.'
 Assert-Matches $usb 'context->ChildPlugged = FALSE' 'Plug-out must revoke ingestion.'
-Assert-Matches $controller 'if \(!g_AvCamUdeEnableAutoplug\)' 'Experimental USB device must remain unplugged by default.'
+Assert-Matches $controller 'if\s*\(!AvCamUdeAutoplugEnabled\(\)\)' 'Experimental USB device must remain gated at D0 entry.'
 
 $vm = Get-Content (Join-Path $root 'tools/AvCamUdeVmAcceptance.ps1') -Raw
 Assert-Matches $vm 'Win32_ComputerSystem' 'VM acceptance must check virtualization.'
