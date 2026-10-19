@@ -525,3 +525,58 @@ opens `AvCamUdeController0`.
 The old `oem61.inf`, backup driver packages and `oem48.inf` remain
 untouched. Do not install the experimental kernel driver on an unbacked
 primary Windows installation.
+
+
+## First UdeCx device enumeration — explicit opt-in VM build (2026-10-19)
+
+Independent C270 host smoke measurements are now complete:
+`capture --frames 90` read 90/90 MF samples in 5328ms (16.89 FPS
+wall-clock), with MF timestamps spanning 2.9667s (~30 FPS timestamps).
+`encode --frames 90` read and produced 90/90 valid MJPEG frames
+in 5296ms (16.99 FPS), with capture time 3189ms and WIC JPEG 1639ms.
+These are two *different runs*, so their stage timings do not prove
+precisely where samples are buffered. Encoding did **not** noticeably
+degrade total throughput. Further encoding-only speed tests are not
+a prerequisite to USB enumeration.
+
+This milestone introduces an **enumeration-only** compile-time variant
+for an explicitly disposable Windows 11 VM. The ordinary UdeCx WDK
+Release build remains safe-by-default:
+
+- `g_AvCamUdeEnableAutoplug = FALSE` in `AvCamUde.c`.
+- `g_AvCamUdeEnableNativeIso = FALSE` in `AvCamUdeUsb.c`.
+- No normal build creates `USB\\VID_1234&PID_5679`.
+- The legacy physical host `oem61.inf`, legacy `1234:5678`, and
+  the actual Logitech `046D:0825` remain untouched.
+- Only the explicit MSBuild property
+  `/p:AvCamUdeVmEnumerationTest=I_UNDERSTAND_DISPOSABLE_VM_ONLY`
+  sets `AVCAM_UDE_VM_ENUMERATION_ONLY` during compilation.
+- That variant plugs the emulated USB child on D0 entry but **does not
+  enable ISO MJPEG delivery**: the streaming endpoint still rejects URBs.
+
+Example developer compilation command using WDK and correct StampInf
+toolchain **only inside disposable VM build environment**, not on
+the real user's primary OS:
+
+```powershell
+msbuild research/udecx/AvCamUde.vcxproj /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:AvCamUdeVmEnumerationTest=I_UNDERSTAND_DISPOSABLE_VM_ONLY
+```
+
+**This build option is not a virtualization detector or a sandbox.**
+If the experimental SYS were manually installed on real hardware it
+could create a child and crash Windows. Do not deploy it on an unbacked
+primary OS. GitHub Actions compiles both variants, but does not export
+a driver installer, install either SYS, configure test signing, or
+create a root PnP instance. Local runtime acceptance is still unproven.
+
+The **next acceptance gate** in a disposable Windows 11 VM with host-side
+snapshot is: install a properly test-signed driver package for
+`Root\\AvCamUdeController`, verify exactly one active UdeCx controller
+and `USB\\VID_1234&PID_5679` child, check
+`usbvideo.sys` binding and Windows PnP state, collect UdeCx and USB
+diagnostics, then stop. Do not declare a usable camera on enumeration
+alone. ISO video can only be enabled in a separate future deliberately
+reviewed and isolated milestone after cancellation / reset runtime
+validation. For testing directly on a physical notebook, first prepare
+and verify a bootable recovery medium and independently restorable
+system image; enabling testsigning alone is not a rollback strategy.
