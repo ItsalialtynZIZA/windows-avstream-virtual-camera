@@ -418,11 +418,28 @@ AvCamUdeEvtEndpointsConfigure(
     _In_ WDFREQUEST request,
     _In_ PUDECX_ENDPOINTS_CONFIGURE_PARAMS params)
 {
-    UNREFERENCED_PARAMETER(usbDevice);
+    PAVCAM_UDE_USB_DEVICE_CONTEXT device;
+    PAVCAM_UDE_CONTROLLER_CONTEXT controller;
+    UDECXUSBENDPOINT videoEndpoint;
+
     UNREFERENCED_PARAMETER(params);
-    /* No physical endpoint programming is needed, but the framework needs
-     * acknowledgement of configuration and alternate-setting transitions.
-     * Actual video requests still fail closed until UVC is implemented. */
+    device = AvCamUdeUsbGetContext(usbDevice);
+    controller = AvCamUdeControllerGetContext(device->Controller);
+    videoEndpoint = controller->VideoEndpoint;
+
+    /* A new alternate setting must never continue the previous
+     * packetizer's half-transmitted JPEG. Mark the next PASSIVE worker
+     * to reset its leased frame, FID and microframe schedule.
+     * The flag is guarded by the endpoint spinlock, not FrameLock:
+     * UdeCx configuration callbacks are not guaranteed PASSIVE_LEVEL.
+     */
+    if (videoEndpoint != NULL) {
+        PAVCAM_UDE_ENDPOINT_CONTEXT ctx =
+            AvCamUdeEndpointGetContext(videoEndpoint);
+        WdfSpinLockAcquire(ctx->Lock);
+        ctx->PumpResetPending = TRUE;
+        WdfSpinLockRelease(ctx->Lock);
+    }
     WdfRequestComplete(request, STATUS_SUCCESS);
 }
 
