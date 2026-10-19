@@ -580,3 +580,30 @@ reviewed and isolated milestone after cancellation / reset runtime
 validation. For testing directly on a physical notebook, first prepare
 and verify a bootable recovery medium and independently restorable
 system image; enabling testsigning alone is not a rollback strategy.
+
+
+## Implementation: continuous user-mode source (2026-10-19)
+
+The `AvCamUdeObsFeeder` now has a real long-running
+`--continuous` capture-and-upload loop and clean Ctrl+C/Break handling,
+rather than stopping after a fixed 120 frames. It reports cumulative
+captured, uploaded and back-pressure-dropped frames every ~5 seconds.
+`--continuous` and `--frames N` are mutually exclusive; finite capture
+remains supported. This is implementation work for the live video data
+path, not another offline test. Example once UdeCx is operational:
+
+```powershell
+.\AvCamUdeObsFeeder.exe --device-name "OBS Virtual Camera" --continuous
+```
+
+Or for Logitech without OBS (if its native MF formats are compatible):
+
+```powershell
+.\AvCamUdeObsFeeder.exe --device-name "Logi C270 HD WebCam" --source-usb-id "VID_046D&PID_0825" --continuous
+```
+
+**Neither command currently results in browser video.** The real UdeCx
+controller's default build still disables USB child autoprobe and native
+ISO endpoint handling. Only use `--dry-run` for safe host-side testing
+until a separately reviewed, properly signed and recoverable driver path
+is ready. `--dry-run --continuous` does not access the kernel controller.
