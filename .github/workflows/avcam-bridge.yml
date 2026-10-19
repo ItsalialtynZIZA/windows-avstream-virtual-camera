@@ -15,6 +15,9 @@ on:
       - 'feeder/src/MediaFoundationFrameSource.h'
       - 'feeder/src/DirectShowObsSource.cpp'
       - 'feeder/src/DirectShowObsSource.h'
+      - 'feeder/src/ObsSharedMemorySource.cpp'
+      - 'feeder/src/ObsSharedMemorySource.h'
+      - 'research/udecx/tests/obs-shared-memory-smoke.cpp'
       - 'feeder/src/MediaFoundationDeviceSelector.h'
       - 'research/udecx/AvCamUdeUploadProtocol.h'
       - '.github/workflows/avcam-bridge.yml'
@@ -30,7 +33,7 @@ jobs:
         run: |
           cmake -S research/udecx/tests -B build/avcam-bridge -A x64
           if ($LASTEXITCODE -ne 0) { throw 'CMake configure failed' }
-          cmake --build build/avcam-bridge --config Release --target AvCamUdeObsFeeder AvCamPreview
+          cmake --build build/avcam-bridge --config Release --target AvCamUdeObsFeeder AvCamPreview AvCamObsSharedMemorySmoke
           if ($LASTEXITCODE -ne 0) { throw 'AvCam Bridge or Preview compilation failed' }
           if (-not (Test-Path 'build/avcam-bridge/Release/AvCamPreview.exe')) { throw 'AvCam Preview executable missing' }
       - name: Validate application CLI without accessing camera or kernel
@@ -49,6 +52,11 @@ jobs:
           if ($LASTEXITCODE -ne 2) { throw 'Unvalidated device identity accepted' }
           Write-Host 'AVCAM_BRIDGE_CLI_PASSED'
           exit 0
+      - name: Validate native OBS queue without OBS or kernel drivers
+        shell: pwsh
+        run: |
+          & 'build/avcam-bridge/Release/AvCamObsSharedMemorySmoke.exe'
+          if ($LASTEXITCODE -ne 0) { throw 'OBS native NV12 shared memory smoke failed' }
       - name: Package app only, excluding all drivers
         shell: pwsh
         run: |
