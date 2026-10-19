@@ -166,13 +166,14 @@ void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
                 } else {
                     const DWORD error = GetLastError();
                     if (error == ERROR_BUSY) {
+                        // Drop only this upload. Keep preview frame delivery active.
                         ++g.busy;
-                        continue; // Drop stale frame, never replay it.
+                    } else {
+                        g.controllerError.store(error);
+                        g.usbUnavailable.store(true);
+                        CloseHandle(controller);
+                        controller = INVALID_HANDLE_VALUE;
                     }
-                    g.controllerError.store(error);
-                    g.usbUnavailable.store(true);
-                    CloseHandle(controller);
-                    controller = INVALID_HANDLE_VALUE;
                 }
             }
         }
