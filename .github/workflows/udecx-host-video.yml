@@ -94,15 +94,15 @@ jobs:
           New-Item -ItemType Directory -Path $dest -Force | Out-Null
           foreach ($file in @($sys, $inf, $cat)) { Copy-Item $file $dest }
           Copy-Item 'build/udecx-host-installer/Release/AvCamUdeHostRootInstall.exe' $dest
-          foreach ($name in @('AvCamUdeHostPreflight.ps1', 'AvCamUdeHostRollback.ps1', 'README_HOST_VIDEO_EXPERIMENT.txt')) {
+          foreach ($name in @('AvCamUdeHostPreflight.ps1', 'AvCamUdeHostRollback.ps1', 'AvCamUdeHostAcceptance.ps1', 'README_HOST_VIDEO_EXPERIMENT.txt')) {
             Copy-Item (Join-Path 'research/udecx/tools' $name) $dest
           }
           Export-Certificate -Cert $sysSig.SignerCertificate -FilePath (Join-Path $dest 'AvCamUdeHostTestSigner.cer') | Out-Null
           $files = @(Get-ChildItem -LiteralPath $dest -File)
-          if ($files.Count -ne 8) { throw 'Unexpected host-video package count' }
+          if ($files.Count -ne 9) { throw 'Unexpected host-video package count' }
           foreach ($file in $files) {
             if ($file.Name -notin @('AvCamUde.sys','AvCamUde.inf','avcamude.cat',
-              'AvCamUdeHostRootInstall.exe','AvCamUdeHostPreflight.ps1','AvCamUdeHostRollback.ps1',
+              'AvCamUdeHostRootInstall.exe','AvCamUdeHostPreflight.ps1','AvCamUdeHostRollback.ps1','AvCamUdeHostAcceptance.ps1',
               'README_HOST_VIDEO_EXPERIMENT.txt','AvCamUdeHostTestSigner.cer')) {
               throw "Unexpected host-video package content: $($file.Name)"
             }
