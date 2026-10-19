@@ -451,3 +451,36 @@ The normal driver still has `g_AvCamUdeEnableAutoplug = FALSE` and
 `g_AvCamUdeEnableNativeIso = FALSE`. Runtime WDF cancellation, USB frame
 scheduling and driver cleanup remain unverified in a Windows VM. Do not
 install this experimental build onto the primary host.
+
+
+## Oct 19 host PnP evidence: isolate old AvCamBus from new UdeCx
+
+A read-only Windows 11 host inspection found the installed legacy
+`ROOT\\AVCAMVIRTUALUSBHOST\\0000` uses `AvCamBus` via
+`oem61.inf`, while its last `USB\\VID_1234&PID_5678&MI_00` camera
+was `CM_PROB_PHANTOM` (Code 45; not currently present). The separate
+`ROOT\\AVCAMUDECONTROLLER` device was not installed.
+
+The new UdeCx implementation therefore has an **independent experimental
+USB product ID, `VID_1234&PID_5679`**, defined exclusively in
+`AvCamUdeTestIdentity.h`. It retains the existing USB device descriptor
+apart from those two product-ID bytes. No file in the legacy driver
+descriptor model was edited, and the old PID remains `5678`.
+The `udecx-uvc-protocol` unit test enforces that distinction and exact
+descriptor equivalence excluding PID.
+
+UdeCx VM preflight and post-install acceptance now look for `5679`
+exclusively. The dedicated `AvCamUdeMfProbe.cpp` used by the UdeCx
+test suite selects by the USB device symbolic link and **never solely by
+friendly name**; it rejects ambiguous multiple matches. The legacy
+`research/manual-vhci/tools/AvCamMfProbe.cpp` is not modified. A
+successful MF sample therefore cannot be falsely attributed to UdeCx
+merely because the older AvCamBus test camera carries the same name.
+
+**No physical host installation occurred.** `VID_1234` is only a
+research placeholder, not an allocated USB vendor identity. Both
+`g_AvCamUdeEnableAutoplug` and `g_AvCamUdeEnableNativeIso` remain
+`FALSE`. Windows USBVIDEO/Driver Verifier runtime and first-frame
+verification are outstanding. Do not enable the experimental driver on
+the primary host without a recoverable system image and separate
+runtime-review gate.
