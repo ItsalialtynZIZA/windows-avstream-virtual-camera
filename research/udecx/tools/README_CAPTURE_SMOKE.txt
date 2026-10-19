@@ -72,3 +72,30 @@ PERFORMANCE DIAGNOSTICS:
 - NonIncreasingTimestamps: repeated/decreasing MF sample timestamps.
 - AVCAM_SPEED_BELOW_25FPS: advisory only; successful correct frames still
   result in exit code 0. Compare capture / encode / decode before tuning.
+
+
+C270 STAGED PERFORMANCE DIAGNOSIS (no UdeCx driver required):
+Use the same number of frames for all three runs, close OBS and other
+applications, and keep the C270 camera connected throughout.
+
+  .\AvCamUdeCaptureSmoke.exe --profile capture --frames 90
+  .\AvCamUdeCaptureSmoke.exe --profile encode  --frames 90
+  .\AvCamUdeCaptureSmoke.exe --profile full    --frames 90
+
+Profiles:
+- capture: reads MF frames only, no WIC/JPEG is performed.
+  FramesEncoded=0 and FramesDecoded=0 are expected; prints
+  AVCAM_C270_MF_CAPTURE_PASSED.
+- encode: MF capture + WIC 1920x1080 JPEG creation and marker checks.
+  FramesEncoded=90, FramesDecoded=0; prints
+  AVCAM_C270_MF_MJPEG_ENCODE_PASSED.
+- full: MF capture + JPEG encode + full JPEG pixel decode.
+  FramesEncoded=90, FramesDecoded=90; prints the existing
+  AVCAM_C270_MF_MJPEG_DECODE_PASSED marker.
+
+ObservedProcessingFPS is mode-specific. The MF sample timestamp span can
+indicate whether source timestamp cadence corresponds to 30 FPS; it is
+not proof of delivered camera throughput, which requires wall-clock timing.
+The profiles help isolate MF blocking or frame conversion vs JPEG costs.
+They do NOT provide USB emulation, access the UdeCx controller, or prove
+the browser can receive video. They do not alter camera drivers.
