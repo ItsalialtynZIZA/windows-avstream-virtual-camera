@@ -39,7 +39,7 @@ struct Handle {
 void Usage() {
     std::wcout
         << L"AvCamUdeObsFeeder --device-name \"OBS Virtual Camera\" "
-        << L"[--frames 120] [--dry-run]\n"
+        << L"[--source-usb-id VID_046D&PID_0825] [--frames 120] [--dry-run]\\n"
         << L"Research VM only. --dry-run does not open the UdeCx controller.\n";
 }
 bool ParsePositive(const wchar_t* value, unsigned& count) {
