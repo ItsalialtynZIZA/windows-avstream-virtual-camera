@@ -48,8 +48,8 @@ struct Handle {
 void Usage() {
     std::wcout
         << L"AvCamUdeObsFeeder --device-name \"OBS Virtual Camera\" "
-        << L"[--source-usb-id VID_046D&PID_0825] [--frames 120 | --continuous] [--dry-run]\\n"
-        << L"Research VM only. --dry-run does not open the UdeCx controller.\n";
+        << L"[--obs | --c270] [--source-usb-id VID_046D&PID_0825] [--frames 120 | --continuous] [--dry-run]\n"
+        << L"--continuous streams until Ctrl+C; --dry-run works without a driver.\n";
 }
 bool ParsePositive(const wchar_t* value, unsigned& count) {
     if (value == nullptr || *value == L'\0') return false;
@@ -75,12 +75,18 @@ int wmain(int argc, wchar_t** argv) {
     bool explicitFrames = false;
     for (int index = 1; index < argc; ++index) {
         const std::wstring arg = argv[index];
-        if (arg == L"--device-name" && index + 1 < argc) {
+        if (arg == L"--c270") {
+            deviceName = L"Logi C270 HD WebCam";
+            sourceUsbId = L"VID_046D&PID_0825";
+        } else if (arg == L"--obs") {
+            deviceName = L"OBS Virtual Camera";
+            sourceUsbId.clear();
+        } else if (arg == L"--device-name" && index + 1 < argc) {
             deviceName = argv[++index];
         } else if (arg == L"--source-usb-id" && index + 1 < argc) {
             sourceUsbId = argv[++index];
             if (!AvCamSourceSelection::IsVidPidPair(sourceUsbId)) {
-                std::wcerr << L"Expected USB ID VID_XXXX&PID_XXXX.\\n";
+                std::wcerr << L"Expected USB ID VID_XXXX&PID_XXXX.\n";
                 return 2;
             }
         } else if (arg == L"--frames" && index + 1 < argc) {
@@ -120,12 +126,6 @@ int wmain(int argc, wchar_t** argv) {
         return 3;
     }
 
-    MediaFoundationFrameSource source(deviceName, sourceUsbId);
-    if (!source.Start()) {
-        std::wcerr << L"Media Foundation source unavailable: "
-                   << deviceName << L"\n";
-        return 4;
-    }
     Handle controller;
     if (!dryRun) {
         controller.value = CreateFileW(
@@ -135,11 +135,16 @@ int wmain(int argc, wchar_t** argv) {
         if (controller.value == INVALID_HANDLE_VALUE) {
             std::wcerr << L"Research UdeCx controller not available. "
                        << L"Win32 error=" << GetLastError() << L"\n";
-            source.Stop();
             return 5;
         }
     }
 
+    MediaFoundationFrameSource source(deviceName, sourceUsbId);
+    if (!source.Start()) {
+        std::wcerr << L"Media Foundation source unavailable: "
+                   << deviceName << L"\n";
+        return 4;
+    }
     std::vector<unsigned char> bgra(AVCAM_FRAME_BYTES_BGRA32);
     std::vector<unsigned char> jpeg;
     std::vector<unsigned char> packet;
@@ -199,16 +204,17 @@ int wmain(int argc, wchar_t** argv) {
                 std::wcout << L"AVCAM_FEEDER_LIVE frames_read=" << seen
                            << L" accepted=" << accepted
                            << L" skipped_busy=" << busy
-               << L" frames_read=" << seen
                            << L" source=" << deviceName << L"\n";
                 lastReportTick = tick;
             }
         }
     }
     source.Stop();
-    std::wcout << L"Capture/encode completed. Frames=" << accepted
+    std::wcout << L"AVCAM_BRIDGE_STOPPED captured=" << seen
+               << L" encoded=" << (seen - 0ull)
+               << L" accepted=" << accepted
                << L" skipped_busy=" << busy
                << L" mode=" << (dryRun ? L"dry-run" : L"upload")
-               << L". No Media Foundation USB capture is implied.\n";
+               << L". Controller upload is not proof of browser video.\n";
     return 0;
 }
