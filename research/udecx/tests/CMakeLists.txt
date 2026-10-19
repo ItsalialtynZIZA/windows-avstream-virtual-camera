@@ -163,3 +163,14 @@ else()
 endif()
 add_test(NAME udecx-sparse-iso-completion-metadata
          COMMAND AvCamUdeIsoCompletionTests)
+
+# The host's explicit StartFrame is 1 ms, not one high-speed microframe;
+# reject late/backward URBs and validate ASAP/wrap-aware scheduling.
+add_executable(AvCamUdeIsoClockTests iso-clock-tests.cpp)
+target_compile_features(AvCamUdeIsoClockTests PRIVATE cxx_std_17)
+if(MSVC)
+    target_compile_options(AvCamUdeIsoClockTests PRIVATE /W4 /WX)
+else()
+    target_compile_options(AvCamUdeIsoClockTests PRIVATE -Wall -Wextra -Werror)
+endif()
+add_test(NAME udecx-usb-iso-startframe-clock COMMAND AvCamUdeIsoClockTests)
