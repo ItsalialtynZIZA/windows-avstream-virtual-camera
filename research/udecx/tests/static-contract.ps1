@@ -155,6 +155,8 @@ Assert-Matches $async 'AvCamUdeAsyncWorkerStart' 'Worker ownership gate missing.
 Assert-Matches $async 'AvCamUdeAsyncWorkerDone' 'Worker buffer release transition missing.'
 Assert-Matches $async 'AvCamUdeAsyncCancel' 'Cancellation transition missing.'
 Assert-Matches $async 'AvCamUdeAsyncClaimCompletion' 'Single-completion transition missing.'
+Assert-Matches $async 'AVCAM_UDE_ASYNC_COMPLETING' 'Completion ownership must be reserved until native callback return.'
+Assert-Matches $async 'AvCamUdeAsyncCompletionReturned' 'Drain reference must survive native WDF completion.'
 Assert-Matches $async 'AvCamUdeAsyncBeginPurge' 'Purge cancellation path missing.'
 Assert-Matches $async 'AvCamUdeAsyncClaimPurgeAck' 'Purge barrier missing.'
 Assert-Matches $async 'AvCamUdeAsyncBeginReset' 'Reset cancellation path missing.'
