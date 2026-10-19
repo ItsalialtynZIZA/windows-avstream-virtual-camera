@@ -296,10 +296,10 @@ Assert-Matches $nativeIso 'if \(endpoint->PumpQuarantined\)' 'Native ISO must re
 Assert-Matches $nativeIso 'endpoint->PumpQuarantined = TRUE;' 'Failed native JPEG lease reset must fail closed.'
 $vmInstaller = Get-Content (Join-Path $root 'tools/AvCamUdeVmRootInstall.cpp') -Raw
 $vmEnumeration = Get-Content (Join-Path $root 'tools/AvCamUdeVmEnumerationReport.ps1') -Raw
-Assert-Matches $vmInstaller 'Root\\AvCamUdeController' 'Guest-only installer must use isolated new root identity.'
+Assert-Matches $vmInstaller 'Root\\+AvCamUdeController' 'Guest-only installer must use isolated new root identity.'
 Assert-Matches $vmInstaller 'RequireDisposableVmHardware' 'Guest-only root installer must enforce SMBIOS safety gate.'
 Assert-Matches $vmInstaller 'I_UNDERSTAND_DISPOSABLE_VM_ONLY' 'Guest-only root installer requires explicit acknowledgment.'
-if ($vmInstaller -match 'Root\\AvCamVirtualUsbHost|oem61\.inf|VID_046D&PID_0825') {
+if ($vmInstaller -match 'Root\\+AvCamVirtualUsbHost|oem61\.inf|VID_046D&PID_0825') {
     throw 'VM installer must never refer to legacy AvCamBus or physical Logitech camera.'
 }
 Assert-Matches $vmEnumeration 'VM_UDECX_ENUMERATION_ONLY_PASSED' 'VM report must distinguish enumeration from MF video.'
