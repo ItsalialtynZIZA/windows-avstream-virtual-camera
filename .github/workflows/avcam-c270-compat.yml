@@ -86,6 +86,19 @@ jobs:
           & 'build/c270-compat/Release/AvCamObsSharedMemorySmoke.exe'
           if ($LASTEXITCODE -ne 0) { throw 'OBS NV12 shared memory test failed' }
           Write-Host 'AVCAM_C270_720P_PREVIEW_AND_DESCRIPTOR_VALIDATED'
+      - name: Parse guarded local installer without executing it
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'research/udecx/tools/AvCamC270Install.ps1').ProviderPath,
+            [ref]$tokens, [ref]$errors) | Out-Null
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Error $_.Message }
+            throw 'Local C270 installer script parse failed'
+          }
+          Write-Host 'C270_LOCAL_INSTALLER_PARSE_PASSED_NO_INSTALL'
       - name: Validate signatures and create experimental package
         shell: pwsh
         run: |
@@ -116,15 +129,16 @@ jobs:
             Copy-Item (Join-Path 'research/udecx/tools' $name) $dest
           }
           Copy-Item 'research/udecx/tools/AvCamCompareUsb.ps1' $dest
+          Copy-Item 'research/udecx/tools/AvCamC270Install.ps1' $dest
           Copy-Item 'research/udecx/tools/README_C270_COMPATIBILITY.txt' $dest
           Export-Certificate -Cert $sysSig.SignerCertificate -FilePath (Join-Path $dest 'AvCamUdeHostTestSigner.cer') | Out-Null
           $files = @(Get-ChildItem -LiteralPath $dest -File)
-          if ($files.Count -ne 12) { throw 'Unexpected host-video package count' }
+          if ($files.Count -ne 13) { throw 'Unexpected host-video package count' }
           foreach ($file in $files) {
             if ($file.Name -notin @('AvCamUde.sys','AvCamUde.inf','avcamude.cat',
               'AvCamUdeHostRootInstall.exe','AvCamUdeHostPreflight.ps1','AvCamUdeHostRollback.ps1','AvCamUdeHostAcceptance.ps1',
               'README_HOST_VIDEO_EXPERIMENT.txt','AvCamUdeHostTestSigner.cer',
-              'AvCamPreviewC270.exe','AvCamCompareUsb.ps1','README_C270_COMPATIBILITY.txt')) {
+              'AvCamPreviewC270.exe','AvCamCompareUsb.ps1','AvCamC270Install.ps1','README_C270_COMPATIBILITY.txt')) {
               throw "Unexpected host-video package content: $($file.Name)"
             }
           }
