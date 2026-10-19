@@ -484,3 +484,44 @@ research placeholder, not an allocated USB vendor identity. Both
 verification are outstanding. Do not enable the experimental driver on
 the primary host without a recoverable system image and separate
 runtime-review gate.
+
+
+## Real physical Logitech C270 as OBS and feeder input
+
+Host read-only PnP diagnostics confirmed the physical
+`Logi C270 HD WebCam` is present and healthy with
+`USB\\VID_046D&PID_0825&MI_00` and the Windows `usbvideo` service
+(`oem48.inf`). A `Canon iR C3125` scan device also appears under
+imaging devices and must not be mistaken for a webcam. Neither device
+driver is modified by this research branch.
+
+The Logitech C270 is a **720p at up to 30fps** webcam. The UdeCx MJPEG
+test format and existing user-mode feeder expect **1920x1080 BGRA32**.
+For the first reliable end-to-end fixture, capture C270 in OBS at its
+native 1280x720, then set OBS output to 1920x1080 and start OBS Virtual
+Camera. The feeder's default `--device-name "OBS Virtual Camera"`
+then captures that scaled source. Upscaling does not add actual camera
+detail. The UdeCx kernel still does not automatically plug the USB child
+or complete live ISO requests.
+
+For a **dry-run physical capture experiment** (no USB controller IOCTL),
+the feeder also supports:
+
+```powershell
+.\AvCamUdeObsFeeder.exe --device-name "Logi C270 HD WebCam" --source-usb-id "VID_046D&PID_0825" --frames 30 --dry-run
+```
+
+This selects only a unique Media Foundation device whose friendly name
+and symbolic link both match the physical C270. The filter rejects
+ambiguous matches, partial VID/PID, old `1234:5678` and new
+`1234:5679` devices. However, direct physical dry-run might fail if
+Windows does not support converting native 720p C270 capture to the
+hard-coded 1920x1080 output; OBS is the recommended scaling bridge.
+The portable `udecx-physical-c270-source-selection` test verifies the
+identity logic without claiming that a live camera was opened in CI.
+The `--dry-run` flag exercises capture/JPEG encoding only and never
+opens `AvCamUdeController0`.
+
+The old `oem61.inf`, backup driver packages and `oem48.inf` remain
+untouched. Do not install the experimental kernel driver on an unbacked
+primary Windows installation.
