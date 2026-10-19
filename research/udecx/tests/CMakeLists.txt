@@ -286,3 +286,38 @@ if(WIN32)
             MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
 endif()
+
+# Scientific USB/UVC comparison profile; separate from the proven 1080p
+# preview executable, and without changing legacy UdeCx/virtual-bus binaries.
+add_executable(AvCamC270ProfileTests c270-profile-tests.cpp)
+target_compile_features(AvCamC270ProfileTests PRIVATE cxx_std_17)
+target_compile_definitions(AvCamC270ProfileTests PRIVATE
+    AVCAM_UDE_C270_COMPAT_PROFILE)
+if(MSVC)
+    target_compile_options(AvCamC270ProfileTests PRIVATE /W4 /WX /permissive-)
+else()
+    target_compile_options(AvCamC270ProfileTests PRIVATE -Wall -Wextra -Werror)
+endif()
+add_test(NAME udecx-c270-compatibility-720p-descriptor COMMAND AvCamC270ProfileTests)
+
+if(WIN32)
+    add_executable(AvCamPreviewC270 WIN32
+        ../tools/AvCamPreview.cpp
+        ../tools/AvCamUdeMjpegEncoder.cpp
+        ../../../feeder/src/MediaFoundationFrameSource.cpp
+        ../../../feeder/src/ObsSharedMemorySource.cpp)
+    target_include_directories(AvCamPreviewC270 PRIVATE ../../../shared)
+    target_compile_features(AvCamPreviewC270 PRIVATE cxx_std_17)
+    target_compile_definitions(AvCamPreviewC270 PRIVATE
+        UNICODE _UNICODE WINVER=0x0A00 _WIN32_WINNT=0x0A00
+        AVCAM_UDE_C270_COMPAT_PROFILE)
+    target_link_libraries(AvCamPreviewC270 PRIVATE
+        user32 gdi32 windowscodecs ole32 oleaut32 strmiids
+        mf mfplat mfreadwrite mfuuid)
+    if(MSVC)
+        target_compile_options(AvCamPreviewC270 PRIVATE
+            /W4 /WX /permissive- /utf-8)
+        set_property(TARGET AvCamPreviewC270 PROPERTY
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+endif()
