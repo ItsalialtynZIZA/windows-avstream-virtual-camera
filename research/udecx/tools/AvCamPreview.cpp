@@ -2,12 +2,15 @@
  * AvCam Preview: functional Windows desktop capture application.
  * The physical Logitech C270 (or OBS virtual source) is rendered locally
  * through Windows Media Foundation. This is NOT a virtual USB camera and
- * never opens the experimental AvCam UdeCx kernel controller.
+ * can optionally upload MJPEG to an existing UdeCx controller.
+ * USB upload is OFF by default and never installs or enables a driver.
  *
  * No installation, elevation, registry changes, or persistent image output.
  */
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <wincodec.h>
+#include <wrl/client.h>
 #include <cstdint>
 #include <cstring>
 #include <cwchar>
@@ -18,6 +21,8 @@
 #include <vector>
 #include "../../../feeder/src/MediaFoundationFrameSource.h"
 #include "../../../shared/VirtualCameraProtocol.h"
+#include "../AvCamUdeUploadProtocol.h"
+#include "AvCamUdeMjpegEncoder.h"
 
 namespace {
 constexpr UINT kPreviewReady = WM_APP + 1u;
@@ -26,6 +31,8 @@ constexpr int kSourceId = 101;
 constexpr int kStartId = 102;
 constexpr int kStopId = 103;
 constexpr int kStatusId = 104;
+constexpr int kUsbId = 105;
+constexpr wchar_t kControllerPath[] = LR"(\\.\AvCamUdeController0)";
 
 struct Controller {
     HWND window = nullptr;
@@ -33,6 +40,7 @@ struct Controller {
     HWND startButton = nullptr;
     HWND stopButton = nullptr;
     HWND status = nullptr;
+    HWND usbCheck = nullptr;
     std::thread worker;
     std::mutex frameMutex;
     std::vector<unsigned char> latest;
@@ -40,8 +48,13 @@ struct Controller {
     std::atomic<bool> running{false};
     std::atomic<bool> frameAvailable{false};
     std::atomic<bool> captureFailed{false};
+    std::atomic<bool> usbUnavailable{false};
+    std::atomic<bool> encodeFailed{false};
     std::atomic<std::uint64_t> captured{0};
+    std::atomic<std::uint64_t> uploaded{0};
+    std::atomic<std::uint64_t> busy{0};
     int selected = 0;
+    bool upload = false;
 
     void Stop() {
         stop.store(true);
@@ -60,7 +73,7 @@ void SetControlStatus(const wchar_t* message) {
     if (g.status) SetWindowTextW(g.status, message);
 }
 
-void CaptureThread(int selected) {
+void CaptureThread(int selected, bool upload) {
     const HRESULT com = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (FAILED(com)) {
         g.captureFailed.store(true);
@@ -82,6 +95,26 @@ void CaptureThread(int selected) {
         return;
     }
 
+    Microsoft::WRL::ComPtr<IWICImagingFactory> wic;
+    HANDLE controller = INVALID_HANDLE_VALUE;
+    if (upload) {
+        if (FAILED(CoCreateInstance(
+                CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+                IID_PPV_ARGS(&wic)))) {
+            g.encodeFailed.store(true);
+            g.usbUnavailable.store(true);
+        } else {
+            controller = CreateFileW(
+                kControllerPath, GENERIC_WRITE,
+                FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+                OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+            if (controller == INVALID_HANDLE_VALUE) {
+                g.usbUnavailable.store(true);
+            }
+        }
+    }
+    std::vector<unsigned char> jpeg;
+    std::vector<unsigned char> packet;
     std::vector<unsigned char> sample(AVCAM_FRAME_BYTES_BGRA32);
     while (!g.stop.load()) {
         std::uint64_t timestamp = 0;
@@ -98,10 +131,45 @@ void CaptureThread(int selected) {
         }
         g.frameAvailable.store(true);
         ++g.captured;
+        if (controller != INVALID_HANDLE_VALUE) {
+            const bool encoded = AvCamUde::EncodeBgraToMjpeg(
+                wic.Get(), sample.data(), AVCAM_FRAME_WIDTH,
+                AVCAM_FRAME_HEIGHT, AVCAM_FRAME_STRIDE_BGRA32, jpeg);
+            if (!encoded) {
+                g.encodeFailed.store(true);
+                g.usbUnavailable.store(true);
+                CloseHandle(controller);
+                controller = INVALID_HANDLE_VALUE;
+            } else {
+                AVCAM_UDE_UPLOAD_HEADER header{};
+                header.Magic = AVCAM_UDE_UPLOAD_MAGIC;
+                header.Version = AVCAM_UDE_UPLOAD_VERSION;
+                header.Width = AVCAM_UDE_UPLOAD_WIDTH;
+                header.Height = AVCAM_UDE_UPLOAD_HEIGHT;
+                header.FrameBytes = static_cast<unsigned>(jpeg.size());
+                packet.resize(sizeof(header) + jpeg.size());
+                memcpy(packet.data(), &header, sizeof(header));
+                memcpy(packet.data() + sizeof(header),
+                       jpeg.data(), jpeg.size());
+                DWORD returned = 0;
+                if (DeviceIoControl(controller, IOCTL_AVCAM_UDE_SUBMIT_MJPEG,
+                        packet.data(), static_cast<DWORD>(packet.size()),
+                        nullptr, 0, &returned, nullptr)) {
+                    ++g.uploaded;
+                } else if (GetLastError() == ERROR_BUSY) {
+                    ++g.busy;
+                } else {
+                    g.usbUnavailable.store(true);
+                    CloseHandle(controller);
+                    controller = INVALID_HANDLE_VALUE;
+                }
+            }
+        }
         if (!PostMessageW(g.window, kPreviewReady, 0, 0)) {
             break;
         }
     }
+    if (controller != INVALID_HANDLE_VALUE) CloseHandle(controller);
     source.Stop();
     CoUninitialize();
     g.running.store(false);
@@ -112,10 +180,15 @@ void StartCapture() {
     g.Stop();
     const LRESULT idx = SendMessageW(g.sourceCombo, CB_GETCURSEL, 0, 0);
     g.selected = idx == 1 ? 1 : 0;
+    g.upload = SendMessageW(g.usbCheck, BM_GETCHECK, 0, 0) == BST_CHECKED;
     g.stop.store(false);
     g.captureFailed.store(false);
+    g.usbUnavailable.store(false);
+    g.encodeFailed.store(false);
     g.frameAvailable.store(false);
     g.captured.store(0);
+    g.uploaded.store(0);
+    g.busy.store(0);
     {
         std::lock_guard<std::mutex> lock(g.frameMutex);
         g.latest.clear();
@@ -124,8 +197,9 @@ void StartCapture() {
     EnableWindow(g.startButton, FALSE);
     EnableWindow(g.stopButton, TRUE);
     EnableWindow(g.sourceCombo, FALSE);
+    EnableWindow(g.usbCheck, FALSE);
     SetControlStatus(L"Подключение к камере...");
-    g.worker = std::thread(CaptureThread, g.selected);
+    g.worker = std::thread(CaptureThread, g.selected, g.upload);
     InvalidateRect(g.window, nullptr, FALSE);
 }
 
@@ -134,6 +208,7 @@ void StopCapture() {
     EnableWindow(g.startButton, TRUE);
     EnableWindow(g.stopButton, FALSE);
     EnableWindow(g.sourceCombo, TRUE);
+    EnableWindow(g.usbCheck, TRUE);
     SetControlStatus(L"Остановлено");
     InvalidateRect(g.window, nullptr, FALSE);
 }
@@ -158,11 +233,25 @@ void UpdateStatus() {
         EnableWindow(g.startButton, TRUE);
         EnableWindow(g.stopButton, FALSE);
         EnableWindow(g.sourceCombo, TRUE);
+        EnableWindow(g.usbCheck, TRUE);
         SetControlStatus(L"Ошибка захвата: камера не найдена или занята");
     } else if (g.running.load()) {
-        wchar_t text[180]{};
-        swprintf_s(text, L"Идёт захват: %llu кадров | %.1f FPS | 1280 x 720",
-                   static_cast<unsigned long long>(frames), fps);
+        wchar_t text[220]{};
+        if (g.upload && g.usbUnavailable.load()) {
+            if (g.encodeFailed.load()) {
+                swprintf_s(text, L"USB: ошибка MJPEG. Локальный просмотр: %.1f FPS", fps);
+            } else {
+                swprintf_s(text, L"UdeCx недоступен. Локальный просмотр: %.1f FPS", fps);
+            }
+        } else if (g.upload) {
+            swprintf_s(text, L"Кадров: %llu | %.1f FPS | UdeCx: %llu | пропущено: %llu",
+                static_cast<unsigned long long>(frames), fps,
+                static_cast<unsigned long long>(g.uploaded.load()),
+                static_cast<unsigned long long>(g.busy.load()));
+        } else {
+            swprintf_s(text, L"Локальный захват: %llu кадров | %.1f FPS | 1280 x 720",
+                static_cast<unsigned long long>(frames), fps);
+        }
         SetControlStatus(text);
     }
 }
@@ -170,7 +259,7 @@ void UpdateStatus() {
 void PaintPreview(HWND hwnd, HDC hdc) {
     RECT client{};
     GetClientRect(hwnd, &client);
-    RECT area{16, 102, client.right - 16, client.bottom - 42};
+    RECT area{16, 115, client.right - 16, client.bottom - 42};
     if (area.right <= area.left || area.bottom <= area.top) return;
 
     HBRUSH background = CreateSolidBrush(RGB(24, 28, 36));
@@ -237,9 +326,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lPara
             646, 12, 115, 29, hwnd,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStopId)), instance, nullptr);
         EnableWindow(g.stopButton, FALSE);
+        g.usbCheck = CreateWindowW(
+            L"BUTTON", L"Передавать MJPEG в UdeCx (экспериментально)",
+            WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
+            16, 53, 460, 24, hwnd,
+            reinterpret_cast<HMENU>(static_cast<INT_PTR>(kUsbId)),
+            instance, nullptr);
+        SendMessageW(g.usbCheck, BM_SETCHECK, BST_UNCHECKED, 0);
         g.status = CreateWindowW(
             L"STATIC", L"Остановлено", WS_CHILD | WS_VISIBLE,
-            16, 60, 740, 28, hwnd,
+            16, 84, 820, 23, hwnd,
             reinterpret_cast<HMENU>(static_cast<INT_PTR>(kStatusId)),
             instance, nullptr);
         SetTimer(hwnd, kStatusTimer, 1000, nullptr);
