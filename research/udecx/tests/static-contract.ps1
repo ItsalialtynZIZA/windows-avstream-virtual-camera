@@ -148,4 +148,19 @@ if ($vm -match '(?i)\bpnputil\s+/(add-driver|delete-driver|install)|New-PnpDevic
     throw 'VM acceptance probe must never install or change drivers.'
 }
 
+$async = Get-Content (Join-Path $root 'AvCamUdeAsyncIso.h') -Raw
+Assert-Matches $async 'AVCAM_UDE_ASYNC_MAX_REQUESTS' 'Bounded ISO queue size is required.'
+Assert-Matches $async 'AvCamUdeAsyncSubmit' 'Admission state machine missing.'
+Assert-Matches $async 'AvCamUdeAsyncWorkerStart' 'Worker ownership gate missing.'
+Assert-Matches $async 'AvCamUdeAsyncWorkerDone' 'Worker buffer release transition missing.'
+Assert-Matches $async 'AvCamUdeAsyncCancel' 'Cancellation transition missing.'
+Assert-Matches $async 'AvCamUdeAsyncClaimCompletion' 'Single-completion transition missing.'
+Assert-Matches $async 'AvCamUdeAsyncBeginPurge' 'Purge cancellation path missing.'
+Assert-Matches $async 'AvCamUdeAsyncClaimPurgeAck' 'Purge barrier missing.'
+Assert-Matches $async 'AvCamUdeAsyncBeginReset' 'Reset cancellation path missing.'
+Assert-Matches $async 'AvCamUdeAsyncFinishReset' 'Reset generation barrier missing.'
+Assert-Matches $header 'AvCamUdeAsyncIso.h' 'WDK native header must compile portable ownership model.'
+if ($usb -match '(?s)endpoint->EndpointAddress == 0x81.{0,600}AvCamUdePrepareIsoUrbFromPump\s*\(') {
+    throw 'Research UdeCx endpoint must remain fail-closed until native WDF cancel/IRQL verified.'
+}
 Write-Host "UdeCx guarded USB child contract: passed"
