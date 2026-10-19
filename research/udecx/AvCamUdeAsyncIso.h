@@ -262,7 +262,8 @@ AvCamUdeAsyncBeginReset(AVCAM_UDE_ASYNC_ISO* endpoint)
     endpoint->ResetPending = 1;
     endpoint->Drain.Accepting = 0;
     for (i = 0; i < AVCAM_UDE_ASYNC_MAX_REQUESTS; ++i) {
-        if (endpoint->Slots[i].Phase != AVCAM_UDE_ASYNC_FREE) {
+        if (endpoint->Slots[i].Phase != AVCAM_UDE_ASYNC_FREE &&
+            endpoint->Slots[i].Phase != AVCAM_UDE_ASYNC_COMPLETING) {
             endpoint->Slots[i].CancelRequested = 1;
         }
     }
