@@ -129,6 +129,72 @@ static void TestFrameRotationAcrossUrbs() {
         "Reset did not clear stream state");
 }
 
+
+/* A UVC VS COMMIT during the middle of a JPEG frame ends that stream
+ * generation. The native worker must reset the lease before the first
+ * packet of the new generation; it must not emit the remainder of A.
+ */
+static void TestCommitBoundaryDiscardsIncompleteFrame() {
+    constexpr unsigned packetCount = 8u;
+    constexpr unsigned window = 3072u;
+    constexpr unsigned capacity = packetCount * window;
+    const auto first = MakeJpeg(12);
+    const auto next = MakeJpeg(58);
+    std::vector<unsigned char> slotA(first.size());
+    std::vector<unsigned char> slotB(first.size());
+    AVCAM_UDE_FRAME_SOURCE source{};
+    Expect(AvCamUdeFrameSourceInit(
+        &source, slotA.data(), static_cast<unsigned>(slotA.size()),
+        slotB.data(), static_cast<unsigned>(slotB.size())) ==
+        AVCAM_UDE_FRAME_OK, "Commit test source init failed");
+    Expect(AvCamUdeFrameSourcePublish(
+        &source, first.data(), static_cast<unsigned>(first.size())) ==
+        AVCAM_UDE_FRAME_OK, "First commit generation publish failed");
+
+    AVCAM_UDE_FRAME_PUMP pump{};
+    Expect(AvCamUdeFramePumpInit(&pump, &source) == AVCAM_UDE_PUMP_OK,
+        "Commit test pump init failed");
+    unsigned offsets[packetCount]{};
+    unsigned lengths[packetCount]{};
+    std::vector<unsigned char> urb(capacity);
+    for (unsigned i = 0; i < packetCount; ++i) {
+        offsets[i] = i * window;
+    }
+    unsigned returned = 0;
+    Expect(AvCamUdeFramePumpFill(
+        &pump, urb.data(), capacity, offsets, packetCount, 0u,
+        lengths, &returned) == AVCAM_UDE_PUMP_OK,
+        "Old UVC generation did not packetize");
+    Expect(pump.Lease.Data != nullptr,
+        "Old JPEG must still own a frame lease before EOF");
+    Expect(AvCamUdeFrameSourcePublish(
+        &source, next.data(), static_cast<unsigned>(next.size())) ==
+        AVCAM_UDE_FRAME_OK, "New generation publish rejected");
+
+    /* Native CommitEpoch comparison requests this reset under FrameLock. */
+    Expect(AvCamUdeFramePumpReset(&pump) == AVCAM_UDE_PUMP_OK,
+        "Commit must drop the old JPEG lease");
+    Expect(source.Slots[0].Readers == 0,
+        "Commit leaked old-generation pinned frame memory");
+    std::fill(urb.begin(), urb.end(), static_cast<unsigned char>(0x5a));
+    returned = 0;
+    Expect(AvCamUdeFramePumpFill(
+        &pump, urb.data(), capacity, offsets, packetCount, 0u,
+        lengths, &returned) == AVCAM_UDE_PUMP_OK,
+        "New committed stream could not start");
+    Expect(lengths[0] >= 6u &&
+        urb[offsets[0]] == 2u &&
+        urb[offsets[0] + 2u] == 0xffu &&
+        urb[offsets[0] + 3u] == 0xd8u &&
+        urb[offsets[0] + 4u] == next[2u] &&
+        urb[offsets[0] + 5u] == next[3u],
+        "New COMMIT resumed stale JPEG bytes instead of new SOI");
+    Expect(AvCamUdeFramePumpReset(&pump) == AVCAM_UDE_PUMP_OK,
+        "Final frame lease could not be released");
+    Expect(source.Slots[1].Readers == 0,
+        "New committed stream leaked frame lease on reset");
+}
+
 static void TestInvalidInput() {
     unsigned char storageA[16] = {};
     unsigned char storageB[16] = {};
@@ -162,6 +228,7 @@ static void TestInvalidInput() {
 int main() {
     try {
         TestFrameRotationAcrossUrbs();
+        TestCommitBoundaryDiscardsIncompleteFrame();
         TestInvalidInput();
         std::cout << "MJPEG frame pump multi-URB lease transitions passed\n";
         return 0;
