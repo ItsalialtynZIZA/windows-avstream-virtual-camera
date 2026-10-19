@@ -186,18 +186,39 @@ bool DirectShowObsSource::Start() {
         return false;
     }
     const HRESULT sourceConnectResult = graph_->Connect(sourceOut.Get(), grabberIn.Get());
-    if (FAILED(sourceConnectResult)) {
-        failureStage_ = L"OBS output pin to SampleGrabber connection";
-        errorCode_ = static_cast<DWORD>(sourceConnectResult);
-        Stop();
-        return false;
+    HRESULT sinkConnectResult = S_OK;
+    if (SUCCEEDED(sourceConnectResult)) {
+        sinkConnectResult = graph_->Connect(grabberOut.Get(), rendererIn.Get());
     }
-    const HRESULT sinkConnectResult = graph_->Connect(grabberOut.Get(), rendererIn.Get());
-    if (FAILED(sinkConnectResult)) {
-        failureStage_ = L"OBS SampleGrabber to renderer connection";
-        errorCode_ = static_cast<DWORD>(sinkConnectResult);
-        Stop();
-        return false;
+
+    if (FAILED(sourceConnectResult) || FAILED(sinkConnectResult)) {
+        // Let ICaptureGraphBuilder2 discover the required color-space converter
+        // and capture output pin if direct graph connections cannot negotiate
+        // the OBS native media type with RGB32 SampleGrabber.
+        if (SUCCEEDED(sourceConnectResult)) {
+            graph_->Disconnect(sourceOut.Get());
+            graph_->Disconnect(grabberIn.Get());
+        }
+        if (SUCCEEDED(sinkConnectResult) && SUCCEEDED(sourceConnectResult)) {
+            graph_->Disconnect(grabberOut.Get());
+            graph_->Disconnect(rendererIn.Get());
+        }
+        ComPtr<ICaptureGraphBuilder2> builder;
+        const HRESULT builderHr = CoCreateInstance(CLSID_CaptureGraphBuilder2,
+            nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&builder));
+        const HRESULT attachHr = SUCCEEDED(builderHr) ?
+            builder->SetFiltergraph(graph_.Get()) : builderHr;
+        HRESULT renderHr = attachHr;
+        if (SUCCEEDED(attachHr)) {
+            renderHr = builder->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video,
+                sourceFilter_.Get(), grabberFilter_.Get(), sinkFilter_.Get());
+        }
+        if (FAILED(renderHr)) {
+            failureStage_ = L"OBS direct pins and RenderStream fallback failed";
+            errorCode_ = static_cast<DWORD>(renderHr);
+            Stop();
+            return false;
+        }
     }
     AM_MEDIA_TYPE actual{};
     bool valid = false;
