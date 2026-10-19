@@ -109,6 +109,21 @@ AvCamUdeProcessEndpointIo(
         transferBuffer,
         transferCapacity,
         &transferred);
+    /* Treat every successful VS COMMIT as a new stream session, even if
+     * the negotiated 1920x1080 mode is unchanged. The ISO worker compares
+     * this epoch while holding the same FrameLock; it will discard an
+     * incomplete old JPEG before emitting bytes for the new session.
+     * No cached dynamic endpoint handle is dereferenced here.
+     */
+    if (result == AVCAM_UVC_RESULT_OK &&
+        setup.Packet.bm.Byte == AVCAM_UDE_UVC_INTERFACE_CLASS_OUT &&
+        setup.Packet.bRequest == AVCAM_UVC_SET_CUR &&
+        (setup.Packet.wValue.Value >> 8) == AVCAM_UVC_VS_COMMIT_CONTROL) {
+        ++device->CommitEpoch;
+        if (device->CommitEpoch == 0) {
+            device->CommitEpoch = 1;
+        }
+    }
     WdfWaitLockRelease(controller->FrameLock);
 
     if (result == AVCAM_UVC_RESULT_OK) {
