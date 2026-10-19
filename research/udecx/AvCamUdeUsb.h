@@ -85,6 +85,15 @@ NTSTATUS AvCamUdePrepareIsoUrbFromPump(
     _In_ ULONGLONG FirstMicroframe100ns,
     _Out_ PULONG BytesFilled);
 
+/* Preflight final ISO packet metadata and set UdeCx transferred byte count.
+ * Does NOT own/complete the WDFREQUEST; needs PASSIVE_LEVEL and a stable
+ * exclusively-owned URB after successful ISO staging.
+ */
+_IRQL_requires_(PASSIVE_LEVEL)
+NTSTATUS AvCamUdeSealPreparedIsoUrbPassive(
+    _In_ WDFREQUEST Request,
+    _In_ ULONG ReportedBytes);
+
 NTSTATUS AvCamUdeUsbCreateAndPlug(_In_ WDFDEVICE Controller);
 VOID AvCamUdeUsbDisconnect(_In_ WDFDEVICE Controller);
 
