@@ -62,6 +62,7 @@ typedef struct _AVCAM_UDE_ENDPOINT_CONTEXT {
     /* One in-flight request in UdeCx's sequential ISO endpoint queue. */
     WDFDPC IsoCompleteDpc;
     WDFREQUEST PendingIsoRequest;
+    BOOLEAN IsoDpcRunning;
     AVCAM_UDE_FRAME_PUMP Pump;
     BOOLEAN PumpInitialized;
     BOOLEAN PumpResetPending;
