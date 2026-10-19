@@ -232,6 +232,20 @@ if(WIN32)
 endif()
 
 
+# Separate opt-in installer for a user's physical Windows 11 computer.
+# Compilation only; never execute or install this from CI.
+if(WIN32)
+    add_executable(AvCamUdeHostRootInstall ../tools/AvCamUdeHostRootInstall.cpp)
+    target_compile_features(AvCamUdeHostRootInstall PRIVATE cxx_std_17)
+    target_link_libraries(AvCamUdeHostRootInstall PRIVATE
+        setupapi newdev advapi32)
+    if(MSVC)
+        target_compile_options(AvCamUdeHostRootInstall PRIVATE /W4 /WX /permissive-)
+        set_property(TARGET AvCamUdeHostRootInstall PROPERTY
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+endif()
+
 # First usable AvCam desktop application: native live camera preview.
 # This user-mode EXE cannot access UdeCx or alter kernel drivers.
 if(WIN32)
