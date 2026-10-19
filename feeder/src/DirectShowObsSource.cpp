@@ -5,6 +5,9 @@
 #include <cstring>
 #include <thread>
 #include <chrono>
+#include <mutex>
+#include <condition_variable>
+#include <atomic>
 
 using Microsoft::WRL::ComPtr;
 namespace {
@@ -17,6 +20,59 @@ struct __declspec(uuid("6B652FFF-11FE-4fce-92AD-0266B5D7C78F")) ISampleGrabber :
     virtual HRESULT STDMETHODCALLTYPE GetCurrentBuffer(long*, long*) = 0;
     virtual HRESULT STDMETHODCALLTYPE GetCurrentSample(IMediaSample**) = 0;
     virtual HRESULT STDMETHODCALLTYPE SetCallback(IUnknown*, long) = 0;
+};
+struct __declspec(uuid("0579154A-2B53-4994-B0D0-E773148EFF85")) ISampleGrabberCB : IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE SampleCB(double, IMediaSample*) = 0;
+    virtual HRESULT STDMETHODCALLTYPE BufferCB(double, BYTE*, long) = 0;
+};
+class FrameCallback final : public ISampleGrabberCB {
+public:
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID riid, void** out) override {
+        if (!out) return E_POINTER;
+        *out = nullptr;
+        if (riid == IID_IUnknown || riid == __uuidof(ISampleGrabberCB)) {
+            *out = static_cast<ISampleGrabberCB*>(this);
+            AddRef();
+            return S_OK;
+        }
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++refs_; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        const ULONG remaining = --refs_;
+        if (!remaining) delete this;
+        return remaining;
+    }
+    HRESULT STDMETHODCALLTYPE SampleCB(double, IMediaSample*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE BufferCB(double, BYTE* data, long length) override {
+        if (!data || length != static_cast<long>(AVCAM_FRAME_BYTES_BGRA32)) return S_OK;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            frame_.assign(data, data + length);
+            ++sequence_;
+        }
+        ready_.notify_one();
+        return S_OK;
+    }
+    bool WaitForFrame(std::uint64_t& previous, unsigned char* output, bool bottomUp) {
+        std::unique_lock<std::mutex> lock(mutex_);
+        if (!ready_.wait_for(lock, std::chrono::milliseconds(2500),
+                [&] { return sequence_ != previous; })) return false;
+        previous = sequence_;
+        for (unsigned y = 0; y < AVCAM_FRAME_HEIGHT; ++y) {
+            const unsigned srcY = bottomUp ? AVCAM_FRAME_HEIGHT - 1u - y : y;
+            std::memcpy(output + y * AVCAM_FRAME_STRIDE_BGRA32,
+                        frame_.data() + srcY * AVCAM_FRAME_STRIDE_BGRA32,
+                        AVCAM_FRAME_STRIDE_BGRA32);
+        }
+        return true;
+    }
+private:
+    std::atomic<ULONG> refs_{1};
+    std::mutex mutex_;
+    std::condition_variable ready_;
+    std::vector<unsigned char> frame_;
+    std::uint64_t sequence_ = 0;
 };
 const GUID kSampleGrabber = {0xC1F400A0,0x3F08,0x11D3,{0x9F,0x0B,0x00,0x60,0x08,0x03,0x9E,0x37}};
 const GUID kNullRenderer = {0xC1F400A4,0x3F08,0x11D3,{0x9F,0x0B,0x00,0x60,0x08,0x03,0x9E,0x37}};
@@ -80,9 +136,11 @@ bool DirectShowObsSource::Start() {
     wanted.majortype = MEDIATYPE_Video;
     wanted.subtype = MEDIASUBTYPE_RGB32;
     wanted.formattype = FORMAT_VideoInfo;
+    auto* callback = new FrameCallback();
+    callback_.Attach(static_cast<IUnknown*>(callback));
     if (FAILED(grabber->SetMediaType(&wanted)) ||
         FAILED(grabber->SetOneShot(FALSE)) ||
-        FAILED(grabber->SetBufferSamples(TRUE)) ||
+        FAILED(grabber->SetCallback(callback, 1)) ||
         FAILED(builder->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video,
             sourceFilter_.Get(), grabberFilter_.Get(), sinkFilter_.Get()))) {
         failureStage_ = L"OBS graph RenderStream/RGB32"; errorCode_ = static_cast<DWORD>(VFW_E_CANNOT_CONNECT);
@@ -96,6 +154,7 @@ bool DirectShowObsSource::Start() {
             actual.formattype == FORMAT_VideoInfo &&
             actual.pbFormat && actual.cbFormat >= sizeof(VIDEOINFOHEADER)) {
             const auto* info = reinterpret_cast<const VIDEOINFOHEADER*>(actual.pbFormat);
+            bottomUp_ = info->bmiHeader.biHeight > 0;
             valid = info->bmiHeader.biWidth == static_cast<LONG>(AVCAM_FRAME_WIDTH) &&
                 (info->bmiHeader.biHeight == static_cast<LONG>(AVCAM_FRAME_HEIGHT) ||
                  info->bmiHeader.biHeight == -static_cast<LONG>(AVCAM_FRAME_HEIGHT)) &&
@@ -111,57 +170,39 @@ bool DirectShowObsSource::Start() {
     if (FAILED(graph_.As(&control_))) { failureStage_ = L"Graph IMediaControl"; errorCode_ = static_cast<DWORD>(E_NOINTERFACE); Stop(); return false; }
     const HRESULT runResult = control_->Run();
     if (FAILED(runResult)) { failureStage_ = L"DirectShow graph Run"; errorCode_ = static_cast<DWORD>(runResult); Stop(); return false; }
-    buffer_.resize(AVCAM_FRAME_BYTES_BGRA32);
-    lastFrameTick_ = 0;
+    lastSequence_ = 0;
     return true;
 }
 void DirectShowObsSource::Stop() noexcept {
     if (control_) control_->Stop();
+    if (grabberFilter_) {
+        ComPtr<ISampleGrabber> grabber;
+        if (SUCCEEDED(grabberFilter_.As(&grabber))) grabber->SetCallback(nullptr, 1);
+    }
     control_.Reset();
     sinkFilter_.Reset();
     grabberFilter_.Reset();
     sourceFilter_.Reset();
     graph_.Reset();
-    buffer_.clear();
-    lastFrameTick_ = 0;
+    callback_.Reset();
+    lastSequence_ = 0;
 }
 bool DirectShowObsSource::ReadFrame(unsigned char* dst, std::size_t size,
     std::uint64_t& timestamp) {
-    if (!dst || size < AVCAM_FRAME_BYTES_BGRA32 || !grabberFilter_) { failureStage_ = L"OBS read prerequisites"; errorCode_ = static_cast<DWORD>(E_INVALIDARG); return false; }
-    ComPtr<ISampleGrabber> grabber;
-    if (FAILED(grabberFilter_.As(&grabber))) { failureStage_ = L"OBS read SampleGrabber QI"; errorCode_ = static_cast<DWORD>(E_NOINTERFACE); return false; }
-    HRESULT lastHr = S_OK;
-    long lastLength = 0;
-    // Wait up to two seconds for OBS to publish its first media sample.
-    for (int attempt = 0; attempt < 200; ++attempt) {
-        long length = 0;
-        HRESULT hr = grabber->GetCurrentBuffer(&length, nullptr);
-        lastHr = hr;
-        lastLength = length;
-        if (SUCCEEDED(hr) && length >= static_cast<long>(AVCAM_FRAME_BYTES_BGRA32) &&
-            length <= static_cast<long>(AVCAM_FRAME_BYTES_BGRA32 * 2u)) {
-            buffer_.resize(static_cast<std::size_t>(length));
-            hr = grabber->GetCurrentBuffer(&length,
-                reinterpret_cast<long*>(buffer_.data()));
-            lastHr = hr;
-            lastLength = length;
-            if (SUCCEEDED(hr) && length >= static_cast<long>(AVCAM_FRAME_BYTES_BGRA32)) {
-                // DirectShow RGB32 VIDEOINFOHEADER is bottom-up by default.
-                for (unsigned y = 0; y < AVCAM_FRAME_HEIGHT; ++y) {
-                    std::memcpy(dst + y * AVCAM_FRAME_STRIDE_BGRA32,
-                        buffer_.data() +
-                            (AVCAM_FRAME_HEIGHT - 1u - y) * AVCAM_FRAME_STRIDE_BGRA32,
-                        AVCAM_FRAME_STRIDE_BGRA32);
-                }
-                timestamp = static_cast<std::uint64_t>(GetTickCount64()) * 10000ull;
-                std::this_thread::sleep_for(std::chrono::milliseconds(30));
-                return true;
-            }
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    if (!dst || size < AVCAM_FRAME_BYTES_BGRA32 || !callback_) {
+        failureStage_ = L"OBS callback prerequisites";
+        errorCode_ = static_cast<DWORD>(E_INVALIDARG);
+        return false;
     }
-    failureStage_ = L"OBS GetCurrentBuffer no usable frames";
-    errorCode_ = FAILED(lastHr) ? static_cast<DWORD>(lastHr) :
-        (lastLength == 0 ? static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_TIMEOUT)) : static_cast<DWORD>(VFW_E_TYPE_NOT_ACCEPTED));
-    return false;
+    // Callback stores each video sample as it arrives on a DirectShow streaming
+    // thread. The capture thread waits for a NEW sample, not the graph's
+    // potentially unavailable GetCurrentBuffer polling state.
+    auto* callback = static_cast<FrameCallback*>(callback_.Get());
+    if (!callback->WaitForFrame(lastSequence_, dst, bottomUp_)) {
+        failureStage_ = L"OBS callback frame timeout";
+        errorCode_ = static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_TIMEOUT));
+        return false;
+    }
+    timestamp = static_cast<std::uint64_t>(GetTickCount64()) * 10000ull;
+    return true;
 }
