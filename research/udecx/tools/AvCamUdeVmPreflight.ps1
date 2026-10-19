@@ -33,7 +33,7 @@ $controllers = @($devices | Where-Object {
     $_.PNPDeviceID -match '(?i)^ROOT\\AVCAMUDECONTROLLER(\\|$)'
 })
 $camDevices = @($devices | Where-Object {
-    $_.PNPDeviceID -match '(?i)^USB\\VID_1234&PID_5678([&\\]|$)'
+    $_.PNPDeviceID -match '(?i)^USB\\VID_1234&PID_5679([&\\]|$)'
 })
 
 $bootDisk = Get-PSDrive -Name ($env:SystemDrive.TrimEnd(':')) -ErrorAction Stop
