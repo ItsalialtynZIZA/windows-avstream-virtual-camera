@@ -20,19 +20,41 @@ function Get-PhysicalLogitech {
     })
 }
 function Get-PhysicalInterface {
-    if (-not (Test-Path -LiteralPath $deviceClassRoot)) {
-        throw "Camera interface registry root not found: $deviceClassRoot"
+    param(
+        [Parameter(Mandatory=$true)][string]$InstanceId,
+        [string]$RegistryRoot = $deviceClassRoot
+    )
+    if (-not (Test-Path -LiteralPath $RegistryRoot -PathType Container)) {
+        throw "Camera interface registry root not found: $RegistryRoot"
     }
-    $matches = @(Get-ChildItem -LiteralPath $deviceClassRoot -Recurse -ErrorAction Stop |
+    # DeviceClasses has protected subkeys such as #GLOBAL\Properties.
+    # Enumerate ONLY immediate camera interface keys; never use -Recurse.
+    # Match the complete present physical PnP instance, not merely VID/PID
+    # (otherwise an old, unplugged C270 could be selected by mistake).
+    $encodedInstance = $InstanceId.Replace('\', '#')
+    $expectedSuffix = '#' + $cameraClass
+    $interfaceKeys = @(Get-ChildItem -LiteralPath $RegistryRoot -ErrorAction Stop |
         Where-Object {
-            $_.Name -match '(?i)VID_046D&PID_0825' -and
-            $_.Name -match '(?i)\\Device Parameters$'
+            $_.PSChildName.IndexOf($encodedInstance,
+                [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
+            $_.PSChildName.EndsWith($expectedSuffix,
+                [StringComparison]::OrdinalIgnoreCase)
         })
-    if ($matches.Count -ne 1) {
-        $matches | ForEach-Object { Write-Host "Logitech interface candidate: $($_.Name)" }
-        throw "Expected exactly one physical Logitech VIDEO_CAMERA interface; found $($matches.Count). No changes made."
+    $parameterKeys = @(
+        foreach ($interface in $interfaceKeys) {
+            # Open this one exact subkey; never traverse a protected sibling.
+            $parameterPath = Join-Path $interface.PSPath '#GLOBAL\Device Parameters'
+            if (Test-Path -LiteralPath $parameterPath -PathType Container) {
+                Get-Item -LiteralPath $parameterPath -ErrorAction Stop
+            }
+        }
+    )
+    if ($parameterKeys.Count -ne 1) {
+        Write-Host "Matched physical PnP instance: $InstanceId"
+        $interfaceKeys | ForEach-Object { Write-Host "Interface: $($_.Name)" }
+        throw "Expected exactly one matching Logitech VIDEO_CAMERA Device Parameters key; found $($parameterKeys.Count). No changes made."
     }
-    return $matches[0]
+    return $parameterKeys[0]
 }
 function Test-Administrator {
     $p = New-Object Security.Principal.WindowsPrincipal(
@@ -83,7 +105,7 @@ $physical = @(Get-PhysicalLogitech)
 Write-Host "Healthy physical Logitech C270 devices: $($physical.Count)"
 foreach ($item in $physical) { Write-Host "$($item.FriendlyName) [$($item.InstanceId)]" }
 if ($physical.Count -ne 1) { throw 'Exactly one live physical Logitech C270 camera is required' }
-$key = Get-PhysicalInterface
+$key = Get-PhysicalInterface -InstanceId $physical[0].InstanceId
 Write-Host "Physical VIDEO_CAMERA interface: $($key.Name)"
 $existing = $key.GetValue('CameraDeviceMftClsid', $null)
 $chain = $key.GetValue('CameraDeviceMftClsidChain', $null)
