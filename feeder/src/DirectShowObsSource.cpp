@@ -47,6 +47,9 @@ bool LocateObsFilter(IBaseFilter** out) {
         }
         VariantClear(&name);
     }
+    failureStage_ = L"OBS GetCurrentBuffer no usable frames";
+    errorCode_ = FAILED(lastHr) ? static_cast<DWORD>(lastHr) :
+        (lastLength == 0 ? static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_TIMEOUT)) : static_cast<DWORD>(VFW_E_TYPE_NOT_ACCEPTED));
     return false;
 }
 }
@@ -127,18 +130,24 @@ void DirectShowObsSource::Stop() noexcept {
 }
 bool DirectShowObsSource::ReadFrame(unsigned char* dst, std::size_t size,
     std::uint64_t& timestamp) {
-    if (!dst || size < AVCAM_FRAME_BYTES_BGRA32 || !grabberFilter_) return false;
+    if (!dst || size < AVCAM_FRAME_BYTES_BGRA32 || !grabberFilter_) { failureStage_ = L"OBS read prerequisites"; errorCode_ = static_cast<DWORD>(E_INVALIDARG); return false; }
     ComPtr<ISampleGrabber> grabber;
-    if (FAILED(grabberFilter_.As(&grabber))) return false;
+    if (FAILED(grabberFilter_.As(&grabber))) { failureStage_ = L"OBS read SampleGrabber QI"; errorCode_ = static_cast<DWORD>(E_NOINTERFACE); return false; }
+    HRESULT lastHr = S_OK;
+    long lastLength = 0;
     // Wait up to two seconds for OBS to publish its first media sample.
     for (int attempt = 0; attempt < 200; ++attempt) {
         long length = 0;
         HRESULT hr = grabber->GetCurrentBuffer(&length, nullptr);
+        lastHr = hr;
+        lastLength = length;
         if (SUCCEEDED(hr) && length >= static_cast<long>(AVCAM_FRAME_BYTES_BGRA32) &&
             length <= static_cast<long>(AVCAM_FRAME_BYTES_BGRA32 * 2u)) {
             buffer_.resize(static_cast<std::size_t>(length));
             hr = grabber->GetCurrentBuffer(&length,
                 reinterpret_cast<long*>(buffer_.data()));
+            lastHr = hr;
+            lastLength = length;
             if (SUCCEEDED(hr) && length >= static_cast<long>(AVCAM_FRAME_BYTES_BGRA32)) {
                 // DirectShow RGB32 VIDEOINFOHEADER is bottom-up by default.
                 for (unsigned y = 0; y < AVCAM_FRAME_HEIGHT; ++y) {
