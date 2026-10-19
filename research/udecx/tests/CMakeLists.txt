@@ -321,3 +321,19 @@ if(WIN32)
             MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
 endif()
+
+# Actual WIC MJPEG encode/decode acceptance for the C270 profile.
+if(WIN32)
+    add_executable(AvCamC270JpegSmoke
+        c270-jpeg-smoke.cpp ../tools/AvCamUdeMjpegEncoder.cpp)
+    target_include_directories(AvCamC270JpegSmoke PRIVATE ../../../shared)
+    target_compile_features(AvCamC270JpegSmoke PRIVATE cxx_std_17)
+    target_compile_definitions(AvCamC270JpegSmoke PRIVATE
+        WINVER=0x0A00 _WIN32_WINNT=0x0A00 AVCAM_UDE_C270_COMPAT_PROFILE)
+    target_link_libraries(AvCamC270JpegSmoke PRIVATE windowscodecs ole32)
+    if(MSVC)
+        target_compile_options(AvCamC270JpegSmoke PRIVATE /W4 /WX /permissive- /utf-8)
+        set_property(TARGET AvCamC270JpegSmoke PROPERTY
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+endif()
