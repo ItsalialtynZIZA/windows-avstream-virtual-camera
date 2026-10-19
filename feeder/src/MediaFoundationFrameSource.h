@@ -14,7 +14,9 @@ std::vector<std::wstring> EnumerateMediaFoundationVideoSources();
 class MediaFoundationFrameSource final : public IFrameSource
 {
 public:
-    explicit MediaFoundationFrameSource(std::wstring friendlyNameContains);
+    explicit MediaFoundationFrameSource(
+        std::wstring friendlyNameContains,
+        std::wstring usbVidPidPair = L"");
     ~MediaFoundationFrameSource() override;
 
     const wchar_t* Name() const noexcept override;
@@ -32,6 +34,7 @@ private:
     bool ValidateCurrentOutputType();
 
     std::wstring friendlyNameContains_;
+    std::wstring usbVidPidPair_;
     std::wstring selectedName_;
     bool mediaFoundationStarted_ = false;
     LONG defaultStride_ = 0;
