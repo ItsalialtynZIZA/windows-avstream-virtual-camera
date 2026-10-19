@@ -1,0 +1,78 @@
+name: AvCam Physical Logitech C270 / OBS Device MFT (experimental)
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev/manual-vhci
+    paths:
+      - 'research/physical-c270/**'
+      - '.github/workflows/avcam-physical-c270.yml'
+      - 'feeder/src/ObsSharedMemorySource.*'
+      - 'research/udecx/tools/AvCamUdeMjpegEncoder.*'
+permissions:
+  contents: read
+concurrency:
+  group: avcam-physical-c270
+  cancel-in-progress: true
+jobs:
+  build-physical-c270:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Checkout pinned Microsoft Device MFT reference implementation
+        uses: actions/checkout@v4
+        with:
+          repository: microsoft/Windows-driver-samples
+          ref: 2dc3fd3a0cc84a2933f2194e7ec0871584979071
+          path: upstream
+          sparse-checkout: avstream/sampledevicemft
+      - uses: microsoft/setup-msbuild@v2
+        with:
+          msbuild-architecture: x64
+      - name: Restore Microsoft WIL headers
+        shell: pwsh
+        run: |
+          nuget restore upstream/avstream/sampledevicemft/packages.config -PackagesDirectory upstream/packages -NonInteractive
+          if ($LASTEXITCODE -ne 0) { throw 'WIL NuGet restore failed' }
+      - name: Adapt reference Device MFT for scoped AvCam OBS frames
+        shell: pwsh
+        run: |
+          ./research/physical-c270/Adapt-Sample.ps1 -SampleDir upstream/avstream/sampledevicemft
+      - name: Compile user-mode OBS bridge and device MFT COM DLL
+        shell: pwsh
+        run: |
+          $s = (Resolve-Path upstream/avstream/sampledevicemft).Path
+          $wil = (Resolve-Path upstream/packages/Microsoft.Windows.ImplementationLibrary.1.0.210204.1/include).Path
+          cmake -S research/physical-c270 -B build/physical-c270 -A x64 -DMICROSOFT_DMFT_DIR="$s" -DMICROSOFT_WIL_INCLUDE="$wil"
+          if ($LASTEXITCODE -ne 0) { throw 'Physical C270 CMake configure failed' }
+          cmake --build build/physical-c270 --config Release --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw 'Physical C270 compile failed' }
+      - name: Validate scripts and prepare owner-only opt-in package
+        shell: pwsh
+        run: |
+          $out = 'artifacts/AvCam-Physical-C270-OBS-EXPERIMENTAL'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          $files = @(
+            'build/physical-c270/Release/AvCamPhysicalBridge.exe',
+            'build/physical-c270/Release/AvCamPhysicalDeviceMft.dll',
+            'research/physical-c270/AvCamPhysicalInstall.ps1',
+            'research/physical-c270/README_PHYSICAL_C270.txt'
+          )
+          foreach ($file in $files) {
+            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing package file: $file" }
+            Copy-Item -LiteralPath $file -Destination $out
+          }
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'research/physical-c270/AvCamPhysicalInstall.ps1').Path,
+            [ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count) { throw "Install script syntax errors: $($errors.Count)" }
+          Get-ChildItem $out -File | Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash)  $(Split-Path $_.Path -Leaf)" } |
+            Set-Content (Join-Path $out 'SHA256SUMS.txt')
+          Write-Host 'AVCAM_PHYSICAL_C270_DMFT_AND_OBS_BRIDGE_BUILT_NO_DEVICE_MODIFICATIONS'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AvCam-Physical-C270-OBS-EXPERIMENTAL
+          path: artifacts/AvCam-Physical-C270-OBS-EXPERIMENTAL/
+          if-no-files-found: error
