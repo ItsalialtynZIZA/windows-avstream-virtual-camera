@@ -9,10 +9,20 @@
 #include "AvCamUdeUsb.h"
 #include "AvCamUdeTestIdentity.h"
 
-/* A compile-and-PREfast-only execution path until isolated VM validation.
- * No runtime mechanism can enable this flag in a shipped research build.
- */
+/* Keep default binaries fail-closed. Native USB isochronous completion is
+ * enabled ONLY in a separately acknowledged experimental host build;
+ * VM-enumeration-only mode still never streams video. */
 static BOOLEAN g_AvCamUdeEnableNativeIso = FALSE;
+
+static BOOLEAN
+AvCamUdeNativeIsoEnabled(VOID)
+{
+#if defined(AVCAM_UDE_HOST_VIDEO_TEST)
+    return TRUE;
+#else
+    return g_AvCamUdeEnableNativeIso;
+#endif
+}
 
 EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL AvCamUdeEvtEndpointIo;
 EVT_WDF_IO_QUEUE_IO_CANCELED_ON_QUEUE AvCamUdeEvtEndpointCanceledOnQueue;
@@ -184,7 +194,7 @@ AvCamUdeEvtEndpointIo(
         return;
     }
 
-    if (qctx->EndpointAddress == 0x81 && g_AvCamUdeEnableNativeIso) {
+    if (qctx->EndpointAddress == 0x81 && AvCamUdeNativeIsoEnabled()) {
         /* The native frame pump stages bytes only at PASSIVE_LEVEL.
          * Success transfers WDFREQUEST ownership to the separate DPC.
          * No inline completion or DrainLeave is permitted on that path.
