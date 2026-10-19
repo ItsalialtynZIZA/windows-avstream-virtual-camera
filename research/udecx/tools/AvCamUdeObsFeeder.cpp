@@ -19,6 +19,7 @@
 #include "../../../shared/VirtualCameraProtocol.h"
 #include "../AvCamUdeUploadProtocol.h"
 #include "AvCamUdeMjpegEncoder.h"
+#include "../../../feeder/src/MediaFoundationDeviceSelector.h"
 
 using Microsoft::WRL::ComPtr;
 
@@ -58,12 +59,19 @@ bool ParsePositive(const wchar_t* value, unsigned& count) {
 
 int wmain(int argc, wchar_t** argv) {
     std::wstring deviceName = L"OBS Virtual Camera";
+    std::wstring sourceUsbId;
     unsigned frames = 120u;
     bool dryRun = false;
     for (int index = 1; index < argc; ++index) {
         const std::wstring arg = argv[index];
         if (arg == L"--device-name" && index + 1 < argc) {
             deviceName = argv[++index];
+        } else if (arg == L"--source-usb-id" && index + 1 < argc) {
+            sourceUsbId = argv[++index];
+            if (!AvCamSourceSelection::IsVidPidPair(sourceUsbId)) {
+                std::wcerr << L"Expected USB ID VID_XXXX&PID_XXXX.\\n";
+                return 2;
+            }
         } else if (arg == L"--frames" && index + 1 < argc) {
             if (!ParsePositive(argv[++index], frames)) {
                 Usage();
@@ -94,7 +102,7 @@ int wmain(int argc, wchar_t** argv) {
         return 3;
     }
 
-    MediaFoundationFrameSource source(deviceName);
+    MediaFoundationFrameSource source(deviceName, sourceUsbId);
     if (!source.Start()) {
         std::wcerr << L"Media Foundation source unavailable: "
                    << deviceName << L"\n";
