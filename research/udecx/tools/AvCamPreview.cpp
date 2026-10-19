@@ -55,7 +55,9 @@ struct Controller {
     std::atomic<bool> captureFailed{false};
     std::atomic<bool> usbUnavailable{false};
     std::atomic<bool> encodeFailed{false};
+    std::atomic<DWORD> controllerError{ERROR_SUCCESS};
     std::atomic<std::uint64_t> captured{0};
+    std::atomic<std::uint64_t> encoded{0};
     std::atomic<std::uint64_t> uploaded{0};
     std::atomic<std::uint64_t> busy{0};
     std::wstring selectedName;
@@ -112,6 +114,7 @@ void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
                 FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
                 OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
             if (controller == INVALID_HANDLE_VALUE) {
+                g.controllerError.store(GetLastError());
                 g.usbUnavailable.store(true);
             }
         }
@@ -144,6 +147,7 @@ void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
                 CloseHandle(controller);
                 controller = INVALID_HANDLE_VALUE;
             } else {
+                ++g.encoded;
                 AVCAM_UDE_UPLOAD_HEADER header{};
                 header.Magic = AVCAM_UDE_UPLOAD_MAGIC;
                 header.Version = AVCAM_UDE_UPLOAD_VERSION;
@@ -159,9 +163,13 @@ void CaptureThread(std::wstring name, std::wstring usbId, bool upload) {
                         packet.data(), static_cast<DWORD>(packet.size()),
                         nullptr, 0, &returned, nullptr)) {
                     ++g.uploaded;
-                } else if (GetLastError() == ERROR_BUSY) {
-                    ++g.busy;
                 } else {
+                    const DWORD error = GetLastError();
+                    if (error == ERROR_BUSY) {
+                        ++g.busy;
+                        continue; // Drop stale frame, never replay it.
+                    }
+                    g.controllerError.store(error);
                     g.usbUnavailable.store(true);
                     CloseHandle(controller);
                     controller = INVALID_HANDLE_VALUE;
@@ -233,8 +241,10 @@ void StartCapture() {
     g.captureFailed.store(false);
     g.usbUnavailable.store(false);
     g.encodeFailed.store(false);
+    g.controllerError.store(ERROR_SUCCESS);
     g.frameAvailable.store(false);
     g.captured.store(0);
+    g.encoded.store(0);
     g.uploaded.store(0);
     g.busy.store(0);
     {
@@ -291,12 +301,16 @@ void UpdateStatus() {
         if (g.upload && g.usbUnavailable.load()) {
             if (g.encodeFailed.load()) {
                 swprintf_s(text, L"USB: ошибка MJPEG. Локальный просмотр: %.1f FPS", fps);
+            } else if (g.controllerError.load() == ERROR_ACCESS_DENIED) {
+                swprintf_s(text, L"UdeCx: нет прав (нужен администратор). Просмотр: %.1f FPS", fps);
             } else {
-                swprintf_s(text, L"UdeCx недоступен. Локальный просмотр: %.1f FPS", fps);
+                swprintf_s(text, L"UdeCx недоступен (Win32 %lu). Просмотр: %.1f FPS",
+                    static_cast<unsigned long>(g.controllerError.load()), fps);
             }
         } else if (g.upload) {
-            swprintf_s(text, L"Кадров: %llu | %.1f FPS | UdeCx: %llu | пропущено: %llu",
+            swprintf_s(text, L"Кадров: %llu | %.1f FPS | MJPEG: %llu | UdeCx: %llu | busy: %llu",
                 static_cast<unsigned long long>(frames), fps,
+                static_cast<unsigned long long>(g.encoded.load()),
                 static_cast<unsigned long long>(g.uploaded.load()),
                 static_cast<unsigned long long>(g.busy.load()));
         } else {
