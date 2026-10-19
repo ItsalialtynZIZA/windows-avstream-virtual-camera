@@ -344,3 +344,19 @@ formal WDF cancellation ownership, final teardown with a leased frame,
 and validation under Driver Verifier in an isolated Windows VM. Compile
 and static-analysis success is not proof of a usable USB Video Class
 device or a Media Foundation sample.
+
+### Dynamic endpoint teardown releases in-progress JPEG
+
+The endpoint's PASSIVE_LEVEL purge work item now releases any active
+MJPEG frame lease under the controller's `FrameLock` **after the last
+endpoint-owned URB has completed and before**
+`UdecxUsbEndpointPurgeComplete`. This prevents a deleted dynamic
+alternate-setting endpoint from leaving the shared source slot permanently
+pinned when a JPEG was interrupted before EOF. The endpoint retains its
+parent controller identity explicitly instead of relying on the cached
+`VideoEndpoint` pointer, which can be stale after deletion.
+
+The frame-pump integration test now models a partial JPEG, drain barrier,
+purge acknowledgement, frame release, subsequent publication, and restart
+with a new JPEG SOI. Driver Verifier and runtime teardown validation are
+still required before changing the disabled execution gates.
