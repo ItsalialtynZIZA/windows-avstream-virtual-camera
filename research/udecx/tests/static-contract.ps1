@@ -194,4 +194,18 @@ Assert-Matches $usb 'AvCamUdeDrainStart\(&ctx->Drain\)' 'New dynamic endpoint mu
 if ($usb -match '(?s)AvCamUdeEvtEndpointsConfigure\([^)]*\)\s*\{.{0,900}AvCamUdeEndpointGetContext\(videoEndpoint\)') {
     throw 'Dynamic endpoint can be destroyed before configuration callback; stale handle access prohibited.'
 }
+$clock = Get-Content (Join-Path $root 'AvCamUdeIsoClock.h') -Raw
+$native = Get-Content (Join-Path $root 'AvCamUdeIsoNative.c') -Raw
+Assert-Matches $clock 'AvCamUdeIsoClockPlan' 'Must preserve USB host StartFrame semantics.'
+Assert-Matches $clock 'AVCAM_UDE_CLOCK_MICROFRAMES_PER_FRAME' 'High-speed one-frame packet multiple missing.'
+Assert-Matches $native 'USBD_START_ISO_TRANSFER_ASAP' 'ASAP URB scheduling missing.'
+Assert-Matches $native 'AvCamUdeIsoClockPlan' 'Native ISO path ignores the host StartFrame.'
+Assert-Matches $native 'endpoint->Clock = nextClock' 'USB time must only commit after a successful seal.'
+Assert-Matches $urb 'packets % 8u != 0' 'High-speed ISO URBs must have 8-packet aligned counts.'
+Assert-Matches $native 'endpoint->IsoDpcRunning' 'Reentrant DPC handoff guard missing.'
+Assert-Matches $native 'for \(;;\)' 'DPC must drain requests delivered during WDF completion.'
+Assert-Matches $usb 'g_AvCamUdeEnableNativeIso\s*=\s*FALSE' 'Do not enable native ISO on the host.'
+if ($native -match 'NextMicroframe100ns\s*\+=') {
+    throw 'Synthetic-only packet clock is prohibited once StartFrame support exists.'
+}
 Write-Host "UdeCx guarded USB child contract: passed"
