@@ -1,29 +1,21 @@
 /*
- * Cancellation of requests while they are still in UdeCx endpoint queues.
+ * Allocation-free canceled-on-queue URB completion for UdeCx.
  *
- * UdeCx guidance requires an independent DISPATCH_LEVEL DPC to complete
- * a canceled URB, rather than synchronously completing it from WDF's
- * EvtIoCanceledOnQueue callback. Queue cancellation is distinct from
- * cancellation of an already-dispatched client-owned ISO request.
+ * Every canceled WDFREQUEST is owned by this callback until its separate
+ * endpoint DPC has called WdfRequestComplete. The DPC preserves the
+ * caller-versus-completer execution separation required by UdeCx.
  *
- * The DPC owns each request until WdfRequestComplete has RETURNED.
- * QueueCancelOutstanding is part of the endpoint PURGE acknowledgement
- * barrier, but these requests never call AvCamUdeDrainEnter/Leave.
+ * The driver-defined WDF completion Information field is temporarily
+ * used as a singly-linked FIFO pointer while the REQUEST IS NOT visible
+ * to the USB host. It is set to zero BEFORE completion. This is valid for
+ * queued canceled requests: no data was transferred and completion
+ * information must be zero. This field is never accessed after completion.
  *
- * This is still experimental, uninstalled research code. Nonpaged pool
- * exhaustion has a last-resort synchronous STATUS_CANCELLED completion,
- * which avoids permanently leaking a WDF request but is not the preferred
- * USB host controller completion path. Full forward-progress guarantees
- * and Windows VM/Driver Verifier testing remain release blockers.
+ * This eliminates per-cancellation nonpaged pool allocation (and the
+ * prohibited immediate-completion OOM fallback). It still needs Windows
+ * VM Driver Verifier validation of UdeCx callback ordering and teardown.
  */
 #include "AvCamUdeUsb.h"
-
-#define AVCAM_UDE_CANCEL_TAG 'cUcA'
-
-typedef struct _AVCAM_UDE_QUEUED_CANCEL {
-    LIST_ENTRY Entry;
-    WDFREQUEST Request;
-} AVCAM_UDE_QUEUED_CANCEL, *PAVCAM_UDE_QUEUED_CANCEL;
 
 VOID
 AvCamUdeEvtEndpointCanceledOnQueue(
@@ -33,41 +25,37 @@ AvCamUdeEvtEndpointCanceledOnQueue(
     PAVCAM_UDE_ENDPOINT_QUEUE_CONTEXT qctx =
         AvCamUdeEndpointQueueGetContext(queue);
     PAVCAM_UDE_ENDPOINT_CONTEXT ctx;
-    PAVCAM_UDE_QUEUED_CANCEL node;
 
-    /* WDF has transferred sole completion ownership to this callback.
-     * Never forward or requeue the canceled request. This callback can
-     * run at DISPATCH_LEVEL, so UdeCx PASSIVE_LEVEL APIs are prohibited.
+    /* UdeCx installs the associated queue only AFTER storing its endpoint
+     * identity. The NULL path represents a broken framework lifetime
+     * invariant; do not leak a canceled WDF request if it ever occurs.
      */
+    NT_ASSERT(qctx->Endpoint != NULL);
     if (qctx->Endpoint == NULL) {
-        WdfRequestComplete(request, STATUS_CANCELLED);
+        WdfRequestCompleteWithInformation(request, STATUS_CANCELLED, 0);
         return;
     }
-    node = (PAVCAM_UDE_QUEUED_CANCEL)ExAllocatePool2(
-        POOL_FLAG_NON_PAGED, sizeof(*node), AVCAM_UDE_CANCEL_TAG);
-    if (node == NULL) {
-        /* Emergency path: a canceled WDF request cannot be abandoned
-         * if memory is exhausted. This exception must be stress-tested.
-         */
-        WdfRequestComplete(request, STATUS_CANCELLED);
-        return;
-    }
-    node->Request = request;
     ctx = AvCamUdeEndpointGetContext(qctx->Endpoint);
+
     WdfSpinLockAcquire(ctx->Lock);
-    if (ctx->QueueCancelOutstanding == MAXULONG) {
-        WdfSpinLockRelease(ctx->Lock);
-        ExFreePoolWithTag(node, AVCAM_UDE_CANCEL_TAG);
-        WdfRequestComplete(request, STATUS_CANCELLED);
-        return;
+    /* The canceled request is exclusively owned here, so its temporary
+     * Information value can carry the NEXT request in our private chain.
+     * No other callback may inspect it until the separate DPC owns it.
+     */
+    WdfRequestSetInformation(request, 0);
+    if (ctx->QueueCancelTail != NULL) {
+        WdfRequestSetInformation(ctx->QueueCancelTail, (ULONG_PTR)request);
+    } else {
+        ctx->QueueCancelHead = request;
     }
-    InsertTailList(&ctx->QueueCancelledRequests, &node->Entry);
+    ctx->QueueCancelTail = request;
+    NT_ASSERT(ctx->QueueCancelOutstanding != ~0ull);
     ++ctx->QueueCancelOutstanding;
 
     if (!ctx->QueueCancelDpcScheduled) {
-        /* The spinlock serializes enqueue with the final empty-list
-         * exit of EvtQueuedCancelDpc. A FALSE return may simply mean
-         * that the same DPC has not yet started running.
+        /* Protect both the first enqueue and the DPC's final empty-list
+         * exit with the same endpoint spinlock. A FALSE result may mean
+         * the DPC is already queued or running.
          */
         ctx->QueueCancelDpcScheduled = TRUE;
         (VOID)WdfDpcEnqueue(ctx->QueueCancelDpc);
@@ -83,14 +71,14 @@ AvCamUdeEvtQueuedCancelDpc(_In_ WDFDPC dpc)
     PAVCAM_UDE_ENDPOINT_CONTEXT ctx = AvCamUdeEndpointGetContext(endpoint);
 
     for (;;) {
-        PLIST_ENTRY entry;
-        PAVCAM_UDE_QUEUED_CANCEL node;
+        WDFREQUEST request;
+        WDFREQUEST next;
         BOOLEAN signalPurge;
         WDF_REQUEST_PARAMETERS params;
-        WDFREQUEST canceledRequest;
 
         WdfSpinLockAcquire(ctx->Lock);
-        if (IsListEmpty(&ctx->QueueCancelledRequests)) {
+        request = ctx->QueueCancelHead;
+        if (request == NULL) {
             ctx->QueueCancelDpcScheduled = FALSE;
             signalPurge = ctx->Drain.PurgePending &&
                 ctx->Drain.Active == 0 &&
@@ -101,38 +89,35 @@ AvCamUdeEvtQueuedCancelDpc(_In_ WDFDPC dpc)
             }
             return;
         }
-        entry = RemoveHeadList(&ctx->QueueCancelledRequests);
-        WdfSpinLockRelease(ctx->Lock);
-        node = CONTAINING_RECORD(
-            entry, AVCAM_UDE_QUEUED_CANCEL, Entry);
-        canceledRequest = node->Request;
 
-        /* The callback only enqueues a non-null WDFREQUEST. Check again
-         * at the consumer boundary so PREfast can prove we never pass a
-         * potentially null handle to a WDF API. A corrupt node cannot
-         * be completed; flag it during Driver Verifier testing.
-         */
-        NT_ASSERT(canceledRequest != NULL);
-        if (canceledRequest != NULL) {
-            /* The USB host stack may inspect USBD_STATUS even for
-             * canceled requests that never reached the packetizer.
-             */
-            WDF_REQUEST_PARAMETERS_INIT(&params);
-            WdfRequestGetParameters(canceledRequest, &params);
-            if (params.Type == WdfRequestTypeDeviceControlInternal &&
-                params.Parameters.Others.IoControlCode ==
-                    IOCTL_INTERNAL_USB_SUBMIT_URB &&
-                params.Parameters.Others.Arg1 != NULL) {
-                PURB urb = (PURB)params.Parameters.Others.Arg1;
-                urb->UrbHeader.Status = USBD_STATUS_CANCELED;
-            }
-            WdfRequestComplete(canceledRequest, STATUS_CANCELLED);
+        next = (WDFREQUEST)(ULONG_PTR)WdfRequestGetInformation(request);
+        ctx->QueueCancelHead = next;
+        if (next == NULL) {
+            ctx->QueueCancelTail = NULL;
         }
-        node->Request = NULL;
-        ExFreePoolWithTag(node, AVCAM_UDE_CANCEL_TAG);
+        /* This request is removed from the private chain. Its completion
+         * Information must be zero when observed by the Windows USB stack.
+         */
+        WdfRequestSetInformation(request, 0);
+        WdfSpinLockRelease(ctx->Lock);
 
-        /* Not even a queued cancellation can drain until its separate
-         * DPC's WdfRequestComplete has returned. The request is invalid.
+        /* The USB host stack may read URB Header.Status even on canceled
+         * transfers that never reached the MJPEG packetizer.
+         */
+        WDF_REQUEST_PARAMETERS_INIT(&params);
+        WdfRequestGetParameters(request, &params);
+        if (params.Type == WdfRequestTypeDeviceControlInternal &&
+            params.Parameters.Others.IoControlCode ==
+                IOCTL_INTERNAL_USB_SUBMIT_URB &&
+            params.Parameters.Others.Arg1 != NULL) {
+            PURB urb = (PURB)params.Parameters.Others.Arg1;
+            urb->UrbHeader.Status = USBD_STATUS_CANCELED;
+        }
+        WdfRequestCompleteWithInformation(request, STATUS_CANCELLED, 0);
+
+        /* Do not touch the invalid WDFREQUEST after completion. Releasing
+         * the cancellation reference only AFTER the call returns ensures
+         * that PURGE cannot acknowledge while the USB host sees the IRP.
          */
         WdfSpinLockAcquire(ctx->Lock);
         NT_ASSERT(ctx->QueueCancelOutstanding != 0);
