@@ -213,3 +213,18 @@ if(WIN32)
             MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
 endif()
+
+
+# A separate WINDOWS USER-MODE VM-only test tool. It refuses to mutate PnP
+# if SMBIOS does not identify recognized virtual hardware AND the explicit
+# DISPOSABLE_VM_ONLY acknowledgment is missing. Does not replace AvCamBus.
+if(WIN32)
+    add_executable(AvCamUdeVmRootInstall ../tools/AvCamUdeVmRootInstall.cpp)
+    target_compile_features(AvCamUdeVmRootInstall PRIVATE cxx_std_17)
+    target_link_libraries(AvCamUdeVmRootInstall PRIVATE setupapi newdev advapi32)
+    if(MSVC)
+        target_compile_options(AvCamUdeVmRootInstall PRIVATE /W4 /WX /permissive-)
+        set_property(TARGET AvCamUdeVmRootInstall PROPERTY
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+endif()
