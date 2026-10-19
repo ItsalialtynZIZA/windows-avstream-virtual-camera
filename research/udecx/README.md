@@ -228,3 +228,22 @@ has returned, without accessing the potentially freed WDFREQUEST again.
 This prevents PURGE or RESET from considering the endpoint idle while
 the completion call is still unwinding and triggering reentrant callbacks.
 The model's cancellation decision is immutable once claimed.
+
+### Native PASSIVE-level ISO completion metadata stage
+
+`AvCamUdeSealPreparedIsoUrbPassive` now validates every staged ISO IN
+packet's actual length against its original host-defined window, checks
+that every packet reports USBD success, and verifies the sparse sum equals
+the caller's reported transfer count. Only then does it call
+`UdecxUrbSetBytesCompleted` at `PASSIVE_LEVEL`, updating URB success
+metadata without completing or relinquishing the WDFREQUEST.
+
+The portable `AvCamUdeIsoCompletionValid` and
+`iso-completion-tests.cpp` specifically reject mistaken reporting of
+TransferBufferLength (capacity) instead of the sum of individual payload
+lengths, overlapping offsets, packet overruns, and overflowed counts.
+
+This moves the isolated preparation path closer to actual UdeCx completion
+but does **not** install/enable video endpoint 0x81 or settle the DPC versus
+PASSIVE_LEVEL completion contract. Native async cancellation ownership,
+worker/DPC completion and runtime USBVIDEO verification are still required.
