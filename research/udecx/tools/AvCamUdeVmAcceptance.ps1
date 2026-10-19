@@ -40,11 +40,11 @@ Write-Host "Controller PnP: $($controllers[0].PNPDeviceID)"
 # usbvideo-bound interface child. Find the actual usbvideo service on the
 # research hardware ID; do not depend on the friendly-name localization.
 $cameras = @($devices | Where-Object {
-    $_.PNPDeviceID -match '(?i)^USB\\VID_1234&PID_5678([&\\]|$)' -and
+    $_.PNPDeviceID -match '(?i)^USB\\VID_1234&PID_5679([&\\]|$)' -and
     $_.Service -match '(?i)^usbvideo$'
 })
 if ($cameras.Count -ne 1) {
-    throw "Expected exactly one USB\VID_1234&PID_5678 camera bound to usbvideo; found $($cameras.Count)."
+    throw "Expected exactly one USB\VID_1234&PID_5679 camera bound to usbvideo; found $($cameras.Count)."
 }
 $camera = $cameras[0]
 if ($camera.ConfigManagerErrorCode -ne 0) {
