@@ -189,4 +189,9 @@ Assert-Matches $usb 'WdfWaitLockAcquire\(controller->FrameLock' 'EP0 commits mus
 if ($native -match 'UdecxUrbComplete(WithNtStatus)?\s*\(') {
     throw 'Never call PASSIVE_LEVEL-only UdeCx URB completion from the DPC.'
 }
+Assert-Matches $usb 'ctx->PumpResetPending = TRUE' 'Endpoint START/PURGE/RESET must invalidate packetizer.'
+Assert-Matches $usb 'AvCamUdeDrainStart\(&ctx->Drain\)' 'New dynamic endpoint must restart under its own lock.'
+if ($usb -match '(?s)AvCamUdeEvtEndpointsConfigure\([^)]*\)\s*\{.{0,900}AvCamUdeEndpointGetContext\(videoEndpoint\)') {
+    throw 'Dynamic endpoint can be destroyed before configuration callback; stale handle access prohibited.'
+}
 Write-Host "UdeCx guarded USB child contract: passed"
