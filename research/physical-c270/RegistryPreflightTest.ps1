@@ -14,7 +14,12 @@ $node = $ast.Find({
     $n.Name -eq 'Get-PhysicalInterface'
 }, $true)
 if (-not $node) { throw 'Missing physical Logitech lookup function' }
-if ($node.Extent.Text -match '(?i)\-Recurse\b') {
+$recursiveParameters = @($node.FindAll({
+    param($n)
+    $n -is [System.Management.Automation.Language.CommandParameterAst] -and
+    $n.ParameterName -eq 'Recurse'
+}, $true))
+if ($recursiveParameters.Count -gt 0) {
     throw 'Physical camera lookup must not enumerate restricted registry subtrees'
 }
 Invoke-Expression $node.Extent.Text
