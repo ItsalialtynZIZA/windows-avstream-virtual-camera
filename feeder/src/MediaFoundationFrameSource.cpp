@@ -5,9 +5,7 @@
 #include <mfapi.h>
 #include <mferror.h>
 
-#include <algorithm>
 #include <cstddef>
-#include <cwctype>
 #include <cstring>
 #include <vector>
 
@@ -15,22 +13,6 @@ using Microsoft::WRL::ComPtr;
 
 namespace
 {
-bool ContainsInsensitive(const std::wstring& value, const std::wstring& fragment)
-{
-    if (fragment.empty())
-    {
-        return true;
-    }
-
-    std::wstring lhs = value;
-    std::wstring rhs = fragment;
-    std::transform(lhs.begin(), lhs.end(), lhs.begin(),
-        [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
-    std::transform(rhs.begin(), rhs.end(), rhs.begin(),
-        [](wchar_t ch) { return static_cast<wchar_t>(std::towlower(ch)); });
-    return lhs.find(rhs) != std::wstring::npos;
-}
-
 bool CopyRgb32BufferTopDown(
     IMFMediaBuffer* buffer,
     unsigned char* destination,
