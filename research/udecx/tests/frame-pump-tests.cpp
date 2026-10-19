@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <vector>
 #include "../AvCamUdeFramePump.h"
+#include "../AvCamUdeEndpointDrain.h"
 
 static void Expect(bool value, const char* message) {
     if (!value) throw std::runtime_error(message);
@@ -195,6 +196,76 @@ static void TestCommitBoundaryDiscardsIncompleteFrame() {
         "New committed stream leaked frame lease on reset");
 }
 
+static void TestPurgeReleasesPinnedSourceLease() {
+    constexpr unsigned packets = 8u;
+    constexpr unsigned capacity = packets * 3072u;
+    auto a = MakeJpeg(7);
+    auto b = MakeJpeg(31);
+    std::vector<unsigned char> first(a.size());
+    std::vector<unsigned char> second(a.size());
+    AVCAM_UDE_FRAME_SOURCE source{};
+    Expect(AvCamUdeFrameSourceInit(
+        &source, first.data(), static_cast<unsigned>(first.size()),
+        second.data(), static_cast<unsigned>(second.size())) ==
+        AVCAM_UDE_FRAME_OK, "Purge frame store init failed");
+    Expect(AvCamUdeFrameSourcePublish(
+        &source, a.data(), static_cast<unsigned>(a.size())) ==
+        AVCAM_UDE_FRAME_OK, "Purge first frame publish failed");
+
+    AVCAM_UDE_FRAME_PUMP pump{};
+    Expect(AvCamUdeFramePumpInit(&pump, &source) == AVCAM_UDE_PUMP_OK,
+        "Purge frame pump init failed");
+    AVCAM_UDE_ENDPOINT_DRAIN drain{};
+    AvCamUdeDrainInit(&drain);
+    Expect(AvCamUdeDrainStart(&drain) == AVCAM_UDE_DRAIN_OK,
+        "Purge endpoint start rejected");
+    Expect(AvCamUdeDrainEnter(&drain) == AVCAM_UDE_DRAIN_OK,
+        "Purge endpoint URB admission rejected");
+
+    unsigned offsets[packets]{};
+    unsigned lengths[packets]{};
+    unsigned transferred = 0;
+    std::vector<unsigned char> data(capacity);
+    for (unsigned i = 0; i < packets; ++i) offsets[i] = i * 3072u;
+    Expect(AvCamUdeFramePumpFill(
+        &pump, data.data(), capacity, offsets, packets,
+        0, lengths, &transferred) == AVCAM_UDE_PUMP_OK,
+        "Purge cannot stage partial JPEG");
+    Expect(pump.Lease.Data != nullptr && source.Slots[0].Readers == 1,
+        "Partial JPEG must pin its source buffer");
+
+    Expect(AvCamUdeDrainBeginPurge(&drain) == AVCAM_UDE_DRAIN_OK,
+        "Purge begin failed");
+    Expect(AvCamUdeDrainClaimPurgeAck(&drain) == 0,
+        "Cannot purge while host request still owns URB");
+    Expect(AvCamUdeDrainLeave(&drain) == AVCAM_UDE_DRAIN_OK,
+        "URB did not drain on purge");
+    Expect(AvCamUdeDrainClaimPurgeAck(&drain) == 1,
+        "Drained endpoint purge acknowledgement missing");
+    /* This is the action of the native PASSIVE_LEVEL purge work item,
+     * before it calls UdecxUsbEndpointPurgeComplete.
+     */
+    Expect(AvCamUdeFramePumpReset(&pump) == AVCAM_UDE_PUMP_OK,
+        "Drained purge did not release old frame lease");
+    Expect(source.Slots[0].Readers == 0,
+        "Purge left a pinned JPEG in soon-to-be-deleted endpoint");
+
+    Expect(AvCamUdeFrameSourcePublish(
+        &source, b.data(), static_cast<unsigned>(b.size())) ==
+        AVCAM_UDE_FRAME_OK, "New frame could not publish after purge");
+    Expect(AvCamUdeDrainStart(&drain) == AVCAM_UDE_DRAIN_OK,
+        "Recreated endpoint could not START after purge");
+    Expect(AvCamUdeFramePumpFill(
+        &pump, data.data(), capacity, offsets, packets,
+        0, lengths, &transferred) == AVCAM_UDE_PUMP_OK,
+        "New endpoint could not transmit after purge");
+    Expect(lengths[0] >= 6u && data[2] == 0xff && data[3] == 0xd8 &&
+        data[4] == b[2] && data[5] == b[3],
+        "Recreated endpoint resumed stale old JPEG");
+    Expect(AvCamUdeFramePumpReset(&pump) == AVCAM_UDE_PUMP_OK,
+        "Cleanup after recreated endpoint failed");
+}
+
 static void TestInvalidInput() {
     unsigned char storageA[16] = {};
     unsigned char storageB[16] = {};
@@ -229,6 +300,7 @@ int main() {
     try {
         TestFrameRotationAcrossUrbs();
         TestCommitBoundaryDiscardsIncompleteFrame();
+        TestPurgeReleasesPinnedSourceLease();
         TestInvalidInput();
         std::cout << "MJPEG frame pump multi-URB lease transitions passed\n";
         return 0;
