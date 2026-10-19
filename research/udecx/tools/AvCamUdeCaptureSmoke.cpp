@@ -27,6 +27,11 @@ constexpr unsigned kMaximumFrames = 300u;
 constexpr UINT kMjpegWidth = 1920u;
 constexpr UINT kMjpegHeight = 1080u;
 constexpr UINT kDecodedPixelStride = kMjpegWidth * 3u;
+enum class Profile { Capture, Encode, Full };
+const wchar_t* ProfileName(Profile p) {
+    return p == Profile::Capture ? L"capture" :
+           p == Profile::Encode ? L"encode" : L"full";
+}
 
 struct ComApartment {
     HRESULT result = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
@@ -51,11 +56,14 @@ bool ParseFrameCount(const std::wstring& text, unsigned& number) {
 
 void PrintUsage() {
     std::wcout <<
-        L"AvCamUdeCaptureSmoke.exe [--frames 30] [--obs] [--list]\n"
+        L"AvCamUdeCaptureSmoke.exe [--frames 30] [--profile capture|encode|full] [--obs] [--list]\n"
         L"Default: physical Logi C270 HD WebCam, VID_046D&PID_0825.\n"
         L"  --obs  : use uniquely named OBS Virtual Camera instead.\n"
         L"  --list : show Media Foundation camera names (no capture).\n"
-        L"  --frames N : capture and encode N samples, N=1..300.\n"
+        L"  --frames N : capture up to N frames, N=1..300.\n"
+        L"  --profile capture : capture frames only.\n"
+        L"  --profile encode  : capture and JPEG encode.\n"
+        L"  --profile full    : capture, encode, decode (default).\n"
         L"No kernel drivers, USB IOCTLs, file output or admin access.\n";
 }
 
@@ -125,6 +133,7 @@ int wmain(int argc, wchar_t** argv) {
     bool useObs = false;
     bool list = false;
     bool selfTest = false;
+    Profile profile = Profile::Full;
     unsigned targetFrames = kDefaultFrames;
     for (int i = 1; i < argc; ++i) {
         const std::wstring arg = argv[i];
@@ -138,6 +147,15 @@ int wmain(int argc, wchar_t** argv) {
             list = true;
         } else if (arg == L"--self-test") {
             selfTest = true;
+        } else if (arg == L"--profile" && i + 1 < argc) {
+            const std::wstring value = argv[++i];
+            if (value == L"capture") profile = Profile::Capture;
+            else if (value == L"encode") profile = Profile::Encode;
+            else if (value == L"full") profile = Profile::Full;
+            else {
+                PrintUsage();
+                return 2;
+            }
         } else if (arg == L"--frames" && i + 1 < argc) {
             if (!ParseFrameCount(argv[++i], targetFrames)) {
                 PrintUsage();
@@ -166,12 +184,14 @@ int wmain(int argc, wchar_t** argv) {
     }
 
     ComPtr<IWICImagingFactory> wic;
-    const HRESULT createWic = CoCreateInstance(
-        CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
-        IID_PPV_ARGS(&wic));
-    if (FAILED(createWic)) {
-        std::wcerr << L"CAPTURE_SMOKE_WIC_UNAVAILABLE\n";
-        return 4;
+    if (selfTest || profile != Profile::Capture) {
+        const HRESULT createWic = CoCreateInstance(
+            CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
+            IID_PPV_ARGS(&wic));
+        if (FAILED(createWic)) {
+            std::wcerr << L"CAPTURE_SMOKE_WIC_UNAVAILABLE\n";
+            return 4;
+        }
     }
 
     if (selfTest) {
@@ -218,7 +238,8 @@ int wmain(int argc, wchar_t** argv) {
     std::wcout << L"Source: " << name
                << L" USB filter: " << (usb.empty() ? L"(name only)" : usb)
                << L"\n";
-    std::wcout << L"Capture: 1280x720 BGRA; MJPEG output: 1920x1080\n";
+    std::wcout << L"Capture: 1280x720 BGRA; MJPEG output: 1920x1080"
+               << L" Profile=" << ProfileName(profile) << L"\n";
 
     MediaFoundationFrameSource camera(name, usb);
     if (!camera.Start()) {
@@ -236,6 +257,8 @@ int wmain(int argc, wchar_t** argv) {
     std::vector<unsigned char> decoded(
         static_cast<std::size_t>(kDecodedPixelStride) * kMjpegHeight);
     unsigned samples = 0u;
+    unsigned encodedFrames = 0u;
+    unsigned decodedFrames = 0u;
     std::size_t minJpeg = static_cast<std::size_t>(-1);
     std::size_t maxJpeg = 0u;
     std::uint64_t firstHash = 0u;
@@ -264,6 +287,10 @@ int wmain(int argc, wchar_t** argv) {
         }
         previousTimestamp = timestamp;
         lastTimestamp = timestamp;
+        ++samples;
+        if (profile == Profile::Capture) {
+            continue;
+        }
         const ULONGLONG beforeEncode = GetTickCount64();
         if (!AvCamUde::EncodeBgraToMjpeg(
                 wic.Get(), frame.data(), AVCAM_FRAME_WIDTH,
@@ -281,26 +308,30 @@ int wmain(int argc, wchar_t** argv) {
                        << L"\n";
             return 9;
         }
-        const ULONGLONG beforeDecode = GetTickCount64();
-        if (!DecodeJpegPixels(wic.Get(), jpeg, decoded)) {
-            std::wcerr << L"CAPTURE_SMOKE_JPEG_DECODE_FAILED sample=" << i
-                       << L" expected=1920x1080\n";
-            return 11;
+        ++encodedFrames;
+        if (profile == Profile::Full) {
+            const ULONGLONG beforeDecode = GetTickCount64();
+            if (!DecodeJpegPixels(wic.Get(), jpeg, decoded)) {
+                std::wcerr << L"CAPTURE_SMOKE_JPEG_DECODE_FAILED sample=" << i
+                           << L" expected=1920x1080\n";
+                return 11;
+            }
+            decodeMs += GetTickCount64() - beforeDecode;
+            ++decodedFrames;
         }
-        decodeMs += GetTickCount64() - beforeDecode;
         const std::uint64_t hash = Fnv1a(jpeg);
         if (samples == 0u) firstHash = hash;
         if (hash != firstHash) ++distinct;
         if (jpeg.size() < minJpeg) minJpeg = jpeg.size();
         if (jpeg.size() > maxJpeg) maxJpeg = jpeg.size();
-        ++samples;
     }
     camera.Stop();
     const ULONGLONG elapsed = GetTickCount64() - start;
 
+    if (encodedFrames == 0u) minJpeg = 0u;
     std::wcout << L"FramesCaptured=" << samples
-               << L" FramesEncoded=" << samples
-               << L" FramesDecoded=" << samples
+               << L" FramesEncoded=" << encodedFrames
+               << L" FramesDecoded=" << decodedFrames
                << L" JPEGMinBytes=" << minJpeg
                << L" JPEGMaxBytes=" << maxJpeg
                << L" DifferentFromFirst=" << distinct
@@ -323,14 +354,21 @@ int wmain(int argc, wchar_t** argv) {
                << L" NonIncreasingTimestamps=" << timestampNonIncreasing
                << L" DistinctEncodedFrames=" << distinct << L"\n";
     if (overallFps < 25.0) {
-        std::wcout << L"AVCAM_SPEED_BELOW_25FPS: end-to-end smoke "
-                      L"includes full JPEG decode and may not equal "
-                      L"the camera hardware FPS.\n";
+        std::wcout << L"AVCAM_SPEED_BELOW_25FPS: selected profile "
+                      L"speed may differ from physical camera FPS.\n";
     }
     if (samples != targetFrames) return 10;
-    std::wcout << L"AVCAM_C270_MF_MJPEG_DECODE_PASSED\n";
-    std::wcout << L"AVCAM_C270_MF_MJPEG_SMOKE_PASSED\n";
-    std::wcout << L"Physical capture and JPEG encoding only. "
+    if (profile == Profile::Capture) {
+        std::wcout << L"AVCAM_C270_MF_CAPTURE_PASSED\n";
+    } else if (profile == Profile::Encode) {
+        if (encodedFrames != samples) return 10;
+        std::wcout << L"AVCAM_C270_MF_MJPEG_ENCODE_PASSED\n";
+    } else {
+        if (encodedFrames != samples || decodedFrames != samples) return 10;
+        std::wcout << L"AVCAM_C270_MF_MJPEG_DECODE_PASSED\n";
+        std::wcout << L"AVCAM_C270_MF_MJPEG_SMOKE_PASSED\n";
+    }
+    std::wcout << L"User-mode Media Foundation profile only. "
                   L"NO UdeCx device or browser video was tested.\n";
     return 0;
 }
