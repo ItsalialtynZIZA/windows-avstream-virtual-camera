@@ -174,3 +174,16 @@ else()
     target_compile_options(AvCamUdeIsoClockTests PRIVATE -Wall -Wextra -Werror)
 endif()
 add_test(NAME udecx-usb-iso-startframe-clock COMMAND AvCamUdeIsoClockTests)
+
+
+# Portable selection of the real Logitech C270 by Windows MF symbolic-link
+# USB VID/PID, distinct from OBS, the legacy bus and experimental UdeCx.
+add_executable(AvCamUdeMfSelectorTests mf-device-selector-tests.cpp)
+target_compile_features(AvCamUdeMfSelectorTests PRIVATE cxx_std_17)
+if(MSVC)
+    target_compile_options(AvCamUdeMfSelectorTests PRIVATE /W4 /WX)
+else()
+    target_compile_options(AvCamUdeMfSelectorTests PRIVATE -Wall -Wextra -Werror)
+endif()
+add_test(NAME udecx-physical-c270-source-selection
+         COMMAND AvCamUdeMfSelectorTests)
