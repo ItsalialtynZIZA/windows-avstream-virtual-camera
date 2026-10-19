@@ -139,3 +139,15 @@ if(WIN32)
         target_compile_options(AvCamUdeMfProbe PRIVATE /W4 /WX)
     endif()
 endif()
+
+# Portable model for bounded asynchronous ISO request admission and cancel
+# races. This does NOT enable live EP 0x81 completions.
+add_executable(AvCamUdeAsyncIsoSchedulerTests async-iso-scheduler-tests.cpp)
+target_compile_features(AvCamUdeAsyncIsoSchedulerTests PRIVATE cxx_std_17)
+if(MSVC)
+    target_compile_options(AvCamUdeAsyncIsoSchedulerTests PRIVATE /W4 /WX)
+else()
+    target_compile_options(AvCamUdeAsyncIsoSchedulerTests PRIVATE -Wall -Wextra -Werror)
+endif()
+add_test(NAME udecx-async-iso-cancel-purge-reset
+         COMMAND AvCamUdeAsyncIsoSchedulerTests)
