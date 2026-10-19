@@ -38,11 +38,11 @@ jobs:
         shell: pwsh
         run: |
           $stampInf = Get-ChildItem packages -Recurse -Filter stampinf.exe -File |
-            Where-Object { $_.FullName -match '\\x64\\stampinf\\.exe$' } |
+            Where-Object { $_.FullName -match '\\x64\\stampinf\.exe$' } |
             Select-Object -First 1
           if (-not $stampInf) { throw 'WDK x64 stampinf.exe is missing' }
           $infDll = Get-ChildItem packages -Recurse -Filter InfVerif.dll -File |
-            Where-Object { $_.FullName -match '\\build\\[^\\]+\\bin\\x64\\InfVerif\\.dll$' } |
+            Where-Object { $_.FullName -match '\\build\\[^\\]+\\bin\\x64\\InfVerif\.dll$' } |
             Select-Object -First 1
           $toolDir = $stampInf.Directory.FullName
           if ($infDll) {
