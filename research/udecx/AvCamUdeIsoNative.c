@@ -64,12 +64,10 @@ AvCamUdeStageIsoRequestPassive(
     asap = (urb->UrbIsochronousTransfer.TransferFlags &
         USBD_START_ISO_TRANSFER_ASAP) != 0;
 
-    WdfSpinLockAcquire(endpoint->Lock);
-    resetPump = endpoint->PumpResetPending;
-    endpoint->PumpResetPending = FALSE;
-    WdfSpinLockRelease(endpoint->Lock);
-
-    /* FrameLock serializes publication and leased ISO source access. */
+    /* FrameLock serializes publication and leased ISO source access.
+     * Do not consume PumpResetPending until readiness has been checked:
+     * an unavailable child/feeder must not lose its pending reset.
+     */
     WdfWaitLockAcquire(controller->FrameLock, NULL);
     if (!controller->ChildPlugged ||
         controller->UsbDevice != qctx->UsbDevice ||
@@ -78,6 +76,11 @@ AvCamUdeStageIsoRequestPassive(
         status = STATUS_DEVICE_NOT_READY;
         goto ExitLocked;
     }
+
+    WdfSpinLockAcquire(endpoint->Lock);
+    resetPump = endpoint->PumpResetPending;
+    endpoint->PumpResetPending = FALSE;
+    WdfSpinLockRelease(endpoint->Lock);
 
     if (!endpoint->PumpInitialized) {
         if (AvCamUdeFramePumpInit(
@@ -162,6 +165,38 @@ ExitLocked:
     return STATUS_SUCCESS;
 }
 
+/* The payload may have been sealed at PASSIVE_LEVEL but a PURGE or
+ * cancellation can arrive before the separate DPC runs. Never publish
+ * successful per-packet statuses for an URB that is being cancelled.
+ * The request and its URB remain owned until WdfRequestComplete returns.
+ */
+static VOID
+AvCamUdeCancelPreparedIsoAtDpc(_In_ WDFREQUEST request)
+{
+    WDF_REQUEST_PARAMETERS params;
+    PURB urb;
+    ULONG count;
+    ULONG i;
+
+    WDF_REQUEST_PARAMETERS_INIT(&params);
+    WdfRequestGetParameters(request, &params);
+    urb = (PURB)params.Parameters.Others.Arg1;
+    if (urb == NULL) {
+        return;
+    }
+    count = urb->UrbIsochronousTransfer.NumberOfPackets;
+    /* Every staged URB passed the full variable-descriptor preflight
+     * before the DPC could own it.
+     */
+    urb->UrbHeader.Status = USBD_STATUS_CANCELED;
+    urb->UrbIsochronousTransfer.TransferBufferLength = 0;
+    urb->UrbIsochronousTransfer.ErrorCount = count;
+    for (i = 0; i < count; ++i) {
+        urb->UrbIsochronousTransfer.IsoPacket[i].Length = 0;
+        urb->UrbIsochronousTransfer.IsoPacket[i].Status = USBD_STATUS_CANCELED;
+    }
+}
+
 VOID
 AvCamUdeEvtIsoCompleteDpc(_In_ WDFDPC dpc)
 {
@@ -195,6 +230,7 @@ AvCamUdeEvtIsoCompleteDpc(_In_ WDFDPC dpc)
             STATUS_CANCELLED : STATUS_SUCCESS;
 
         if (completion == STATUS_CANCELLED) {
+            AvCamUdeCancelPreparedIsoAtDpc(request);
             /* The staged JPEG's EOF may never have reached the host.
              * Force the next URB to start a new frame, never resume
              * abandoned MJPEG bytes after a canceled completion.
