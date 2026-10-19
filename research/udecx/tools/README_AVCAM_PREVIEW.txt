@@ -16,6 +16,17 @@ app window; the status line reports received frames and observed FPS.
 Click "Остановить" (Stop) to release the webcam.
 Closing the window shuts down the capture worker.
 
+Optional experimental path (OFF by default):
+  "Передавать MJPEG в UdeCx (экспериментально)"
+When checked BEFORE pressing Start, the same capture loop:
+  Media Foundation capture -> 1920x1080 WIC MJPEG -> private UdeCx IOCTL.
+This avoids running two capture clients simultaneously.
+If the UdeCx controller is absent or access is denied, the live preview
+remains active and the status explicitly displays "UdeCx недоступен".
+No controller or kernel driver is installed or started by this program.
+If no child USB device / native ISO is enabled in the driver, even
+successful IOCTL uploads do not make a Chrome camera appear.
+
 If the camera is busy:
 - Close Windows Camera, OBS, and browser tabs currently capturing C270,
   then click Start again.
@@ -27,9 +38,11 @@ AVCAM BRIDGE (advanced command-line executable):
   AvCamUdeObsFeeder.exe --obs --continuous --dry-run
   Ctrl+C to stop.
 
-AvCam Preview does NOT access or install any kernel driver. It does NOT
+AvCam Preview does NOT install, start, or configure any kernel driver.
+Optional upload mode MAY send frames to an already-running
+UdeCx controller when one exists and permits access. Preview does NOT
 pretend to be a physical USB camera, create a new camera device, or
-feed frames to Chrome. It is a local live-image preview milestone only.
+make a camera source visible to Chrome by itself.
 AvCamUdeObsFeeder.exe includes upload support for a future operational
 UdeCx controller, but the current stock UdeCx build has USB autoplug
 and native video ISO disabled. Browser camera availability is therefore
