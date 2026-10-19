@@ -30,7 +30,7 @@ $requirements = @{
     "VM identity restriction" = 'virtual machine\|vmware\|virtualbox'
     "Hardware enumeration" = 'Win32_PnPEntity'
     "Isolated research controller" = 'AVCAMUDECONTROLLER'
-    "Actual emulated USB hardware ID" = 'VID_1234&PID_5678'
+    "Actual emulated USB hardware ID" = 'VID_1234&PID_5679'
     "Inbox Windows USB Video Class driver" = 'usbvideo'
     "Controller PnP error checked" = 'controllers\[0\]\.ConfigManagerErrorCode'
     "Camera PnP error checked" = 'camera\.ConfigManagerErrorCode'
@@ -93,7 +93,7 @@ $preflightChecks = @{
     '64-bit guest gate' = 'Is64BitOperatingSystem'
     'Minimum memory safety gate' = 'memoryGiB -lt 4'
     'Minimum free disk space gate' = 'freeGiB -lt 8'
-    'Expected research USB identity check' = 'VID_1234&PID_5678'
+    'Expected research USB identity check' = 'VID_1234&PID_5679'
     'Guest-only success marker' = 'VM_PREFLIGHT_GUEST_READY'
     'Host-side checkpoint reminder' = 'snapshot on the HOST'
 }
