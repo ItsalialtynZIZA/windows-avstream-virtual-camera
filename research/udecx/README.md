@@ -310,3 +310,15 @@ behavior still require VM validation; queued-on-cancelled URB callback
 semantics, PnP removal and DPC teardown need Driver Verifier coverage.
 Both `g_AvCamUdeEnableNativeIso` and
 `g_AvCamUdeEnableAutoplug` remain FALSE.
+
+### Canceled ISO packet metadata
+
+A pending ISO URB might have successful MJPEG bytes staged and sealed at
+PASSIVE_LEVEL, then be canceled before the separate completion DPC runs.
+The DPC now marks the URB and each ISO packet with `USBD_STATUS_CANCELED`,
+clears the reported transfer length, and records canceled packets in
+`ErrorCount` before completing with `STATUS_CANCELLED`. The next request
+will reset its MJPEG packetizer. A temporarily absent feeder no longer
+consumes a pending packetizer reset. This code remains guarded by the
+disabled native ISO execution flag; only kernel compilation and PREfast
+have been exercised, not runtime behavior under USBVIDEO/Driver Verifier.
