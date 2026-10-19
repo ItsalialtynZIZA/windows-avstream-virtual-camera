@@ -15,6 +15,7 @@
 static BOOLEAN g_AvCamUdeEnableNativeIso = FALSE;
 
 EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL AvCamUdeEvtEndpointIo;
+EVT_WDF_IO_QUEUE_IO_CANCELED_ON_QUEUE AvCamUdeEvtEndpointCanceledOnQueue;
 EVT_UDECX_USB_ENDPOINT_RESET AvCamUdeEvtEndpointReset;
 EVT_UDECX_USB_ENDPOINT_START AvCamUdeEvtEndpointStart;
 EVT_UDECX_USB_ENDPOINT_PURGE AvCamUdeEvtEndpointPurge;
@@ -209,6 +210,26 @@ AvCamUdeEvtEndpointIo(
     }
 }
 
+/*
+ * WDF can hand a previously queued (but never dispatched) request to the
+ * client when a forwarded/requeued request is canceled. EvtIoCanceledOnQueue
+ * transfers ownership to THIS callback; it must not be requeued and must be
+ * completed exactly once. Do not retrieve/map the URB here: callback IRQL
+ * can be DISPATCH_LEVEL while UdeCx URB buffer helpers need PASSIVE_LEVEL.
+ *
+ * These requests never passed AvCamUdeDrainEnter, so they must NOT decrement
+ * Drain.Active or touch PendingIsoRequest. Already-dispatched requests are
+ * owned by the ordinary callback/DPC path and are not completed here.
+ */
+VOID
+AvCamUdeEvtEndpointCanceledOnQueue(
+    _In_ WDFQUEUE queue,
+    _In_ WDFREQUEST request)
+{
+    UNREFERENCED_PARAMETER(queue);
+    WdfRequestComplete(request, STATUS_CANCELLED);
+}
+
 /* UdeCx owns its associated endpoint queue. Do not call WdfIoQueuePurge
  * or WdfIoQueueStart on it. START/PURGE callbacks can be <= DISPATCH_LEVEL.
  * The UdeCx PURGE acknowledgement API, however, requires PASSIVE_LEVEL.
@@ -344,6 +365,7 @@ AvCamUdeCreateDynamicEndpoint(
     *endpoint = NULL;
     WDF_IO_QUEUE_CONFIG_INIT(&queueConfig, WdfIoQueueDispatchSequential);
     queueConfig.EvtIoInternalDeviceControl = AvCamUdeEvtEndpointIo;
+    queueConfig.EvtIoCanceledOnQueue = AvCamUdeEvtEndpointCanceledOnQueue;
     queueConfig.PowerManaged = WdfFalse;
     WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(
         &queueAttributes, AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT);
