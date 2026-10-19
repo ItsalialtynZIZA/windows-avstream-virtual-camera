@@ -1,0 +1,54 @@
+AvCam C270 / OBS MJPEG capture smoke test
+=======================================
+
+User-mode Windows 11 x64 only. This executable NEVER installs, starts,
+updates, or accesses a USB/AvCam kernel driver. It does not create an
+emulated camera and does not send frames to websites or save frames.
+
+Tests ONLY: Windows Media Foundation capture of 1280x720 BGRA frames,
+then Windows Imaging Component encoding of 1920x1080 MJPEG.
+
+PREPARATION:
+- Close OBS, browser tabs and camera applications if testing C270 directly.
+- Connect the Logi C270 HD WebCam (USB VID_046D&PID_0825).
+- Extract the entire artifact ZIP into a normal folder.
+- Open PowerShell in that folder as a NORMAL user (not Administrator).
+
+Commands:
+  .\AvCamUdeCaptureSmoke.exe --list
+  .\AvCamUdeCaptureSmoke.exe --frames 30
+
+Expected end-of-run marker on success:
+  AVCAM_C270_MF_MJPEG_SMOKE_PASSED
+
+Alternate OBS pathway:
+- Add C270 to OBS at 1280x720/30fps.
+- Start OBS Virtual Camera. Make OBS output 1280x720/30fps for the
+  current MF capture reader, which expects 1280x720 RGB32 input.
+- Close other apps using the OBS Virtual Camera.
+- Run:
+  .\AvCamUdeCaptureSmoke.exe --obs --frames 30
+
+Exit codes:
+  0  success
+  2  invalid command arguments
+  3  Windows COM initialization failed
+  4  Windows WIC JPEG encoder unavailable
+  5  camera identity configuration invalid
+  6  MF camera missing, busy, ambiguous, or RGB32 output unavailable
+  7  MF camera frame read failed
+  8  JPEG encode/validation failed
+  9  JPEG SOI/EOI marker invalid
+  10 insufficient captured frames
+
+A zero-frame or failed run is not evidence of any USB Video Class success.
+Even a successful smoke run does NOT prove the UdeCx driver, its ISO URBs,
+Windows usbvideo.sys, or Media Foundation camera output from AvCam.
+The driver safety flags remain off.
+
+Check the executable's SHA256 hash using:
+  Get-FileHash .\AvCamUdeCaptureSmoke.exe -Algorithm SHA256
+
+The expected hash is published in the GitHub Actions run log AND in
+the downloadable SHA256SUMS.txt. The executable is not code-signed.
+Only use the artifact from your own repository CI.
