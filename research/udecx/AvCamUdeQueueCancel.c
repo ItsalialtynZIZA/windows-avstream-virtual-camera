@@ -87,6 +87,7 @@ AvCamUdeEvtQueuedCancelDpc(_In_ WDFDPC dpc)
         PAVCAM_UDE_QUEUED_CANCEL node;
         BOOLEAN signalPurge;
         WDF_REQUEST_PARAMETERS params;
+        WDFREQUEST canceledRequest;
 
         WdfSpinLockAcquire(ctx->Lock);
         if (IsListEmpty(&ctx->QueueCancelledRequests)) {
@@ -104,20 +105,29 @@ AvCamUdeEvtQueuedCancelDpc(_In_ WDFDPC dpc)
         WdfSpinLockRelease(ctx->Lock);
         node = CONTAINING_RECORD(
             entry, AVCAM_UDE_QUEUED_CANCEL, Entry);
+        canceledRequest = node->Request;
 
-        /* The USB host stack may inspect USBD_STATUS even for canceled
-         * requests that never reached the packetizer.
+        /* The callback only enqueues a non-null WDFREQUEST. Check again
+         * at the consumer boundary so PREfast can prove we never pass a
+         * potentially null handle to a WDF API. A corrupt node cannot
+         * be completed; flag it during Driver Verifier testing.
          */
-        WDF_REQUEST_PARAMETERS_INIT(&params);
-        WdfRequestGetParameters(node->Request, &params);
-        if (params.Type == WdfRequestTypeDeviceControlInternal &&
-            params.Parameters.Others.IoControlCode ==
-                IOCTL_INTERNAL_USB_SUBMIT_URB &&
-            params.Parameters.Others.Arg1 != NULL) {
-            PURB urb = (PURB)params.Parameters.Others.Arg1;
-            urb->UrbHeader.Status = USBD_STATUS_CANCELED;
+        NT_ASSERT(canceledRequest != NULL);
+        if (canceledRequest != NULL) {
+            /* The USB host stack may inspect USBD_STATUS even for
+             * canceled requests that never reached the packetizer.
+             */
+            WDF_REQUEST_PARAMETERS_INIT(&params);
+            WdfRequestGetParameters(canceledRequest, &params);
+            if (params.Type == WdfRequestTypeDeviceControlInternal &&
+                params.Parameters.Others.IoControlCode ==
+                    IOCTL_INTERNAL_USB_SUBMIT_URB &&
+                params.Parameters.Others.Arg1 != NULL) {
+                PURB urb = (PURB)params.Parameters.Others.Arg1;
+                urb->UrbHeader.Status = USBD_STATUS_CANCELED;
+            }
+            WdfRequestComplete(canceledRequest, STATUS_CANCELLED);
         }
-        WdfRequestComplete(node->Request, STATUS_CANCELLED);
         node->Request = NULL;
         ExFreePoolWithTag(node, AVCAM_UDE_CANCEL_TAG);
 
