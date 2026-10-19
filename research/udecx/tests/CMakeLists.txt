@@ -113,6 +113,8 @@ if(WIN32)
         windowscodecs ole32 mf mfplat mfreadwrite mfuuid)
     if(MSVC)
         target_compile_options(AvCamUdeObsFeeder PRIVATE /W4 /WX /permissive-)
+        set_property(TARGET AvCamUdeObsFeeder PROPERTY
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
 
     add_executable(AvCamUdeBgraJpegTests
