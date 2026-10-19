@@ -215,7 +215,7 @@ Assert-Matches $native 'urb->UrbIsochronousTransfer.TransferBufferLength = 0' 'C
 Assert-Matches $native 'FrameLock serializes publication and leased ISO source access' 'ISO staging must retain the frame lock.'
 Assert-Matches $header 'ULONGLONG CommitEpoch;' 'USB stream needs a commit generation.'
 Assert-Matches $header 'ULONGLONG SeenCommitEpoch;' 'Endpoint must remember negotiated generation.'
-Assert-Matches $usb '++device->CommitEpoch' 'Successful UVC commit must advance the generation.'
+Assert-Matches $usb '[+][+]device->CommitEpoch' 'Successful UVC commit must advance the generation.'
 Assert-Matches $native 'SeenCommitEpoch != usb->CommitEpoch' 'Native ISO staging must detect renegotiation.'
 Assert-Matches $native 'endpoint->SeenCommitEpoch = usb->CommitEpoch' 'Reset must record the active commit generation.'
 Assert-Matches $native 'endpoint->PumpResetPending = TRUE' 'Discard a staged but never delivered ISO frame on DPC handoff failure.'
