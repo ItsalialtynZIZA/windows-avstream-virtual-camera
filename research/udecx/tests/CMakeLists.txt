@@ -151,3 +151,15 @@ else()
 endif()
 add_test(NAME udecx-async-iso-cancel-purge-reset
          COMMAND AvCamUdeAsyncIsoSchedulerTests)
+
+# Validate that UdeCx ISO completion uses the SUM of packet lengths, while
+# the untouched host packet offsets still bound every sparse payload.
+add_executable(AvCamUdeIsoCompletionTests iso-completion-tests.cpp)
+target_compile_features(AvCamUdeIsoCompletionTests PRIVATE cxx_std_17)
+if(MSVC)
+    target_compile_options(AvCamUdeIsoCompletionTests PRIVATE /W4 /WX)
+else()
+    target_compile_options(AvCamUdeIsoCompletionTests PRIVATE -Wall -Wextra -Werror)
+endif()
+add_test(NAME udecx-sparse-iso-completion-metadata
+         COMMAND AvCamUdeIsoCompletionTests)
