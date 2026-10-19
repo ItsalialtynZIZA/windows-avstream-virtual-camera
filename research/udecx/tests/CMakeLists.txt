@@ -252,13 +252,14 @@ if(WIN32)
     add_executable(AvCamPreview WIN32
         ../tools/AvCamPreview.cpp
         ../tools/AvCamUdeMjpegEncoder.cpp
-        ../../../feeder/src/MediaFoundationFrameSource.cpp)
+        ../../../feeder/src/MediaFoundationFrameSource.cpp
+        ../../../feeder/src/DirectShowObsSource.cpp)
     target_include_directories(AvCamPreview PRIVATE ../../../shared)
     target_compile_features(AvCamPreview PRIVATE cxx_std_17)
     target_compile_definitions(AvCamPreview PRIVATE
         UNICODE _UNICODE WINVER=0x0A00 _WIN32_WINNT=0x0A00)
     target_link_libraries(AvCamPreview PRIVATE
-        user32 gdi32 windowscodecs ole32 mf mfplat mfreadwrite mfuuid)
+        user32 gdi32 windowscodecs ole32 oleaut32 strmiids mf mfplat mfreadwrite mfuuid)
     if(MSVC)
         target_compile_options(AvCamPreview PRIVATE
             /W4 /WX /permissive- /utf-8)
