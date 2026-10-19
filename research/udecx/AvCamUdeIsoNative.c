@@ -69,6 +69,13 @@ AvCamUdeStageIsoRequestPassive(
      * an unavailable child/feeder must not lose its pending reset.
      */
     WdfWaitLockAcquire(controller->FrameLock, NULL);
+    if (endpoint->PumpQuarantined) {
+        /* A failed lease release invalidates this endpoint for its
+         * remaining lifetime. New UVC COMMIT / START cannot clear it.
+         */
+        status = STATUS_DATA_ERROR;
+        goto ExitLocked;
+    }
     if (!controller->ChildPlugged ||
         controller->UsbDevice != qctx->UsbDevice ||
         !controller->FrameSourceReady ||
@@ -104,6 +111,7 @@ AvCamUdeStageIsoRequestPassive(
     if (resetPump) {
         if (AvCamUdeFramePumpReset(&endpoint->Pump) !=
             AVCAM_UDE_PUMP_OK) {
+            endpoint->PumpQuarantined = TRUE;
             status = STATUS_DATA_ERROR;
             goto ExitLocked;
         }
@@ -137,7 +145,10 @@ AvCamUdeStageIsoRequestPassive(
     }
 
 ResetFailedFrame:
-    (VOID)AvCamUdeFramePumpReset(&endpoint->Pump);
+    if (AvCamUdeFramePumpReset(&endpoint->Pump) !=
+        AVCAM_UDE_PUMP_OK) {
+        endpoint->PumpQuarantined = TRUE;
+    }
     AvCamUdeIsoClockReset(&endpoint->Clock);
 
 ExitLocked:
