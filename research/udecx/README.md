@@ -360,3 +360,28 @@ The frame-pump integration test now models a partial JPEG, drain barrier,
 purge acknowledgement, frame release, subsequent publication, and restart
 with a new JPEG SOI. Driver Verifier and runtime teardown validation are
 still required before changing the disabled execution gates.
+
+## Queue cancellation completion and dynamic endpoint-owned queues
+
+The UdeCx client-driver guide requires canceled-on-queue URBs to be
+completed from a **separate DPC**, not inline from
+`EvtIoCanceledOnQueue`. The native endpoint queue now registers that
+callback and `AvCamUdeQueueCancel.c` defers canceled requests to its own
+endpoint-scoped WDF DPC. The DPC sets `USBD_STATUS_CANCELED` and
+`STATUS_CANCELLED`. It decrements the separate cancellation-outstanding
+count **only after** `WdfRequestComplete` has returned. The endpoint
+`PURGE` work item waits for this count as well as ordinary active I/O.
+
+The queue is now created **after** `UdecxUsbEndpointCreate` and sets
+`queueAttributes.ParentObject = (WDFOBJECT)*endpoint`. This follows
+Microsoft's UdeCx guidance for dynamically created endpoints and prevents
+an old controller-owned WDF queue from retaining a stale handle after
+alternate-setting changes. Child work items and DPCs likewise belong to
+their endpoint.
+
+The cancellation DPC allocates a small nonpaged node per canceled request.
+Allocation failure still uses a last-resort immediate canceled completion
+to avoid losing ownership of the WDF request. That exceptional fallback,
+potential cancellation/PURGE callback ordering, and device removal remain
+**VM Driver Verifier release blockers**; the new code must not be enabled
+on the primary computer. Neither native ISO nor child autoplug are enabled.
