@@ -91,3 +91,22 @@ AvCamUdeDrainClaimPurgeAck(AVCAM_UDE_ENDPOINT_DRAIN* state)
     state->PurgePending = 0;
     return 1;
 }
+
+
+/*
+ * Native reset barrier for the current synchronous endpoint implementation.
+ * Reset can succeed only when no request owns URB bytes and no purge is
+ * outstanding. Advancing Generation invalidates any outstanding snapshots
+ * that a later asynchronous ISO worker might otherwise try to reuse.
+ * Does not modify Accepting: UdeCx controls START and PURGE.
+ */
+static __inline int
+AvCamUdeDrainResetWhenIdle(AVCAM_UDE_ENDPOINT_DRAIN* state)
+{
+    if (state == 0 || state->Active != 0 || state->PurgePending ||
+        state->Generation == 0 || state->Generation == ~0ull) {
+        return AVCAM_UDE_DRAIN_INVALID;
+    }
+    ++state->Generation;
+    return AVCAM_UDE_DRAIN_OK;
+}
