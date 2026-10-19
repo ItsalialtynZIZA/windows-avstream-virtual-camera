@@ -52,7 +52,11 @@ bool LocateObsFilter(IBaseFilter** out) {
 }
 bool DirectShowObsSource::Start() {
     Stop();
-    if (!LocateObsFilter(sourceFilter_.ReleaseAndGetAddressOf())) return false;
+    errorCode_ = 0;
+    failureStage_ = L"";
+    if (!LocateObsFilter(sourceFilter_.ReleaseAndGetAddressOf())) {
+        failureStage_ = L"OBS filter enumeration/binding"; errorCode_ = HRESULT_FROM_WIN32(ERROR_NOT_FOUND); return false;
+    }
     ComPtr<ICaptureGraphBuilder2> builder;
     if (FAILED(CoCreateInstance(CLSID_FilterGraph, nullptr, CLSCTX_INPROC_SERVER,
             IID_PPV_ARGS(&graph_))) ||
@@ -66,11 +70,12 @@ bool DirectShowObsSource::Start() {
         FAILED(CoCreateInstance(kNullRenderer, nullptr, CLSCTX_INPROC_SERVER,
             IID_PPV_ARGS(&sinkFilter_))) ||
         FAILED(graph_->AddFilter(sinkFilter_.Get(), L"AvCam Null Renderer"))) {
+        failureStage_ = L"DirectShow graph/filter creation"; errorCode_ = HRESULT_FROM_WIN32(ERROR_INVALID_FUNCTION);
         Stop();
         return false;
     }
     ComPtr<ISampleGrabber> grabber;
-    if (FAILED(grabberFilter_.As(&grabber))) { Stop(); return false; }
+    if (FAILED(grabberFilter_.As(&grabber))) { failureStage_ = L"SampleGrabber interface"; errorCode_ = E_NOINTERFACE; Stop(); return false; }
     AM_MEDIA_TYPE wanted{};
     wanted.majortype = MEDIATYPE_Video;
     wanted.subtype = MEDIASUBTYPE_RGB32;
@@ -80,6 +85,7 @@ bool DirectShowObsSource::Start() {
         FAILED(grabber->SetBufferSamples(TRUE)) ||
         FAILED(builder->RenderStream(&PIN_CATEGORY_CAPTURE, &MEDIATYPE_Video,
             sourceFilter_.Get(), grabberFilter_.Get(), sinkFilter_.Get()))) {
+        failureStage_ = L"OBS graph RenderStream/RGB32"; errorCode_ = VFW_E_CANNOT_CONNECT;
         Stop();
         return false;
     }
@@ -98,11 +104,13 @@ bool DirectShowObsSource::Start() {
         if (actual.cbFormat && actual.pbFormat) CoTaskMemFree(actual.pbFormat);
         if (actual.pUnk) actual.pUnk->Release();
     }
-    if (!valid || FAILED(graph_.As(&control_)) ||
-        FAILED(control_->Run())) {
-        Stop();
-        return false;
+    if (!valid) {
+        failureStage_ = L"OBS negotiated format is not 1280x720 RGB32"; errorCode_ = VFW_E_TYPE_NOT_ACCEPTED;
+        Stop(); return false;
     }
+    if (FAILED(graph_.As(&control_))) { failureStage_ = L"Graph IMediaControl"; errorCode_ = E_NOINTERFACE; Stop(); return false; }
+    const HRESULT runResult = control_->Run();
+    if (FAILED(runResult)) { failureStage_ = L"DirectShow graph Run"; errorCode_ = static_cast<DWORD>(runResult); Stop(); return false; }
     buffer_.resize(AVCAM_FRAME_BYTES_BGRA32);
     lastFrameTick_ = 0;
     return true;
