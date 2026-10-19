@@ -421,3 +421,33 @@ during the wait, it reschedules that DPC and defers PURGE.
 This requires verification under real UdeCx endpoint teardown, especially
 the exact ordering of cancel callbacks that might race with the final
 PURGE claim. The behavior remains disabled outside the isolated test VM.
+
+
+## PURGE claim ordering and read-only VM readiness
+
+The PASSIVE_LEVEL endpoint PURGE worker now keeps
+`Drain.PurgePending` asserted until **after** it has waited for both
+completion DPCs and released any unfinished MJPEG frame lease under
+`FrameLock`. Only then does it reacquire the endpoint spinlock, verify
+that no queued-cancel or ISO requests remain, and make the single
+`AvCamUdeDrainClaimPurgeAck` transition. This closes an interval in which
+the old code cleared its PURGE gate before JPEG cleanup was finished.
+The static native contract checks this ordering, in addition to the WDK
+build and PREfast.
+
+`tools/AvCamUdeVmPreflight.ps1` is a **read-only guest preflight**, intended
+to run inside a disposable Windows 11 x64 VM. It checks VM manufacturer/model,
+guest OS build, RAM, free system volume, and existing AvCam PnP hardware
+identities. It **cannot** verify that a hypervisor snapshot exists: the VM
+owner must create that checkpoint from the HOST before installing or
+enabling any test driver. The existing
+`tools/AvCamUdeVmAcceptance.ps1` remains a separate read-only test of
+`usbvideo.sys` binding and the first nonempty Media Foundation sample.
+Both scripts are parsed and inspected for mutating commands by GitHub
+Actions; neither script installs a driver.
+
+These are preparation milestones, **not** proof of a working camera.
+The normal driver still has `g_AvCamUdeEnableAutoplug = FALSE` and
+`g_AvCamUdeEnableNativeIso = FALSE`. Runtime WDF cancellation, USB frame
+scheduling and driver cleanup remain unverified in a Windows VM. Do not
+install this experimental build onto the primary host.
