@@ -46,6 +46,16 @@ jobs:
           & $exe --frames 301
           if ($LASTEXITCODE -ne 2) { throw 'Maximum frame-count gate failed' }
           Write-Host "CAMERA_SMOKE_CLI_CONTRACT_PASSED"
+          # Use a deterministic in-memory 720p pattern so the COMPLETE
+          # WIC JPEG encode/decode path runs without physical camera access.
+          $offlineOutput = & $exe --self-test
+          $offlineExit = $LASTEXITCODE
+          $offlineOutput | ForEach-Object { Write-Host $_ }
+          if ($offlineExit -ne 0 -or
+              -not ($offlineOutput | Select-String -SimpleMatch 'AVCAM_MJPEG_OFFLINE_SELF_TEST_PASSED')) {
+            throw 'WIC memory-only encode/decode self-test failed'
+          }
+          Write-Host "CAMERA_SMOKE_MJPEG_WIC_ROUNDTRIP_PASSED"
           # PowerShell returns the last native exit code at the end of a
           # GH Actions step; the expected invalid-CLI exit code was 2.
           # All negative cases have already been explicitly asserted.
