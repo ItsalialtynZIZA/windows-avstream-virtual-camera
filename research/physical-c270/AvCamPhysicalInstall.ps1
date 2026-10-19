@@ -41,6 +41,44 @@ function Test-Administrator {
         throw 'Administrator PowerShell required'
     }
 }
+# Rollback does not depend on the camera's current PnP health, status or
+# enumeration. A broken camera extension must NEVER prevent recovery.
+if ($Disable) {
+    Test-Administrator
+    if (-not (Test-Path -LiteralPath $backupState)) {
+        throw "No saved AvCam installation record found: $backupState"
+    }
+    $saved = Get-Content -LiteralPath $backupState -Raw | ConvertFrom-Json
+    if ($saved.Clsid -ne $clsid -or
+        $saved.RegistryPath -notmatch '(?i)^HKEY_LOCAL_MACHINE\\SYSTEM\\CurrentControlSet\\Control\\DeviceClasses\\\{E5323777-F976-4F5B-9B55-B94699C46E44\}\\' -or
+        $saved.RegistryPath -notmatch '(?i)VID_046D&PID_0825') {
+        throw 'Refusing rollback: saved physical interface is not Logitech C270 VIDEO_CAMERA'
+    }
+    $savedPath = 'Registry::' + $saved.RegistryPath
+    if (Test-Path -LiteralPath $savedPath) {
+        $rollbackKey = Get-Item -LiteralPath $savedPath
+        $current = $rollbackKey.GetValue('CameraDeviceMftClsid', $null)
+        if ($current -and $current -ne $clsid) {
+            throw 'Another vendor has changed the device transform; manual recovery required'
+        }
+        if ($current -eq $clsid) {
+            Remove-ItemProperty -LiteralPath $savedPath -Name 'CameraDeviceMftClsid'
+        }
+    } else {
+        Write-Warning 'Original USB camera registry interface is missing; no Device MFT key left to remove'
+    }
+    if (Test-Path -LiteralPath $installedDll) {
+        & "$env:WINDIR\System32\regsvr32.exe" /u /s $installedDll
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "COM unregister returned exit code $LASTEXITCODE; AvCam camera interface setting removed."
+        }
+    }
+    Remove-Item -LiteralPath $backupState -Force
+    Write-Host 'AVCAM_PHYSICAL_C270_DISABLED'
+    Write-Host 'Restart Windows Camera / browser; physical USB hardware and driver were never replaced.'
+    return
+}
+
 $physical = @(Get-PhysicalLogitech)
 Write-Host "Healthy physical Logitech C270 devices: $($physical.Count)"
 foreach ($item in $physical) { Write-Host "$($item.FriendlyName) [$($item.InstanceId)]" }
@@ -58,32 +96,6 @@ if (-not $Enable -and -not $Disable) {
     return
 }
 Test-Administrator
-if ($Disable) {
-    if (-not (Test-Path -LiteralPath $backupState)) {
-        throw "No AvCam install-state file found: $backupState"
-    }
-    $saved = Get-Content -LiteralPath $backupState -Raw | ConvertFrom-Json
-    if ($saved.RegistryPath -ne $key.Name -or $saved.Clsid -ne $clsid) {
-        throw 'Unexpected saved physical interface identity. No changes made.'
-    }
-    $current = $key.GetValue('CameraDeviceMftClsid', $null)
-    if ($current -and $current -ne $clsid) {
-        throw 'Camera has a different transform registration; refuse to overwrite.'
-    }
-    if ($current -eq $clsid) {
-        Remove-ItemProperty -LiteralPath $key.PSPath -Name 'CameraDeviceMftClsid'
-    }
-    if (Test-Path -LiteralPath $installedDll) {
-        & "$env:WINDIR\System32\regsvr32.exe" /u /s $installedDll
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warning "DllUnregisterServer failed (code $LASTEXITCODE), registry property already removed."
-        }
-    }
-    Remove-Item -LiteralPath $backupState -Force
-    Write-Host 'AVCAM_PHYSICAL_C270_DISABLED'
-    Write-Host 'Close/restart camera apps to restore the original video pipeline.'
-    return
-}
 $required = @('AvCamPhysicalDeviceMft.dll','AvCamPhysicalBridge.exe')
 foreach ($file in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $file) -PathType Leaf)) {
