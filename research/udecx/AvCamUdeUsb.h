@@ -58,6 +58,7 @@ typedef struct _AVCAM_UDE_ENDPOINT_QUEUE_CONTEXT {
  * PASSIVE_LEVEL after the final request has left.
  */
 typedef struct _AVCAM_UDE_ENDPOINT_CONTEXT {
+    WDFDEVICE Controller;
     WDFSPINLOCK Lock;
     WDFWORKITEM PurgeWorkItem;
     AVCAM_UDE_ENDPOINT_DRAIN Drain;
