@@ -210,26 +210,6 @@ AvCamUdeEvtEndpointIo(
     }
 }
 
-/*
- * WDF can hand a previously queued (but never dispatched) request to the
- * client when a forwarded/requeued request is canceled. EvtIoCanceledOnQueue
- * transfers ownership to THIS callback; it must not be requeued and must be
- * completed exactly once. Do not retrieve/map the URB here: callback IRQL
- * can be DISPATCH_LEVEL while UdeCx URB buffer helpers need PASSIVE_LEVEL.
- *
- * These requests never passed AvCamUdeDrainEnter, so they must NOT decrement
- * Drain.Active or touch PendingIsoRequest. Already-dispatched requests are
- * owned by the ordinary callback/DPC path and are not completed here.
- */
-VOID
-AvCamUdeEvtEndpointCanceledOnQueue(
-    _In_ WDFQUEUE queue,
-    _In_ WDFREQUEST request)
-{
-    UNREFERENCED_PARAMETER(queue);
-    WdfRequestComplete(request, STATUS_CANCELLED);
-}
-
 /* UdeCx owns its associated endpoint queue. Do not call WdfIoQueuePurge
  * or WdfIoQueueStart on it. START/PURGE callbacks can be <= DISPATCH_LEVEL.
  * The UdeCx PURGE acknowledgement API, however, requires PASSIVE_LEVEL.
@@ -278,7 +258,12 @@ AvCamUdeEvtEndpointPurgeWorkItem(_In_ WDFWORKITEM workItem)
     PAVCAM_UDE_ENDPOINT_CONTEXT ctx = AvCamUdeEndpointGetContext(endpoint);
     BOOLEAN acknowledge;
     WdfSpinLockAcquire(ctx->Lock);
-    acknowledge = (AvCamUdeDrainClaimPurgeAck(&ctx->Drain) != 0);
+    /* Queue cancellations use a SEPARATE DPC. Even when no request was
+     * admitted through DrainEnter, PURGE must wait for the DPC's
+     * WdfRequestComplete to actually return.
+     */
+    acknowledge = (ctx->QueueCancelOutstanding == 0 &&
+        AvCamUdeDrainClaimPurgeAck(&ctx->Drain) != 0);
     WdfSpinLockRelease(ctx->Lock);
     if (acknowledge) {
         /* All endpoint-owned requests have completed, and UdeCx will
@@ -405,6 +390,18 @@ AvCamUdeCreateDynamicEndpoint(
         &workItemConfig, AvCamUdeEvtEndpointPurgeWorkItem);
     status = WdfWorkItemCreate(
         &workItemConfig, &childAttributes, &ctx->PurgeWorkItem);
+    if (!NT_SUCCESS(status)) {
+        goto FailEndpoint;
+    }
+    /* One cancellation DPC per endpoint, including EP0. UdeCx
+     * cancellation callbacks can be called at DISPATCH_LEVEL and must
+     * not complete URBs inline on the dispatching callback stack.
+     */
+    InitializeListHead(&ctx->QueueCancelledRequests);
+    WDF_DPC_CONFIG_INIT(&dpcConfig, AvCamUdeEvtQueuedCancelDpc);
+    dpcConfig.AutomaticSerialization = FALSE;
+    status = WdfDpcCreate(&dpcConfig, &childAttributes,
+        &ctx->QueueCancelDpc);
     if (!NT_SUCCESS(status)) {
         goto FailEndpoint;
     }
