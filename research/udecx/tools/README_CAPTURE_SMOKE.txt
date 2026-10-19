@@ -6,7 +6,9 @@ updates, or accesses a USB/AvCam kernel driver. It does not create an
 emulated camera and does not send frames to websites or save frames.
 
 Tests ONLY: Windows Media Foundation capture of 1280x720 BGRA frames,
-then Windows Imaging Component encoding of 1920x1080 MJPEG.
+then Windows Imaging Component encoding of 1920x1080 MJPEG,
+followed by full in-memory JPEG decoding to a 1920x1080 BGR raster
+for EACH frame (not just testing JPEG markers).
 
 PREPARATION:
 - Close OBS, browser tabs and camera applications if testing C270 directly.
@@ -16,9 +18,11 @@ PREPARATION:
 
 Commands:
   .\AvCamUdeCaptureSmoke.exe --list
+  .\AvCamUdeCaptureSmoke.exe --self-test
   .\AvCamUdeCaptureSmoke.exe --frames 30
 
 Expected end-of-run marker on success:
+  AVCAM_C270_MF_MJPEG_DECODE_PASSED
   AVCAM_C270_MF_MJPEG_SMOKE_PASSED
 
 Alternate OBS pathway:
@@ -40,7 +44,12 @@ Exit codes:
   8  JPEG encode/validation failed
   9  JPEG SOI/EOI marker invalid
   10 insufficient captured frames
+  11 full JPEG decoded pixel data invalid or unsupported dimensions
 
+The --self-test command works WITHOUT a webcam: it encodes a deterministic
+1280x720 test image, fully decodes the produced 1920x1080 JPEG in RAM,
+and prints AVCAM_MJPEG_OFFLINE_SELF_TEST_PASSED on success.
+The host test prints FramesCaptured, FramesEncoded and FramesDecoded.
 A zero-frame or failed run is not evidence of any USB Video Class success.
 Even a successful smoke run does NOT prove the UdeCx driver, its ISO URBs,
 Windows usbvideo.sys, or Media Foundation camera output from AvCam.
