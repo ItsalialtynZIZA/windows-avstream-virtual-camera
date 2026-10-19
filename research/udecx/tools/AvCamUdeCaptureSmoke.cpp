@@ -241,13 +241,30 @@ int wmain(int argc, wchar_t** argv) {
     std::uint64_t firstHash = 0u;
     unsigned distinct = 0u;
     const ULONGLONG start = GetTickCount64();
+    ULONGLONG captureMs = 0u;
+    ULONGLONG encodeMs = 0u;
+    ULONGLONG decodeMs = 0u;
+    std::uint64_t previousTimestamp = 0u;
+    std::uint64_t firstTimestamp = 0u;
+    std::uint64_t lastTimestamp = 0u;
+    unsigned timestampNonIncreasing = 0u;
 
     for (unsigned i = 0; i < targetFrames; ++i) {
         std::uint64_t timestamp = 0u;
+        const ULONGLONG beforeCapture = GetTickCount64();
         if (!camera.ReadFrame(frame.data(), frame.size(), timestamp)) {
             std::wcerr << L"CAPTURE_SMOKE_READ_FAILED sample=" << i << L"\n";
             return 7;
         }
+        captureMs += GetTickCount64() - beforeCapture;
+        if (samples == 0u) {
+            firstTimestamp = timestamp;
+        } else if (timestamp <= previousTimestamp) {
+            ++timestampNonIncreasing;
+        }
+        previousTimestamp = timestamp;
+        lastTimestamp = timestamp;
+        const ULONGLONG beforeEncode = GetTickCount64();
         if (!AvCamUde::EncodeBgraToMjpeg(
                 wic.Get(), frame.data(), AVCAM_FRAME_WIDTH,
                 AVCAM_FRAME_HEIGHT, AVCAM_FRAME_STRIDE_BGRA32, jpeg)) {
@@ -255,6 +272,7 @@ int wmain(int argc, wchar_t** argv) {
                        << L"\n";
             return 8;
         }
+        encodeMs += GetTickCount64() - beforeEncode;
         if (jpeg.size() < 4u ||
             jpeg[0] != 0xffu || jpeg[1] != 0xd8u ||
             jpeg[jpeg.size() - 2u] != 0xffu ||
@@ -263,11 +281,13 @@ int wmain(int argc, wchar_t** argv) {
                        << L"\n";
             return 9;
         }
+        const ULONGLONG beforeDecode = GetTickCount64();
         if (!DecodeJpegPixels(wic.Get(), jpeg, decoded)) {
             std::wcerr << L"CAPTURE_SMOKE_JPEG_DECODE_FAILED sample=" << i
                        << L" expected=1920x1080\n";
             return 11;
         }
+        decodeMs += GetTickCount64() - beforeDecode;
         const std::uint64_t hash = Fnv1a(jpeg);
         if (samples == 0u) firstHash = hash;
         if (hash != firstHash) ++distinct;
@@ -285,6 +305,28 @@ int wmain(int argc, wchar_t** argv) {
                << L" JPEGMaxBytes=" << maxJpeg
                << L" DifferentFromFirst=" << distinct
                << L" ElapsedMs=" << elapsed << L"\n";
+    const double overallFps = elapsed > 0u
+        ? (1000.0 * static_cast<double>(samples)) /
+          static_cast<double>(elapsed)
+        : 0.0;
+    /* MF timestamps are stream-relative 100ns values. They measure
+     * capture-time span, whereas total elapsed measures delivered
+     * throughput including WIC encode and full JPEG decode.
+     */
+    const std::uint64_t timestampSpan =
+        lastTimestamp > firstTimestamp ? lastTimestamp - firstTimestamp : 0u;
+    std::wcout << L"TimingCaptureMs=" << captureMs
+               << L" TimingEncodeMs=" << encodeMs
+               << L" TimingDecodeMs=" << decodeMs
+               << L" ObservedProcessingFPS=" << overallFps
+               << L" MfSampleTimestampSpan100ns=" << timestampSpan
+               << L" NonIncreasingTimestamps=" << timestampNonIncreasing
+               << L" DistinctEncodedFrames=" << distinct << L"\n";
+    if (overallFps < 25.0) {
+        std::wcout << L"AVCAM_SPEED_BELOW_25FPS: end-to-end smoke "
+                      L"includes full JPEG decode and may not equal "
+                      L"the camera hardware FPS.\n";
+    }
     if (samples != targetFrames) return 10;
     std::wcout << L"AVCAM_C270_MF_MJPEG_DECODE_PASSED\n";
     std::wcout << L"AVCAM_C270_MF_MJPEG_SMOKE_PASSED\n";
