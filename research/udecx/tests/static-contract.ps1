@@ -213,4 +213,10 @@ Assert-Matches $native 'USBD_STATUS_CANCELED' 'Canceled host ISO packets must us
 Assert-Matches $native 'UrbIsochronousTransfer.ErrorCount = count' 'All canceled packets must be counted.'
 Assert-Matches $native 'urb->UrbIsochronousTransfer.TransferBufferLength = 0' 'Canceled byte count must be zero.'
 Assert-Matches $native 'FrameLock serializes publication and leased ISO source access' 'ISO staging must retain the frame lock.'
+Assert-Matches $header 'ULONGLONG CommitEpoch;' 'USB stream needs a commit generation.'
+Assert-Matches $header 'ULONGLONG SeenCommitEpoch;' 'Endpoint must remember negotiated generation.'
+Assert-Matches $usb '++device->CommitEpoch' 'Successful UVC commit must advance the generation.'
+Assert-Matches $native 'SeenCommitEpoch != usb->CommitEpoch' 'Native ISO staging must detect renegotiation.'
+Assert-Matches $native 'endpoint->SeenCommitEpoch = usb->CommitEpoch' 'Reset must record the active commit generation.'
+Assert-Matches $native 'endpoint->PumpResetPending = TRUE' 'Discard a staged but never delivered ISO frame on DPC handoff failure.'
 Write-Host "UdeCx guarded USB child contract: passed"
