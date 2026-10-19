@@ -10,6 +10,7 @@
 #include "AvCamUdeEndpointDrain.h"
 #include "AvCamUdeAsyncIso.h"
 #include "AvCamUdeIso.h"
+#include "AvCamUdeIsoClock.h"
 #include "AvCamUdeFramePump.h"
 #include "AvCamUdeUploadProtocol.h"
 
@@ -64,7 +65,7 @@ typedef struct _AVCAM_UDE_ENDPOINT_CONTEXT {
     AVCAM_UDE_FRAME_PUMP Pump;
     BOOLEAN PumpInitialized;
     BOOLEAN PumpResetPending;
-    ULONGLONG NextMicroframe100ns;
+    AVCAM_UDE_ISO_CLOCK Clock;
 } AVCAM_UDE_ENDPOINT_CONTEXT, *PAVCAM_UDE_ENDPOINT_CONTEXT;
 WDF_DECLARE_CONTEXT_TYPE_WITH_NAME(
     AVCAM_UDE_ENDPOINT_CONTEXT, AvCamUdeEndpointGetContext);
