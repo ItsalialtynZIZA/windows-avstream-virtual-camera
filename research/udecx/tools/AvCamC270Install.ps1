@@ -122,8 +122,19 @@ try {
     $cat = Join-Path $work 'avcamude.cat'
     $thumb = $cert.Thumbprint
     Write-Host "Signing stage: $work"
-    Invoke-External $signTool @('sign', '/as', '/sm', '/s', 'My', '/sha1',
+    # The GitHub Actions SYS already has an embedded test signature from
+    # a DIFFERENT certificate. /as appended ours as a secondary signature,
+    # leaving the untrusted CI signature primary, so verify /pa failed.
+    # Strip signatures on the isolated COPIED candidate, then sign it ONCE
+    # with the locally trusted certificate, as the primary signer.
+    Invoke-External $signTool @('remove', '/s', $sys)
+    Invoke-External $signTool @('sign', '/sm', '/s', 'My', '/sha1',
         $thumb, '/fd', 'SHA256', $sys)
+    $sysSigner = Get-AuthenticodeSignature -LiteralPath $sys
+    if (-not $sysSigner.SignerCertificate -or
+        $sysSigner.SignerCertificate.Thumbprint -ne $thumb) {
+        throw 'Candidate SYS primary signing certificate is not the local AvCam certificate'
+    }
 
     # Signed SYS bytes differ from the original catalog manifest.
     # Regenerate the catalog from the exact signed SYS and matching INF.
@@ -136,8 +147,13 @@ try {
     }
     Invoke-External $signTool @('sign', '/sm', '/s', 'My', '/sha1',
         $thumb, '/fd', 'SHA256', $cat)
-    Invoke-External $signTool @('verify', '/pa', $sys)
-    Invoke-External $signTool @('verify', '/pa', $cat)
+    $catSigner = Get-AuthenticodeSignature -LiteralPath $cat
+    if (-not $catSigner.SignerCertificate -or
+        $catSigner.SignerCertificate.Thumbprint -ne $thumb) {
+        throw 'Candidate CAT primary signing certificate is not the local AvCam certificate'
+    }
+    Invoke-External $signTool @('verify', '/v', '/pa', $sys)
+    Invoke-External $signTool @('verify', '/v', '/pa', $cat)
     Write-Host 'Locally signed driver and catalog verified.'
 
     # Preserve the fully signed candidate for repeatable rollback diagnostics.
