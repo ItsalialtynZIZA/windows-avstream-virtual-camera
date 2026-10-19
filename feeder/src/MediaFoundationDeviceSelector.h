@@ -34,13 +34,12 @@ inline bool ContainsName(const std::wstring& name,
 inline bool IsVidPidPair(const std::wstring& pair) noexcept {
     if (pair.size() != 17u) return false;
     const std::wstring marker = L"vid_";
-    const std::wstring product = L"&pid_";
+    const std::wstring product = L"pid_";
     for (unsigned i = 0; i < 4u; ++i) {
         if (AsciiLower(pair[i]) != marker[i] ||
             AsciiLower(pair[i + 9u]) != product[i]) return false;
     }
     if (pair[8] != L'&') return false;
-    if (AsciiLower(pair[13]) != L'_') return false;
     auto hex = [](wchar_t ch) {
         ch = AsciiLower(ch);
         return (ch >= L'0' && ch <= L'9') ||
