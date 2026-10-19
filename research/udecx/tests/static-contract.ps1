@@ -27,7 +27,12 @@ Assert-Matches $controller 'if\s*\(!g_AvCamUdeEnableAutoplug\)' 'Autoplug protec
 Assert-Matches $controller 'AvCamUdeUsbDisconnect\(device\)' 'Power exit must clean up emulated USB child.'
 Assert-Matches $usb 'UdecxUsbDeviceInitAllocate' 'UdeCx USB device init allocation is missing.'
 Assert-Matches $usb 'UdecxUsbDeviceInitSetSpeed\(init,\s*UdecxUsbHighSpeed\)' 'USB speed selection missing.'
-Assert-Matches $usb 'g_AvCamUsbDeviceDescriptor' 'Shared USB device descriptor missing.'
+Assert-Matches $usb 'g_AvCamUdeIsolatedDeviceDescriptor' 'UdeCx child must enumerate using isolated experimental identity.'
+$isolatedIdentity = Get-Content (Join-Path $root 'AvCamUdeTestIdentity.h') -Raw
+$legacyIdentity = Get-Content (Join-Path $root '../manual-vhci/shared/AvCamUsbDescriptors.h') -Raw
+Assert-Matches $isolatedIdentity '#define AVCAM_UDE_TEST_PID 0x5679u' 'Isolated UdeCx test PID must be 5679.'
+Assert-Matches $legacyIdentity '#define AVCAM_USB_PID 0x5678u' 'Legacy AvCamBus PID must remain 5678.'
+Assert-Matches $usb '#include "AvCamUdeTestIdentity.h"' 'UdeCx device must include isolated identity header.'
 Assert-Matches $usb 'g_AvCamUsbConfigurationDescriptor' 'Shared UVC config descriptor missing.'
 Assert-Matches $usb 'UdecxUsbDeviceCreate' 'Native UdeCx child device creation missing.'
 $iso = Get-Content (Join-Path $root "AvCamUdeIso.h") -Raw
