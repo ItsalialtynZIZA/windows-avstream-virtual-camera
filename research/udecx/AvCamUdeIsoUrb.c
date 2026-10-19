@@ -38,6 +38,13 @@ AvCamUdeInspectIsoUrb(_In_ WDFREQUEST request)
 
     packets = urb->UrbIsochronousTransfer.NumberOfPackets;
     requestedBytes = urb->UrbIsochronousTransfer.TransferBufferLength;
+    /* The advertised high-speed ISO endpoint has bInterval = 1: eight
+     * microframe packets belong to every 1-ms StartFrame. Reject an
+     * incomplete USB frame before touching the variable-length array.
+     */
+    if (packets == 0 || packets % 8u != 0) {
+        return STATUS_INVALID_PARAMETER;
+    }
 
     /* Validate the declared variable-length packet array before touching
      * IsoPacket[n]. The buffer is obtained only after structural checks.
