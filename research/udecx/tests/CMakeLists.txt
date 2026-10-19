@@ -253,7 +253,8 @@ if(WIN32)
         ../tools/AvCamPreview.cpp
         ../tools/AvCamUdeMjpegEncoder.cpp
         ../../../feeder/src/MediaFoundationFrameSource.cpp
-        ../../../feeder/src/DirectShowObsSource.cpp)
+        ../../../feeder/src/DirectShowObsSource.cpp
+        ../../../feeder/src/ObsSharedMemorySource.cpp)
     target_include_directories(AvCamPreview PRIVATE ../../../shared)
     target_compile_features(AvCamPreview PRIVATE cxx_std_17)
     target_compile_definitions(AvCamPreview PRIVATE
