@@ -257,13 +257,45 @@ AvCamUdeEvtEndpointPurgeWorkItem(_In_ WDFWORKITEM workItem)
         WdfWorkItemGetParentObject(workItem);
     PAVCAM_UDE_ENDPOINT_CONTEXT ctx = AvCamUdeEndpointGetContext(endpoint);
     BOOLEAN acknowledge;
+    BOOLEAN readyToQuiesce;
+
     WdfSpinLockAcquire(ctx->Lock);
-    /* Queue cancellations use a SEPARATE DPC. Even when no request was
-     * admitted through DrainEnter, PURGE must wait for the DPC's
-     * WdfRequestComplete to actually return.
+    /* First check both completion owners without claiming the PURGE ACK.
+     * A zero count alone does NOT prove the DPC callback has returned;
+     * its last instructions may still execute on another processor.
      */
-    acknowledge = (ctx->QueueCancelOutstanding == 0 &&
-        AvCamUdeDrainClaimPurgeAck(&ctx->Drain) != 0);
+    readyToQuiesce = ctx->Drain.PurgePending &&
+        ctx->Drain.Active == 0 &&
+        ctx->QueueCancelOutstanding == 0;
+    WdfSpinLockRelease(ctx->Lock);
+    if (!readyToQuiesce) {
+        return;
+    }
+
+    /* EvtWorkItem is PASSIVE_LEVEL. WdfDpcCancel(..., TRUE) waits for
+     * execution to finish or cancels a queued DPC. It must never run under
+     * ctx->Lock, and is only safe after outstanding request counts reach 0.
+     */
+    if (ctx->QueueCancelDpc != NULL) {
+        (VOID)WdfDpcCancel(ctx->QueueCancelDpc, TRUE);
+    }
+    if (ctx->IsoCompleteDpc != NULL) {
+        (VOID)WdfDpcCancel(ctx->IsoCompleteDpc, TRUE);
+    }
+
+    WdfSpinLockAcquire(ctx->Lock);
+    if (ctx->QueueCancelOutstanding != 0) {
+        /* An EvtIoCanceledOnQueue may have arrived while we waited.
+         * WdfDpcCancel could have removed its scheduled DPC. Restore
+         * progress by enqueueing it again, and defer PURGE ACK.
+         */
+        ctx->QueueCancelDpcScheduled = TRUE;
+        (VOID)WdfDpcEnqueue(ctx->QueueCancelDpc);
+        acknowledge = FALSE;
+    } else {
+        ctx->QueueCancelDpcScheduled = FALSE;
+        acknowledge = (AvCamUdeDrainClaimPurgeAck(&ctx->Drain) != 0);
+    }
     WdfSpinLockRelease(ctx->Lock);
     if (acknowledge) {
         /* All endpoint-owned requests have completed, and UdeCx will
