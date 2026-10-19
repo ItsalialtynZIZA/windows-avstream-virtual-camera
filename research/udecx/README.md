@@ -273,3 +273,15 @@ against a real USB host** in these builds. Before enabling it, prove
 callback reentrancy, WDF cancellation/purge during queued DPC completion,
 usbvideo.sys isochronous frame timing and Driver Verifier behavior in an
 isolated VM. No installed host driver is altered by this milestone.
+
+### Dynamic UVC alternate-setting endpoint lifetime
+
+A temporary implementation dereferenced the cached
+`controller->VideoEndpoint` during `EvtEndpointsConfigure`; this is unsafe
+because UdeCx may already have deleted that dynamic endpoint. The callback
+now only acknowledges configuration and does not dereference the cached
+handle. Each endpoint's own `EvtUsbEndpointStart` sets
+`PumpResetPending` under its spinlock, and its next PASSIVE ISO worker
+resets the MJPEG lease, packetizer FID/EOF and stream clock. PURGE and
+idle RESET also invalidate the pump. All of this remains within the
+disabled, compile-only native ISO bridge pending VM/runtime validation.
