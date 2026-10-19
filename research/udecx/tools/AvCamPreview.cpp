@@ -9,6 +9,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <cstdint>
+#include <cstring>
+#include <cwchar>
 #include <atomic>
 #include <mutex>
 #include <string>
