@@ -379,10 +379,10 @@ an old controller-owned WDF queue from retaining a stale handle after
 alternate-setting changes. Child work items and DPCs likewise belong to
 their endpoint.
 
-The cancellation DPC allocates a small nonpaged node per canceled request.
-Allocation failure still uses a last-resort immediate canceled completion
-to avoid losing ownership of the WDF request. That exceptional fallback,
-potential cancellation/PURGE callback ordering, and device removal remain
+The subsequent allocation-free FIFO supersedes the original per-cancel
+allocation path. Its use of WDF completion information as a temporary
+private next-request link still requires Driver Verifier validation.
+Potential cancellation/PURGE callback ordering and device removal remain
 **VM Driver Verifier release blockers**; the new code must not be enabled
 on the primary computer. Neither native ISO nor child autoplug are enabled.
 
@@ -405,3 +405,19 @@ This relies on the WDF completion-information field remaining private
 until completion, and must be challenged by Driver Verifier, cancellation
 storms and device removal in the isolated Windows 11 VM. It is not an
 authorization to enable either experimental deployment flag.
+
+### Closing the completion-DPC / PURGE lifetime gap
+
+A zero active-request count does not guarantee the DPC callback has
+fully returned: the callback may still be unwinding after the last
+`WdfRequestComplete`. Before acknowledging UdeCx endpoint PURGE, its
+PASSIVE_LEVEL work item now confirms zero active ISO and queued-cancel
+counts, then uses `WdfDpcCancel(..., TRUE)` to wait for **both**
+endpoint DPC callbacks to quiesce. After waiting, it reacquires the
+endpoint spinlock and checks again. If a new queued cancellation arrived
+during the wait, it reschedules that DPC and defers PURGE.
+`UdecxUsbEndpointPurgeComplete` remains outside all WDF locks.
+
+This requires verification under real UdeCx endpoint teardown, especially
+the exact ordering of cancel callbacks that might race with the final
+PURGE claim. The behavior remains disabled outside the isolated test VM.
