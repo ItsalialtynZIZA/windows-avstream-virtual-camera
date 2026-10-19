@@ -253,7 +253,6 @@ if(WIN32)
         ../tools/AvCamPreview.cpp
         ../tools/AvCamUdeMjpegEncoder.cpp
         ../../../feeder/src/MediaFoundationFrameSource.cpp
-        ../../../feeder/src/DirectShowObsSource.cpp
         ../../../feeder/src/ObsSharedMemorySource.cpp)
     target_include_directories(AvCamPreview PRIVATE ../../../shared)
     target_compile_features(AvCamPreview PRIVATE cxx_std_17)
@@ -265,6 +264,25 @@ if(WIN32)
         target_compile_options(AvCamPreview PRIVATE
             /W4 /WX /permissive- /utf-8)
         set_property(TARGET AvCamPreview PROPERTY
+            MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
+endif()
+
+# Verify the OBS native NV12 shared queue with generated frames on Windows CI.
+# Uses an ordinary page-file mapping; no OBS installation or driver is required.
+if(WIN32)
+    add_executable(AvCamObsSharedMemorySmoke
+        obs-shared-memory-smoke.cpp
+        ../../../feeder/src/ObsSharedMemorySource.cpp)
+    target_include_directories(AvCamObsSharedMemorySmoke PRIVATE
+        ../../../shared ../../../feeder/src)
+    target_compile_features(AvCamObsSharedMemorySmoke PRIVATE cxx_std_17)
+    target_compile_definitions(AvCamObsSharedMemorySmoke PRIVATE
+        WINVER=0x0A00 _WIN32_WINNT=0x0A00)
+    if(MSVC)
+        target_compile_options(AvCamObsSharedMemorySmoke PRIVATE
+            /W4 /WX /permissive- /utf-8)
+        set_property(TARGET AvCamObsSharedMemorySmoke PROPERTY
             MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
 endif()
