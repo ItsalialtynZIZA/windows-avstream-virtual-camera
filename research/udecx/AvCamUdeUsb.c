@@ -260,6 +260,26 @@ AvCamUdeEvtEndpointPurgeWorkItem(_In_ WDFWORKITEM workItem)
     acknowledge = (AvCamUdeDrainClaimPurgeAck(&ctx->Drain) != 0);
     WdfSpinLockRelease(ctx->Lock);
     if (acknowledge) {
+        /* All endpoint-owned requests have completed, and UdeCx will
+         * not deliver new ones before PurgeComplete. This PASSIVE_LEVEL
+         * window is the last safe point to release a partial JPEG lease
+         * before UdeCx destroys the dynamic endpoint on alt-setting 0.
+         *
+         * Endpoint -> controller is a stable parent-chain lifetime here.
+         * Child plug-out releases FrameLock before invoking UdeCx.
+         */
+        if (ctx->PumpInitialized && ctx->Controller != NULL) {
+            PAVCAM_UDE_CONTROLLER_CONTEXT controller =
+                AvCamUdeControllerGetContext(ctx->Controller);
+            WdfWaitLockAcquire(controller->FrameLock, NULL);
+            if (AvCamUdeFramePumpReset(&ctx->Pump) ==
+                AVCAM_UDE_PUMP_OK) {
+                ctx->PumpInitialized = FALSE;
+                ctx->SeenCommitEpoch = 0;
+                AvCamUdeIsoClockReset(&ctx->Clock);
+            }
+            WdfWaitLockRelease(controller->FrameLock);
+        }
         UdecxUsbEndpointPurgeComplete(endpoint);
     }
 }
@@ -351,6 +371,7 @@ AvCamUdeCreateDynamicEndpoint(
     }
 
     ctx = AvCamUdeEndpointGetContext(*endpoint);
+    ctx->Controller = controller;
     AvCamUdeDrainInit(&ctx->Drain);
     WDF_OBJECT_ATTRIBUTES_INIT(&childAttributes);
     childAttributes.ParentObject = (WDFOBJECT)*endpoint;
