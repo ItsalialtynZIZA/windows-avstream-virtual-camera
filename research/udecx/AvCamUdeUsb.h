@@ -8,6 +8,7 @@
 #include <ude/1.0/UdeCx.h>
 #include "AvCamUdeControl.h"
 #include "AvCamUdeEndpointDrain.h"
+#include "AvCamUdeAsyncIso.h"
 #include "AvCamUdeIso.h"
 #include "AvCamUdeFramePump.h"
 #include "AvCamUdeUploadProtocol.h"
