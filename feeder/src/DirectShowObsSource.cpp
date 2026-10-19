@@ -225,20 +225,30 @@ bool DirectShowObsSource::ReadFrame(unsigned char* dst, std::size_t size,
             } else {
                 ComPtr<IMediaEvent> events;
                 if (SUCCEEDED(graph_.As(&events))) {
-                    long eventCode = 0;
-                    LONG_PTR param1 = 0;
-                    LONG_PTR param2 = 0;
-                    if (SUCCEEDED(events->GetEvent(&eventCode, &param1, &param2, 0))) {
-                        if (eventCode == EC_ERRORABORT || eventCode == EC_STREAM_ERROR_STOPPED || eventCode == EC_STREAM_ERROR_STILLPLAYING) {
+                    bool significant = false;
+                    for (unsigned i = 0; i < 32; ++i) {
+                        long eventCode = 0;
+                        LONG_PTR param1 = 0;
+                        LONG_PTR param2 = 0;
+                        if (events->GetEvent(&eventCode, &param1, &param2, 0) != S_OK) break;
+                        if (eventCode == EC_ERRORABORT ||
+                            eventCode == EC_STREAM_ERROR_STOPPED ||
+                            eventCode == EC_STREAM_ERROR_STILLPLAYING) {
                             failureStage_ = L"OBS graph streaming error event";
                             errorCode_ = static_cast<DWORD>(param1);
-                        } else {
-                            failureStage_ = L"OBS graph emitted event without frames";
+                            significant = true;
+                        } else if (eventCode == EC_COMPLETE || eventCode == EC_USERABORT) {
+                            failureStage_ = L"OBS graph completed/aborted without video";
                             errorCode_ = static_cast<DWORD>(eventCode);
+                            significant = true;
                         }
+                        // EC_CLOCK_CHANGED (0x0D) and other notifications are not
+                        // evidence of capture failure; drain and ignore them.
                         events->FreeEventParams(eventCode, param1, param2);
-                    } else {
-                        failureStage_ = L"OBS graph running but no samples/events";
+                        if (significant) break;
+                    }
+                    if (!significant) {
+                        failureStage_ = L"OBS graph running, but callback received no samples";
                         errorCode_ = static_cast<DWORD>(HRESULT_FROM_WIN32(ERROR_TIMEOUT));
                     }
                 } else {
