@@ -387,7 +387,8 @@ AvCamUdeCreateDynamicEndpoint(
      * cancellation callbacks can be called at DISPATCH_LEVEL and must
      * not complete URBs inline on the dispatching callback stack.
      */
-    InitializeListHead(&ctx->QueueCancelledRequests);
+    ctx->QueueCancelHead = NULL;
+    ctx->QueueCancelTail = NULL;
     WDF_DPC_CONFIG_INIT(&dpcConfig, AvCamUdeEvtQueuedCancelDpc);
     dpcConfig.AutomaticSerialization = FALSE;
     status = WdfDpcCreate(&dpcConfig, &childAttributes,
