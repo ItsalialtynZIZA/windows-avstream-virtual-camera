@@ -131,7 +131,7 @@ endif()
 # Execute only in a disposable Windows VM after explicit, separate setup.
 if(WIN32)
     add_executable(AvCamUdeMfProbe
-        ../../manual-vhci/tools/AvCamMfProbe.cpp)
+        ../tools/AvCamUdeMfProbe.cpp)
     target_compile_features(AvCamUdeMfProbe PRIVATE cxx_std_17)
     target_link_libraries(AvCamUdeMfProbe PRIVATE
         mf mfplat mfreadwrite mfuuid ole32)
