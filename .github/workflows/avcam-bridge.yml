@@ -13,6 +13,8 @@ on:
       - 'research/udecx/tests/CMakeLists.txt'
       - 'feeder/src/MediaFoundationFrameSource.cpp'
       - 'feeder/src/MediaFoundationFrameSource.h'
+      - 'feeder/src/DirectShowObsSource.cpp'
+      - 'feeder/src/DirectShowObsSource.h'
       - 'feeder/src/MediaFoundationDeviceSelector.h'
       - 'research/udecx/AvCamUdeUploadProtocol.h'
       - '.github/workflows/avcam-bridge.yml'
