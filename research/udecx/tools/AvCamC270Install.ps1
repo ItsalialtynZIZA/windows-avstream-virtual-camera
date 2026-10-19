@@ -13,14 +13,26 @@ function Find-Tool {
     param([string]$FileName)
     $cmd = Get-Command $FileName -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
-    $paths = @()
-    $kit = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'
-    if (Test-Path $kit) {
-        $paths += @(Get-ChildItem $kit -Recurse -Filter $FileName -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match '(?i)\\x64\\' } |
-            Sort-Object FullName -Descending | Select-Object -ExpandProperty FullName)
+    # SignTool is usually x64; Inf2Cat may be x86 in some WDK installs.
+    # Inspect both architectures and Windows Kits installation roots.
+    $roots = @(
+        (Join-Path ${env:ProgramFiles(x86)} 'Windows Kits\10\bin'),
+        (Join-Path $env:ProgramFiles 'Windows Kits\10\bin')
+    ) | Select-Object -Unique
+    $found = @(
+        foreach ($root in $roots) {
+            if (Test-Path -LiteralPath $root -PathType Container) {
+                Get-ChildItem -LiteralPath $root -Recurse -Filter $FileName -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.FullName -match '(?i)\\(x64|x86)\\' } |
+                    Select-Object -ExpandProperty FullName
+            }
+        }
+    )
+    if ($found.Count -eq 0) { return $null }
+    if ($FileName -ieq 'inf2cat.exe') {
+        return ($found | Sort-Object -Descending | Select-Object -First 1)
     }
-    return ($paths | Select-Object -First 1)
+    return ($found | Sort-Object -Descending | Select-Object -First 1)
 }
 function Invoke-External {
     param([string]$Program, [string[]]$Arguments)
@@ -50,8 +62,10 @@ $cert = $certs[0]
 $signTool = Find-Tool 'signtool.exe'
 $inf2cat = Find-Tool 'inf2cat.exe'
 if (-not $signTool -or -not $inf2cat) {
-    Write-Host 'WDK signtool.exe and inf2cat.exe are needed to sign a matching LOCAL driver catalog.'
-    throw 'Windows Kit tools missing; existing working AvCam driver left untouched'
+    Write-Host "SignTool detected: $([bool]$signTool)"
+    Write-Host "Inf2Cat detected: $([bool]$inf2cat)"
+    Write-Host 'Search includes Windows Kits 10 bin x64 and x86. If a tool is missing, install official Windows SDK/WDK components.'
+    throw 'Windows Kit tools incomplete; existing working AvCam driver left untouched'
 }
 Write-Host "Windows: $($os.Caption) build $($os.BuildNumber)"
 Write-Host "Signer: $($cert.Subject) (private key available)"
