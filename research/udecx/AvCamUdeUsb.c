@@ -9,6 +9,11 @@
 #include "AvCamUdeUsb.h"
 #include "../manual-vhci/shared/AvCamUsbDescriptors.h"
 
+/* A compile-and-PREfast-only execution path until isolated VM validation.
+ * No runtime mechanism can enable this flag in a shipped research build.
+ */
+static BOOLEAN g_AvCamUdeEnableNativeIso = FALSE;
+
 EVT_WDF_IO_QUEUE_IO_INTERNAL_DEVICE_CONTROL AvCamUdeEvtEndpointIo;
 EVT_UDECX_USB_ENDPOINT_RESET AvCamUdeEvtEndpointReset;
 EVT_UDECX_USB_ENDPOINT_START AvCamUdeEvtEndpointStart;
@@ -135,6 +140,7 @@ AvCamUdeEvtEndpointIo(
     PAVCAM_UDE_ENDPOINT_CONTEXT ectx;
     BOOLEAN admitted = FALSE;
     BOOLEAN signalPurge = FALSE;
+    NTSTATUS isoStatus;
 
     if (qctx->Endpoint == NULL) {
         WdfRequestComplete(request, STATUS_INVALID_DEVICE_STATE);
@@ -155,8 +161,20 @@ AvCamUdeEvtEndpointIo(
         return;
     }
 
-    AvCamUdeProcessEndpointIo(
-        queue, request, outputLength, inputLength, ioctl);
+    if (qctx->EndpointAddress == 0x81 && g_AvCamUdeEnableNativeIso) {
+        /* The native frame pump stages bytes only at PASSIVE_LEVEL.
+         * Success transfers WDFREQUEST ownership to the separate DPC.
+         * No inline completion or DrainLeave is permitted on that path.
+         */
+        isoStatus = AvCamUdeStageIsoRequestPassive(queue, request);
+        if (NT_SUCCESS(isoStatus)) {
+            return;
+        }
+        UdecxUrbCompleteWithNtStatus(request, isoStatus);
+    } else {
+        AvCamUdeProcessEndpointIo(
+            queue, request, outputLength, inputLength, ioctl);
+    }
 
     WdfSpinLockAcquire(ectx->Lock);
     (VOID)AvCamUdeDrainLeave(&ectx->Drain);
@@ -188,9 +206,11 @@ AvCamUdeEvtEndpointPurge(_In_ UDECXUSBENDPOINT endpoint)
     PAVCAM_UDE_ENDPOINT_CONTEXT ctx = AvCamUdeEndpointGetContext(endpoint);
     BOOLEAN signalPurge = FALSE;
     WdfSpinLockAcquire(ctx->Lock);
-    if (AvCamUdeDrainBeginPurge(&ctx->Drain) == AVCAM_UDE_DRAIN_OK &&
-        ctx->Drain.Active == 0) {
-        signalPurge = TRUE;
+    if (AvCamUdeDrainBeginPurge(&ctx->Drain) == AVCAM_UDE_DRAIN_OK) {
+        ctx->PumpResetPending = TRUE;
+        if (ctx->Drain.Active == 0) {
+            signalPurge = TRUE;
+        }
     }
     WdfSpinLockRelease(ctx->Lock);
 
@@ -234,6 +254,9 @@ AvCamUdeEvtEndpointReset(
     WdfSpinLockAcquire(ctx->Lock);
     resetSafe = (AvCamUdeDrainResetWhenIdle(&ctx->Drain) ==
         AVCAM_UDE_DRAIN_OK);
+    if (resetSafe) {
+        ctx->PumpResetPending = TRUE;
+    }
     WdfSpinLockRelease(ctx->Lock);
 
     WdfRequestCompleteWithInformation(
@@ -261,6 +284,7 @@ AvCamUdeCreateDynamicEndpoint(
     WDF_OBJECT_ATTRIBUTES endpointAttributes;
     WDF_OBJECT_ATTRIBUTES childAttributes;
     WDF_WORKITEM_CONFIG workItemConfig;
+    WDF_DPC_CONFIG dpcConfig;
     PAVCAM_UDE_ENDPOINT_CONTEXT ctx;
     UDECX_USB_ENDPOINT_CALLBACKS callbacks;
     PUDECXUSBENDPOINT_INIT localInit = providedInit;
@@ -313,6 +337,15 @@ AvCamUdeCreateDynamicEndpoint(
         &workItemConfig, &childAttributes, &ctx->PurgeWorkItem);
     if (!NT_SUCCESS(status)) {
         goto FailEndpoint;
+    }
+    if (address == 0x81) {
+        WDF_DPC_CONFIG_INIT(&dpcConfig, AvCamUdeEvtIsoCompleteDpc);
+        dpcConfig.AutomaticSerialization = FALSE;
+        status = WdfDpcCreate(
+            &dpcConfig, &childAttributes, &ctx->IsoCompleteDpc);
+        if (!NT_SUCCESS(status)) {
+            goto FailEndpoint;
+        }
     }
     AvCamUdeEndpointQueueGetContext(queue)->Endpoint = *endpoint;
     UdecxUsbEndpointSetWdfIoQueue(*endpoint, queue);
