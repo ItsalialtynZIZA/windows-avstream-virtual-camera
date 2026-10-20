@@ -52,7 +52,6 @@ foreach ($process in $deep) {
     } catch { Write-Host ("DEEP_MODULE_SCAN_ERROR={0}" -f $_.Exception.Message) }
 }
 Write-Host 'NOTE: Loaded modules indicate available backends, not necessarily the active capture backend.'
-Write-Host 'NOTE: Process and service listings cannot alone prove who owns the KS capture pin.'
 Write-Host '=== DSHOW BRIDGE AND CAMERA FRAME SERVER MODULES (BEST EFFORT) ==='
 # A process loading a bridge DLL does not prove that it routes camera frames,
 # but comparing both hosts can rule out some proposed configurations.
@@ -72,5 +71,6 @@ foreach ($proc in $all) {
     }
 }
 Write-Host 'NOTE: This scan is informational; a DLL loaded into a process does not prove capture ownership.'
+Write-Host 'NOTE: Service processes can be protected and inaccessible; missing module results are inconclusive.'
 Write-Host 'NEXT: For conclusive backend selection capture the actual OpenCV backend name or trace during live operation.'
 Write-Host 'BASELINE_COMPLETE_NO_SETTINGS_CHANGED'
