@@ -172,10 +172,24 @@ bool AvCamReplaceMjpegSample(const void* queue, IMFSample* original,
     buffer->Unlock();
     if (FAILED(buffer->SetCurrentLength(static_cast<DWORD>(jpeg.size()))) ||
         FAILED(result->AddBuffer(buffer.Get()))) return false;
-    original->CopyAllItems(result.Get());
+    // Fail open: if the replacement cannot preserve the original sample's
+    // metadata and timing, return false so the original Logitech sample flows.
+    // A partially initialized replacement must never be sent downstream.
+    if (FAILED(original->CopyAllItems(result.Get()))) {
+        TraceRaw(L"SampleSkipped: metadata copy failed; keeping original frame");
+        return false;
+    }
     LONGLONG time = 0, duration = 0;
-    if (SUCCEEDED(original->GetSampleTime(&time))) result->SetSampleTime(time);
-    if (SUCCEEDED(original->GetSampleDuration(&duration))) result->SetSampleDuration(duration);
+    if (SUCCEEDED(original->GetSampleTime(&time)) &&
+        FAILED(result->SetSampleTime(time))) {
+        TraceRaw(L"SampleSkipped: timestamp copy failed; keeping original frame");
+        return false;
+    }
+    if (SUCCEEDED(original->GetSampleDuration(&duration)) &&
+        FAILED(result->SetSampleDuration(duration))) {
+        TraceRaw(L"SampleSkipped: duration copy failed; keeping original frame");
+        return false;
+    }
     *replacement = result.Detach();
     const auto replacements = ++g_replaceSuccess;
     if (replacements <= 3 || replacements % 300 == 0)
