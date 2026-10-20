@@ -157,6 +157,8 @@ jobs:
       - feeder
     runs-on: windows-2022
     steps:
+      - uses: actions/checkout@v4
+
       - name: Download driver artifact
         uses: actions/download-artifact@v4
         with:
