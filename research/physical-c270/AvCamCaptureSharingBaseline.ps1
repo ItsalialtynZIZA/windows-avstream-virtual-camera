@@ -53,4 +53,24 @@ foreach ($process in $deep) {
 }
 Write-Host 'NOTE: Loaded modules indicate available backends, not necessarily the active capture backend.'
 Write-Host 'NOTE: Process and service listings cannot alone prove who owns the KS capture pin.'
+Write-Host '=== DSHOW BRIDGE AND CAMERA FRAME SERVER MODULES (BEST EFFORT) ==='
+# A process loading a bridge DLL does not prove that it routes camera frames,
+# but comparing both hosts can rule out some proposed configurations.
+$all = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.ProcessName -match '(?i)DeepLiveCam|svchost|FrameServer'
+})
+foreach ($proc in $all) {
+    try {
+        $matches = @($proc.Modules | Where-Object {
+            $_.ModuleName -match '(?i)dshowbridge|ksproxy|mfsensorgroup|mfcaptureengine|mfreadwrite|quartz'
+        } | Select-Object -ExpandProperty ModuleName -Unique)
+        if ($matches.Count -gt 0) {
+            Write-Host ("CAMERA_HOST_MODULES_PID={0};NAME={1};DLLS={2}" -f $proc.Id,$proc.ProcessName,($matches -join ','))
+        }
+    } catch {
+        # Some protected Windows service processes deny module enumeration.
+    }
+}
+Write-Host 'NOTE: This scan is informational; a DLL loaded into a process does not prove capture ownership.'
+Write-Host 'NEXT: For conclusive backend selection capture the actual OpenCV backend name or trace during live operation.'
 Write-Host 'BASELINE_COMPLETE_NO_SETTINGS_CHANGED'
