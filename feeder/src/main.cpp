@@ -4,6 +4,8 @@
 #include <ksmedia.h>
 
 #include <atomic>
+#include <chrono>
+#include <thread>
 #include <cstddef>
 #include <cstdint>
 #include <iostream>
@@ -111,6 +113,8 @@ struct Options
     std::wstring deviceName = L"OBS Virtual Camera";
     bool listSources = false;
     bool showHelp = false;
+    bool checkSource = false;
+    unsigned checkSeconds = 10;
 };
 
 void PrintUsage()
@@ -120,7 +124,8 @@ void PrintUsage()
         << L"  AvCamFeeder.exe --source test\n"
         << L"  AvCamFeeder.exe --source obs [--device-name \"OBS Virtual Camera\"]\n"
         << L"  AvCamFeeder.exe --source obs-dshow [--device-name \"OBS Virtual Camera\"]\n"
-        << L"  AvCamFeeder.exe --list-sources\n";
+        << L"  AvCamFeeder.exe --list-sources\n"
+        << L"  AvCamFeeder.exe --source obs-dshow --check-source [--seconds 10]\n";
 }
 
 bool ParseOptions(int argc, wchar_t* argv[], Options& options)
@@ -135,6 +140,22 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
             continue;
         }
 
+        if (argument == L"--check-source")
+        {
+            options.checkSource = true;
+            continue;
+        }
+        if (argument == L"--seconds" && index + 1 < argc)
+        {
+            try
+            {
+                const auto seconds = std::stoul(argv[++index]);
+                if (seconds < 1 || seconds > 60) return false;
+                options.checkSeconds = static_cast<unsigned>(seconds);
+            }
+            catch (...) { return false; }
+            continue;
+        }
         if (argument == L"--list-sources")
         {
             options.listSources = true;
@@ -429,6 +450,55 @@ int wmain(int argc, wchar_t* argv[])
 
     auto source = CreateFrameSource(options);
     auto packet = CreateFramePacket();
+
+    if (options.checkSource)
+    {
+        if (options.source == L"test")
+        {
+            std::wcerr << L"Specify --source obs-dshow or --source obs.\n";
+            return 2;
+        }
+        if (!source->Start())
+        {
+            std::wcerr << L"OBS_CHECK source_open=failed\n";
+            return 4;
+        }
+        std::uint64_t frames = 0, changed = 0, failures = 0;
+        std::uint64_t previous = 0;
+        bool havePrevious = false;
+        const auto deadline = std::chrono::steady_clock::now() +
+            std::chrono::seconds(options.checkSeconds);
+        while (g_Running.load() && std::chrono::steady_clock::now() < deadline)
+        {
+            if (!FillPacketFromSource(*source, packet))
+            {
+                ++failures;
+                if (failures >= 5) break;
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                continue;
+            }
+            failures = 0;
+            const auto* pixels = reinterpret_cast<const unsigned char*>(
+                packet.data() + sizeof(AvCamFrameHeader));
+            std::uint64_t hash = 14695981039346656037ull;
+            for (std::size_t i = 0; i < AVCAM_FRAME_BYTES_BGRA32; i += 256)
+            {
+                hash ^= pixels[i];
+                hash *= 1099511628211ull;
+            }
+            if (havePrevious && hash != previous) ++changed;
+            previous = hash;
+            havePrevious = true;
+            ++frames;
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        source->Stop();
+        std::wcout << L"OBS_CHECK frames=" << frames
+                   << L" changed=" << changed
+                   << L" consecutive_failures=" << failures
+                   << L" duration_seconds=" << options.checkSeconds << L"\n";
+        return frames > 0 ? 0 : 5;
+    }
 
     std::wcout << L"AvCam feeder\n";
     std::wcout << L"Protocol version: " << AVCAM_PROTOCOL_VERSION << L"\n";
