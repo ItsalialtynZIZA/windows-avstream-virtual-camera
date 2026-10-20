@@ -176,6 +176,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Force runtime | Out-Null
           Copy-Item integration/START_AVCAM.cmd runtime/START_AVCAM.cmd -Force
+          Copy-Item integration/CHECK_AVCAM_INSTALL.ps1 runtime/CHECK_AVCAM_INSTALL.ps1 -Force
           @'
           AVCAM INTEGRATED PROTOTYPE (EXPERIMENTAL)
           1. OBS Studio: set up a scene and click Start Virtual Camera.
