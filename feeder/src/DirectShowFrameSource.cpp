@@ -8,6 +8,9 @@
 #include <cwctype>
 #include <utility>
 #include <iostream>
+#include <mutex>
+#include <atomic>
+#include <new>
 
 using Microsoft::WRL::ComPtr;
 namespace {
@@ -58,6 +61,43 @@ bool FindCamera(const std::wstring& wanted, IBaseFilter** result) {
     return true;
 }
 }
+
+struct __declspec(uuid("0579154A-2B53-4994-B0D0-E773148EFF85")) ISampleGrabberCBAv : IUnknown {
+    virtual HRESULT STDMETHODCALLTYPE SampleCB(double, IMediaSample*) = 0;
+    virtual HRESULT STDMETHODCALLTYPE BufferCB(double, BYTE*, long) = 0;
+};
+struct DirectShowFrameSource::Grabber final : ISampleGrabberCBAv {
+    std::atomic<ULONG> refs{1};
+    std::mutex lock;
+    std::vector<unsigned char> latest;
+    unsigned long long serial = 0, readSerial = 0;
+    HRESULT STDMETHODCALLTYPE QueryInterface(REFIID id, void** out) override {
+        if (!out) return E_POINTER;
+        *out = nullptr;
+        if (id == IID_IUnknown || id == __uuidof(ISampleGrabberCBAv)) {
+            *out = static_cast<ISampleGrabberCBAv*>(this);
+            AddRef(); return S_OK;
+        }
+        return E_NOINTERFACE;
+    }
+    ULONG STDMETHODCALLTYPE AddRef() override { return ++refs; }
+    ULONG STDMETHODCALLTYPE Release() override {
+        ULONG n = --refs; if (n == 0) delete this; return n;
+    }
+    HRESULT STDMETHODCALLTYPE SampleCB(double, IMediaSample*) override { return E_NOTIMPL; }
+    HRESULT STDMETHODCALLTYPE BufferCB(double, BYTE* buffer, long n) override {
+        if (!buffer || n <= 0 || n > 4096 * 2160 * 4) return E_INVALIDARG;
+        std::lock_guard<std::mutex> guard(lock);
+        latest.assign(buffer, buffer + n);
+        ++serial; return S_OK;
+    }
+    bool Pop(std::vector<unsigned char>& output) {
+        std::lock_guard<std::mutex> guard(lock);
+        if (latest.empty() || readSerial == serial) return false;
+        output = latest; readSerial = serial; return true;
+    }
+};
+
 DirectShowFrameSource::DirectShowFrameSource(std::wstring name):name_(std::move(name)) {}
 DirectShowFrameSource::~DirectShowFrameSource(){ Stop(); }
 bool DirectShowFrameSource::Start() {
@@ -76,7 +116,7 @@ bool DirectShowFrameSource::Start() {
     requested.subtype=MEDIASUBTYPE_RGB32;
     requested.formattype=FORMAT_VideoInfo;
     if (FAILED(grabber->SetMediaType(&requested)) ||
-        FAILED(grabber->SetBufferSamples(TRUE)) ||
+        FAILED(grabber->SetBufferSamples(FALSE)) ||
         FAILED(grabber->SetOneShot(FALSE))) {Stop();return false;}
     ComPtr<ICaptureGraphBuilder2> builder;
     if (FAILED(CoCreateInstance(CLSID_CaptureGraphBuilder2,nullptr,CLSCTX_INPROC_SERVER,
@@ -105,7 +145,12 @@ bool DirectShowFrameSource::Start() {
             info->bmiHeader.biBitCount==32;
     }
     FreeType(connected);
-    if (!valid || FAILED(graph_.As(&control_)) || FAILED(control_->Run())) {
+    if (!valid) {Stop();return false;}
+    grabber_ = new (std::nothrow) Grabber();
+    if (!grabber_ || FAILED(grabber->SetCallback(static_cast<ISampleGrabberCBAv*>(grabber_), 1))) {
+        Stop();return false;
+    }
+    if (FAILED(graph_.As(&control_)) || FAILED(control_->Run())) {
         Stop();return false;
     }
     running_=true;
@@ -113,32 +158,20 @@ bool DirectShowFrameSource::Start() {
 }
 void DirectShowFrameSource::Stop() noexcept {
     if (control_) (void)control_->Stop();
+    if (grabberFilter_) {
+        ComPtr<ISampleGrabberAv> grabber;
+        if (SUCCEEDED(grabberFilter_.As(&grabber))) (void)grabber->SetCallback(nullptr, 1);
+    }
+    if (grabber_) { grabber_->Release(); grabber_ = nullptr; }
     running_=false;
     control_.Reset();graph_.Reset();grabberFilter_.Reset();nullRenderer_.Reset();
     camera_.Reset();raw_.clear();width_=height_=0;
 }
 bool DirectShowFrameSource::ReadFrame(unsigned char* dst,std::size_t bytes,std::uint64_t& timestamp) {
     if (!running_ || !dst || bytes<AVCAM_FRAME_BYTES_BGRA32 || width_<=0 || height_<=0) return false;
-    ComPtr<ISampleGrabberAv> grabber;
-    if (FAILED(grabberFilter_.As(&grabber))) return false;
-    long length=0;
-    HRESULT hr=grabber->GetCurrentBuffer(&length,nullptr);
-    if (FAILED(hr) || length<=0 || static_cast<std::uint64_t>(length)>4096ull*2160*4) {
-        static HRESULT lastReported = S_OK;
-        if (hr != lastReported) {
-            std::wcerr << L"DirectShow GetCurrentBuffer: hr=0x" << std::hex
-                       << static_cast<unsigned long>(hr) << std::dec
-                       << L" bytes=" << length << L"\\n";
-            lastReported = hr;
-        }
-        return false;
-    }
-    const std::size_t pitch=((static_cast<std::size_t>(width_)*32+31)/32)*4;
-    if (static_cast<std::size_t>(length)<pitch*static_cast<std::size_t>(height_)) return false;
-    raw_.resize(static_cast<std::size_t>(length));
-    long capacity=length;
-    hr=grabber->GetCurrentBuffer(&capacity,reinterpret_cast<long*>(raw_.data()));
-    if (FAILED(hr) || capacity<static_cast<long>(pitch*static_cast<std::size_t>(height_))) return false;
+    if (!grabber_ || !grabber_->Pop(raw_)) return false;
+    const std::size_t pitch = static_cast<std::size_t>(width_) * 4;
+    if (raw_.size() < pitch * static_cast<std::size_t>(height_)) return false;
     for (unsigned y=0;y<AVCAM_FRAME_HEIGHT;++y) {
         const unsigned sy=static_cast<unsigned>((static_cast<std::uint64_t>(y)*height_)/AVCAM_FRAME_HEIGHT);
         const unsigned row=bottomUp_ ? static_cast<unsigned>(height_-1)-sy : sy;
