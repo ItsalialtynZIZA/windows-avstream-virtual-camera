@@ -1,0 +1,64 @@
+# Physical Logitech C270: capture-sharing architecture decision
+
+Status: investigation; NOT a working fix for simultaneous Deep Live Cam + Chrome.
+
+## Hardware acceptance evidence (owner's Windows)
+- Logitech C270 USB VID_046D PID_0825 is the selected physical device.
+- With Deep Live Cam v2.2.4 closed, the experimental Device MFT passes the
+  OBS red-test scene to Windows Camera and Chrome, still listed as Logitech.
+- With Device MFT disabled and Bridge stopped, Deep Live Cam opens the
+  physical C270, but Chrome reports it is used or blocked while Deep Live
+  Cam runs. Thus simultaneous capture fails without AvCam in the pipeline.
+- Opening Deep Live Cam before Bridge publication leaves Deep Live Cam running,
+  but Chrome remains unable to open the physical C270.
+- Device MFT ETW events establish InitializeTransform, MJPG 1280x720 format
+  negotiation and sample replacement; they do not establish Chrome sharing.
+
+## Source review: CRSD-Lau/deep-live-cam tag v2.2.4
+- modules/video_capture.py enumerates with DirectShow via pygrabber;
+  cv2.VideoCapture(..., cv2.CAP_DSHOW, params) is tried first.
+  CAP_MSMF / CAP_ANY are fallback backends and may enumerate in a different
+  order. The initial capture request is configurable; the method default
+  is 960x540 at 60 FPS.
+- modules/ui.py starts VideoCapturer in _start_live_capture.
+- Its own pyvirtualcam sink is separate from the physical capture operation.
+- The installed release is not being modified.
+
+## Microsoft camera documentation
+- DShow Bridge is the Windows bridge between DirectShow and the Media
+  Foundation camera pipeline. A compatible opt-in and Frame Server can
+  allow concurrent capture, but this does not imply all legacy DShow
+  applications or all UVC drivers share a stream:
+  https://learn.microsoft.com/en-us/windows-hardware/drivers/stream/dshow-bridge-implementation-guidance-for-usb-video-class-devices
+- Custom Frame Server sources can advertise shareable streams, but registering
+  a NEW software camera is not equivalent to changing the physical C270:
+  https://learn.microsoft.com/en-us/windows-hardware/drivers/stream/frame-server-custom-media-source
+
+## Architectural constraints and next engineering steps
+1. Keep the physical Logitech and unmodified Deep Live Cam functional.
+   Do not toggle system-wide Frame Server registry switches or replace
+   USB descriptors/drivers based on a concurrency hypothesis.
+2. Diagnose whether the C270's DirectShow capture pin is routed through
+   Windows DShow Bridge or directly consumes the KS pin. Record backend,
+   format, HRESULT, and Frame Server status while reproducing both clients.
+3. If the current C270 driver/DirectShow path cannot share with Chrome,
+   neither AvCam Bridge nor a sample-editing Device MFT can force a second
+   physical capture handle to succeed. App-level splitters need clients
+   to consume the splitter's endpoint; they cannot transparently make
+   two existing physical-hardware opens succeed.
+4. A distinct virtual endpoint and single-owner capture broker is a viable
+   separate engineering design, but it does not meet the stricter
+   requirement of selecting the already-existing physical C270 in Chrome
+   without an additional compatible OS-level integration.
+5. Avoid treating per-client Device MFT bypass or application-specific
+   sample-routing as an implemented feature. Shared camera transforms
+   generally operate on the camera processing path, not reliably on
+   caller-specific streams.
+6. Keep the current opt-in Device MFT disabled between experiments. Install
+   only after reviewing test scope, signed build provenance, and rollback.
+
+Acceptance criteria: (a) Deep Live Cam continually displays a changing
+unmodified physical scene, (b) OBS Window Capture visibly receives its
+processed output, (c) Chrome selects the existing physical Logi C270 name and
+displays OBS content simultaneously, (d) no recursive camera loop, and (e)
+stopping OBS/Bridge restores original Logitech video without breaking capture.
