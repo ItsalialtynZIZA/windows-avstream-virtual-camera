@@ -41,6 +41,31 @@ AvCam Physical C270 -> AvCam - Uninstall:
 
 There are also AvCamStatus.cmd and AvCamUninstall.cmd in the archive.
 
+DEEP LIVE CAM 2.2.4 SOURCE AUDIT (2026-10-21)
+Official tagged source: https://github.com/CRSD-Lau/deep-live-cam/tree/v2.2.4
+modules/video_capture.py: Windows uses pygrabber DirectShow enumeration,
+then cv2.VideoCapture(index, cv2.CAP_DSHOW, params) first. Fallbacks are
+cv2.CAP_MSMF and cv2.CAP_ANY. The index was obtained by DirectShow and is
+not guaranteed to identify the same device on MSMF.
+modules/ui.py: _start_live_capture constructs VideoCapturer and calls start.
+The reported "the selected camera could not be opened" is raised when
+VideoCapturer.start returns false. This is an open-path error, not evidence
+of an OBS Bridge failure, bad MJPEG contents, or a feedback loop.
+Default VideoCapturer.start request is 960x540 at 60 fps; actual UI settings
+may override dimensions and fps. The AvCam Device MFT only replaces MJPG
+1280x720 samples, so media negotiation and backends must be logged.
+OWNER WINDOWS ACCEPTANCE FINDINGS: Device MFT + OBS published frames work in
+Windows Camera and Chrome when Deep Live Cam is closed. With Deep Live Cam
+already running (staged Bridge start), Chrome reported the physical C270
+was used/blocked. With Bridge not publishing, Deep Live Cam could start
+while Device MFT was registered. These observations are compatible with
+exclusive source ownership or an incompatible simultaneous capture path,
+but DO NOT prove which layer holds a lock.
+Do not assume a Device MFT can route different physical-vs-processed
+frames per application; the existing design cannot guarantee this.
+Do not change the installed original Deep Live Cam. Do not enable the
+experimental Device MFT automatically. Keep rollback available.
+
 DEEP LIVE CAM + OBS (avoid competing camera publishers)
 When Deep Live Cam is processing the real Logitech C270, keep these
 roles distinct:
