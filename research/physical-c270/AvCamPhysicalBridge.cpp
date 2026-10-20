@@ -105,7 +105,39 @@ bool Publish(Mapping& mapping, const std::vector<unsigned char>& jpeg,
 }
 }
 
-int wmain() {
+int wmain(int argc, wchar_t** argv) {
+    if (argc == 2 && wcscmp(argv[1], L"--self-test") == 0) {
+        // Reproduce Camera Frame Server retaining a mapping while the
+        // publisher exits, then prove a replacement publisher can take over.
+        HANDLE retainedReader = nullptr;
+        {
+            Mapping first;
+            if (!CreateSharedMapping(first)) return 20;
+            retainedReader = OpenFileMappingW(FILE_MAP_READ, FALSE,
+                AvCamPhysical::kMappingName);
+            if (!retainedReader) return 21;
+            std::vector<unsigned char> dummy(32, 0xab);
+            dummy.front() = dummy.back() = 0xff;
+            if (!Publish(first, dummy, GetTickCount64() * 10000ull))
+                return 22;
+        }
+        {
+            Mapping second;
+            if (!CreateSharedMapping(second)) {
+                CloseHandle(retainedReader);
+                return 23;
+            }
+            std::vector<unsigned char> dummy(32, 0xcd);
+            dummy.front() = dummy.back() = 0xff;
+            if (!Publish(second, dummy, GetTickCount64() * 10000ull)) {
+                CloseHandle(retainedReader);
+                return 24;
+            }
+        }
+        CloseHandle(retainedReader);
+        std::puts("AVCAM_BRIDGE_MAPPING_RESTART_SELFTEST_PASSED");
+        return 0;
+    }
     SetConsoleCtrlHandler(CtrlHandler, TRUE);
     const HRESULT init = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (FAILED(init)) return 10;
