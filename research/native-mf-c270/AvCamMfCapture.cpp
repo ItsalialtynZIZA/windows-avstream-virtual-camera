@@ -227,10 +227,10 @@ bool ExtractBgr(IMFSample* sample, int width,int height,std::vector<uint8_t>& ds
 }
 void Worker(Capture* cap,int width,int height,int fps) {
     const HRESULT ci=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
-    if (FAILED(ci)) {SetError(cap,L"CoInitializeEx: "+HrText(ci));return;}
+    if (FAILED(ci)) {SetError(cap,L"CoInitializeEx: "+HrText(ci));cap->completed.store(true);cap->cv.notify_all();return;}
     const HRESULT ms=MFStartup(MF_VERSION,MFSTARTUP_NOSOCKET);
     if (FAILED(ms)) {
-        SetError(cap,L"MFStartup: "+HrText(ms));CoUninitialize();return;
+        SetError(cap,L"MFStartup: "+HrText(ms));CoUninitialize();cap->completed.store(true);cap->cv.notify_all();return;
     }
     {
         ComPtr<IMFMediaSource> source;
@@ -263,10 +263,19 @@ void Worker(Capture* cap,int width,int height,int fps) {
                         }
                         continue;
                     }
+                    if (flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) {
+                        SetError(cap,L"Media Foundation output type changed unexpectedly; refusing to decode as RGB32");break;
+                    }
+                    if (flags & MF_SOURCE_READERF_ERROR) {
+                        SetError(cap,L"Media Foundation source reader reported stream error");break;
+                    }
                     if (flags & MF_SOURCE_READERF_ENDOFSTREAM) {
                         SetError(cap,L"Camera stream ended");break;
                     }
                     if (!sample) continue;
+                    if (actual!=kStream) {
+                        SetError(cap,L"Unexpected Media Foundation stream index");break;
+                    }
                     std::vector<uint8_t> pixels;
                     if (!ExtractBgr(sample.Get(),cap->width,cap->height,pixels)) {
                         if (++consecutiveFailures>=3) {
@@ -340,7 +349,8 @@ extern "C" __declspec(dllexport) int __cdecl AvmfRead(
     });
     if (c->failed || c->stopping.load()) return -3;
     if (c->sequence<=old || c->pixels.empty()) return 1; // timed out
-    if (c->pixels.size()>bytes) return -4;
+    const size_t expected=static_cast<size_t>(c->width)*c->height*3;
+    if (c->pixels.size()!=expected || expected>bytes) return -4;
     memcpy(out,c->pixels.data(),c->pixels.size());
     c->delivered=c->sequence;
     return 0;
