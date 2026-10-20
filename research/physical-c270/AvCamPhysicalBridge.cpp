@@ -156,35 +156,54 @@ int wmain(int argc, wchar_t** argv) {
     std::vector<unsigned char> jpeg;
     unsigned long long frames = 0;
     unsigned long long reconnects = 0;
+    // A mapping may exist even when OBS Virtual Camera failed to start.
+    // Only the first *fresh* frame proves the camera producer is live.
+    ULONGLONG lastWarningAt = 0;
+    auto warnOccasionally = [&](const char* message, DWORD error) {
+        const ULONGLONG now = GetTickCount64();
+        if (lastWarningAt == 0 || now - lastWarningAt >= 30000ull) {
+            std::printf("%s (0x%08lX). Waiting for recovery; no Logitech capture used.\n",
+                message, error);
+            lastWarningAt = now;
+        }
+    };
     std::puts("AvCam Physical Bridge: persistent OBS watcher -> 1280x720 MJPEG.");
+    std::puts("No direct capture of the physical Logitech C270 is performed by Bridge.");
     std::puts("Waiting for OBS Virtual Camera; press Ctrl+C to stop.");
     while (!g_stop.load()) {
         ObsSharedMemorySource source;
         if (!source.Start()) {
-            // OBS may start after Windows logon. Wait indefinitely instead
-            // of exiting and requiring another elevated manual launch.
+            // OBS may start later than our scheduled task. An already-present
+            // but stale OBS mapping is also handled in the inner read loop.
             if ((reconnects++ % 30ull) == 0ull)
-                std::printf("Waiting for OBS Virtual Camera (0x%08lX)\n",
-                    source.LastErrorCode());
+                warnOccasionally("OBS Virtual Camera mapping unavailable", source.LastErrorCode());
             for (int tick = 0; tick < 20 && !g_stop.load(); ++tick)
                 Sleep(100);
             continue;
         }
         reconnects = 0;
-        std::puts("OBS Virtual Camera connected.");
+        bool sourcePublished = false;
         while (!g_stop.load()) {
             std::uint64_t timestamp = 0;
             if (!source.ReadFrame(bgra.data(), bgra.size(), timestamp)) {
-                std::printf("OBS feed interrupted (0x%08lX). Reconnecting...\n",
-                    source.LastErrorCode());
+                if (sourcePublished)
+                    std::puts("OBS stopped publishing; AvCam will retry automatically.");
+                else
+                    warnOccasionally("OBS mapping exists but no fresh video frames",
+                        source.LastErrorCode());
                 break;
             }
             if (!AvCamUde::EncodeBgraToMjpeg(wic.Get(), bgra.data(),
                     AVCAM_FRAME_WIDTH, AVCAM_FRAME_HEIGHT,
                     AVCAM_FRAME_STRIDE_BGRA32, jpeg) ||
                 !Publish(mapping, jpeg, timestamp)) {
-                std::puts("JPEG encoding or publication failed; retrying.");
+                warnOccasionally("JPEG encoding or publication failed", ERROR_INVALID_DATA);
                 break;
+            }
+            if (!sourcePublished) {
+                std::puts("OBS Virtual Camera is actively publishing frames to AvCam.");
+                sourcePublished = true;
+                lastWarningAt = 0;
             }
             ++frames;
             if ((frames % 900ull) == 0ull)
@@ -192,8 +211,8 @@ int wmain(int argc, wchar_t** argv) {
                     frames, jpeg.size());
         }
         source.Stop();
-        // The Device MFT checks frame age. When OBS is stopped or missing,
-        // it safely falls back to the original Logitech camera image.
+        // The camera MFT automatically rejects MJPEG after its timestamps
+        // expire and then leaves the real Logitech samples unchanged.
         for (int tick = 0; tick < 10 && !g_stop.load(); ++tick)
             Sleep(100);
     }
