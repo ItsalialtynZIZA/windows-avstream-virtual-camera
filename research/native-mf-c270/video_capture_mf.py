@@ -120,19 +120,27 @@ class VideoCapturer:
                 # Do not use declared FPS as actual speed. Measure real frames.
                 good = 0
                 begin = time.monotonic()
+                first_frame_at = None
+                last_frame_at = None
                 while good < 5 and time.monotonic() - begin < 7.0:
                     code = self._native.AvmfRead(
                         self._handle, self._frame.ctypes.data_as(ctypes.c_void_p),
                         self._frame.nbytes, 1400,
                     )
                     if code == 0:
+                        now = time.monotonic()
+                        if first_frame_at is None:
+                            first_frame_at = now
+                        last_frame_at = now
                         good += 1
                     elif code < 0:
                         raise RuntimeError(f"Native reader error {code}: {self._description()}")
                 elapsed = max(time.monotonic() - begin, 0.001)
                 if good < 2:
                     raise RuntimeError(f"Only {good} MF frames in {elapsed:.1f}s")
-                self.actual_fps = max(0.1, (good - 1) / elapsed)
+                # Exclude device-open and first-frame latency from observed FPS.
+                frame_interval = (last_frame_at - first_frame_at) if good >= 2 else 0.0
+                self.actual_fps = (good - 1) / frame_interval if frame_interval > 0 else 0.0
                 self._failures = 0
                 self.is_running = True
                 self.cap = self._handle
