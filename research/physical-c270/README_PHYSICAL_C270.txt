@@ -41,6 +41,30 @@ AvCam Physical C270 -> AvCam - Uninstall:
 
 There are also AvCamStatus.cmd and AvCamUninstall.cmd in the archive.
 
+SIMULTANEOUS ACCESS BASELINE (NO DEVICE MFT)
+The first necessary isolation test is with AvCam Device MFT DISABLED,
+AvCam Bridge STOPPED, and OBS Virtual Camera STOPPED:
+  1. Launch Deep Live Cam v2.2.4, select physical C270, Start Live.
+  2. While it continues capturing, open Windows Camera and select C270.
+  3. If Windows Camera works, separately try Chrome getUserMedia/webcamtests.
+  4. Stop both clients afterward.
+Interpretation:
+  - If a second client fails with no AvCam involved, this is a capture
+    concurrency/share-mode limitation; Device MFT/Bridge changes cannot
+    themselves make the physical sensor available to two programs.
+  - If both clients can open the sensor with no AvCam, but fail with
+    Device MFT registered, investigate host pipeline/format/Frame Server
+    interactions. Record HRESULTs/events before changing any settings.
+  - Do not infer a feedback loop solely from a browser's 'camera busy'
+    message: failure to open occurs before receiving decoded frames.
+  - Starting Deep Live Cam before OBS publication does not solve a second
+    client's inability to open the camera; this was observed on the
+    owner's setup.
+A per-application bypass of Device MFT is not a documented guarantee and
+is not a substitute for shared physical camera capture. Avoid globally
+disabling Windows Frame Server or replacing physical Logitech drivers
+without a tested reversible implementation.
+
 DEEP LIVE CAM 2.2.4 SOURCE AUDIT (2026-10-21)
 Official tagged source: https://github.com/CRSD-Lau/deep-live-cam/tree/v2.2.4
 modules/video_capture.py: Windows uses pygrabber DirectShow enumeration,
