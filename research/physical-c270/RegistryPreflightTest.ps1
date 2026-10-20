@@ -22,6 +22,17 @@ $recursiveParameters = @($node.FindAll({
 if ($recursiveParameters.Count -gt 0) {
     throw 'Physical camera lookup must not enumerate restricted registry subtrees'
 }
+$childCalls = @($node.FindAll({
+    param($n)
+    $n -is [System.Management.Automation.Language.CommandAst] -and
+    $n.GetCommandName() -eq 'Get-ChildItem'
+}, $true))
+if ($childCalls.Count -gt 0) {
+    throw 'Camera interface lookup must not invoke provider child enumeration'
+}
+if ($node.Extent.Text -notmatch '\.GetSubKeyNames\(') {
+    throw 'Camera lookup must use RegistryKey.GetSubKeyNames()'
+}
 Invoke-Expression $node.Extent.Text
 $cameraClass = '{E5323777-F976-4F5B-9B55-B94699C46E44}'
 $real = 'USB\VID_046D&PID_0825&MI_00\7&241E5F6C&0&0000'
@@ -29,6 +40,8 @@ $stale = 'USB\VID_046D&PID_0825&MI_00\7&99999999&0&0000'
 $registryRoot = 'Registry::HKEY_CURRENT_USER\Software\AvCamPhysicalRegistryCI-' + [guid]::NewGuid().ToString('N')
 try {
     New-Item -Path $registryRoot -Force -ErrorAction Stop | Out-Null
+    # Sibling named Properties must never be opened or recursed into.
+    New-Item -Path (Join-Path $registryRoot 'Properties') -Force | Out-Null
     foreach ($instance in @($real,$stale)) {
         $encoded = $instance.Replace('\','#')
         $name = '##?#' + $encoded + '#' + $cameraClass
