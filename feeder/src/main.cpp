@@ -13,6 +13,7 @@
 
 #include "FrameSource.h"
 #include "MediaFoundationFrameSource.h"
+#include "DirectShowFrameSource.h"
 #include "TestPatternFrameSource.h"
 #include "VirtualCameraProtocol.h"
 
@@ -118,6 +119,7 @@ void PrintUsage()
         << L"Usage:\n"
         << L"  AvCamFeeder.exe --source test\n"
         << L"  AvCamFeeder.exe --source obs [--device-name \"OBS Virtual Camera\"]\n"
+        << L"  AvCamFeeder.exe --source obs-dshow [--device-name \"OBS Virtual Camera\"]\n"
         << L"  AvCamFeeder.exe --list-sources\n";
 }
 
@@ -156,7 +158,8 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
         return false;
     }
 
-    if (options.source != L"test" && options.source != L"obs")
+    if (options.source != L"test" && options.source != L"obs" &&
+        options.source != L"obs-dshow")
     {
         std::wcerr << L"Unsupported source: " << options.source << L"\n";
         PrintUsage();
@@ -168,6 +171,10 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
 
 std::unique_ptr<IFrameSource> CreateFrameSource(const Options& options)
 {
+    if (options.source == L"obs-dshow")
+    {
+        return std::make_unique<DirectShowFrameSource>(options.deviceName);
+    }
     if (options.source == L"obs")
     {
         return std::make_unique<MediaFoundationFrameSource>(options.deviceName);
