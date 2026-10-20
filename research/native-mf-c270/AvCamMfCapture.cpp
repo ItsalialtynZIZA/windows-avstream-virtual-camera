@@ -202,9 +202,11 @@ bool ExtractBgr(IMFSample* sample, int width,int height,std::vector<uint8_t>& ds
         if (currentLen<static_cast<DWORD>(width*height*4)) {
             buffer->Unlock();return false;
         }
-        // RGB32 video without IMF2DBuffer normally has bottom-up row layout.
-        // Lock2D provides scan-line orientation and signed stride explicitly.
-        stride=width*4;scan=raw;
+        // Media Foundation RGB32 contiguous buffers use bottom-up image
+        // storage by default. Point at the visual top row with negative
+        // stride; IMF2DBuffer::Lock2D already supplies its own orientation.
+        stride=-(width*4);
+        scan=raw+static_cast<size_t>(height-1)*width*4;
     }
     const LONG pitch=std::abs(stride);
     if (!scan || pitch<width*4) {
