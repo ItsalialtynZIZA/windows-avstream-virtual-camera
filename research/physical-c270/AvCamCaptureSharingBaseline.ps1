@@ -37,5 +37,20 @@ Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     } |
     Select-Object ProcessId,Name,ExecutablePath |
     Format-Table -AutoSize | Out-Host
+Write-Host '=== DEEP LIVE CAM LOADED CAMERA MODULES (BEST EFFORT) ==='
+$deep = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.ProcessName -match '(?i)DeepLiveCam'
+})
+foreach ($process in $deep) {
+    Write-Host ("DEEP_PROCESS={0};PID={1}" -f $process.ProcessName, $process.Id)
+    try {
+        $loaded = @($process.Modules | Where-Object {
+            $_.ModuleName -match '(?i)opencv_videoio|opencv_world|mfplat|mfreadwrite|mf.dll|quartz|ksproxy|devenum|qedit|vidcap|dshow|ksuser'
+        } | Select-Object ModuleName,FileName)
+        if ($loaded.Count -eq 0) { Write-Host 'DEEP_CAMERA_MODULES=NONE_VISIBLE' }
+        else { $loaded | Format-Table -AutoSize | Out-Host }
+    } catch { Write-Host ("DEEP_MODULE_SCAN_ERROR={0}" -f $_.Exception.Message) }
+}
+Write-Host 'NOTE: Loaded modules indicate available backends, not necessarily the active capture backend.'
 Write-Host 'NOTE: Process and service listings cannot alone prove who owns the KS capture pin.'
 Write-Host 'BASELINE_COMPLETE_NO_SETTINGS_CHANGED'
