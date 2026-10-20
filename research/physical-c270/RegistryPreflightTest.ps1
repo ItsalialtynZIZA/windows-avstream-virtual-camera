@@ -33,6 +33,23 @@ if ($childCalls.Count -gt 0) {
 if ($node.Extent.Text -notmatch '\.GetSubKeyNames\(') {
     throw 'Camera lookup must use RegistryKey.GetSubKeyNames()'
 }
+# GUI-subsystem regsvr32 cannot be called with an unchecked LASTEXITCODE.
+$allText = [IO.File]::ReadAllText($scriptPath)
+if ($allText -match '\$LASTEXITCODE') {
+    throw 'Installer must not read LASTEXITCODE from GUI regsvr32.exe'
+}
+$registerFunction = $ast.Find({
+    param($n)
+    $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+    $n.Name -eq 'Invoke-AvCamRegsvr32'
+}, $true)
+if (-not $registerFunction) { throw 'Missing synchronous regsvr32 helper' }
+if ($registerFunction.Extent.Text -notmatch '(?i)Start-Process' -or
+    $registerFunction.Extent.Text -notmatch '(?i)-Wait' -or
+    $registerFunction.Extent.Text -notmatch '(?i)-PassThru' -or
+    $registerFunction.Extent.Text -notmatch '\.ExitCode') {
+    throw 'regsvr32 must be waited on and its process ExitCode checked'
+}
 Invoke-Expression $node.Extent.Text
 $cameraClass = '{E5323777-F976-4F5B-9B55-B94699C46E44}'
 $real = 'USB\VID_046D&PID_0825&MI_00\7&241E5F6C&0&0000'
