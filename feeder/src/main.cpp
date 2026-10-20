@@ -396,7 +396,9 @@ bool WaitForFrame(IFrameSource& source, std::vector<std::byte>& packet, DWORD ma
 
 WinHandle FindAvCamFilter(std::vector<std::byte>& probePacket)
 {
-    const auto cameraFilters = FindDevicePaths(KSCATEGORY_VIDEO_CAMERA);
+    // Open only AvCam's explicitly registered private producer interface.
+    // Never submit a probe packet to unrelated physical or virtual cameras.
+    const auto cameraFilters = FindDevicePaths(GUID_DEVINTERFACE_AVCAM_FRAME_SINK);
 
     for (const auto& filterPath : cameraFilters)
     {
