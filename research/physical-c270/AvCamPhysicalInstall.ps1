@@ -24,34 +24,50 @@ function Get-PhysicalInterface {
         [Parameter(Mandatory=$true)][string]$InstanceId,
         [string]$RegistryRoot = $deviceClassRoot
     )
-    if (-not (Test-Path -LiteralPath $RegistryRoot -PathType Container)) {
+    # Get-ChildItem on a DeviceClasses parent opens protected children
+    # (e.g. Properties) even without -Recurse. Use the native RegistryKey
+    # API: GetSubKeyNames() returns names WITHOUT opening any child.
+    $match = [regex]::Match($RegistryRoot, '^(?i)Registry::(HKEY_LOCAL_MACHINE|HKEY_CURRENT_USER)\\(.+)$')
+    if (-not $match.Success) {
+        throw "Unsupported physical camera registry root: $RegistryRoot"
+    }
+    $hiveName = $match.Groups[1].Value.ToUpperInvariant()
+    $subPath = $match.Groups[2].Value
+    if ($hiveName -eq 'HKEY_LOCAL_MACHINE') {
+        $hive = [Microsoft.Win32.Registry]::LocalMachine
+    } else {
+        $hive = [Microsoft.Win32.Registry]::CurrentUser
+    }
+    $root = $hive.OpenSubKey($subPath, $false)
+    if ($null -eq $root) {
         throw "Camera interface registry root not found: $RegistryRoot"
     }
-    # DeviceClasses has protected subkeys such as #GLOBAL\Properties.
-    # Enumerate ONLY immediate camera interface keys; never use -Recurse.
-    # Match the complete present physical PnP instance, not merely VID/PID
-    # (otherwise an old, unplugged C270 could be selected by mistake).
-    $encodedInstance = $InstanceId.Replace('\', '#')
-    $expectedSuffix = '#' + $cameraClass
-    $interfaceKeys = @(Get-ChildItem -LiteralPath $RegistryRoot -ErrorAction Stop |
-        Where-Object {
-            $_.PSChildName.IndexOf($encodedInstance,
+    try {
+        $encodedInstance = $InstanceId.Replace('\', '#')
+        $expectedSuffix = '#' + $cameraClass
+        $names = @($root.GetSubKeyNames() | Where-Object {
+            $_.IndexOf($encodedInstance,
                 [StringComparison]::OrdinalIgnoreCase) -ge 0 -and
-            $_.PSChildName.EndsWith($expectedSuffix,
+            $_.EndsWith($expectedSuffix,
                 [StringComparison]::OrdinalIgnoreCase)
         })
-    $parameterKeys = @(
-        foreach ($interface in $interfaceKeys) {
-            # Open this one exact subkey; never traverse a protected sibling.
-            $parameterPath = Join-Path $interface.PSPath '#GLOBAL\Device Parameters'
-            if (Test-Path -LiteralPath $parameterPath -PathType Container) {
-                Get-Item -LiteralPath $parameterPath -ErrorAction Stop
+        $parameterKeys = @(
+            foreach ($name in $names) {
+                $relative = $name + '\#GLOBAL\Device Parameters'
+                $direct = $root.OpenSubKey($relative, $false)
+                if ($null -ne $direct) {
+                    $direct.Dispose()
+                    $parameterPath = "$RegistryRoot\$relative"
+                    Get-Item -LiteralPath $parameterPath -ErrorAction Stop
+                }
             }
-        }
-    )
+        )
+    } finally {
+        $root.Dispose()
+    }
     if ($parameterKeys.Count -ne 1) {
         Write-Host "Matched physical PnP instance: $InstanceId"
-        $interfaceKeys | ForEach-Object { Write-Host "Interface: $($_.Name)" }
+        $names | ForEach-Object { Write-Host "Interface: $_" }
         throw "Expected exactly one matching Logitech VIDEO_CAMERA Device Parameters key; found $($parameterKeys.Count). No changes made."
     }
     return $parameterKeys[0]
