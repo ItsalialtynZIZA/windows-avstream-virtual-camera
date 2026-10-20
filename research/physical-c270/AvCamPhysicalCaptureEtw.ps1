@@ -13,15 +13,17 @@ if (-not $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw 'Run PowerShell as administrator.'
 }
 $provider = '{A56F32CA-31E5-4C6D-95F2-74DB9DA141E9}'
-$session = 'AvCamPhysicalMftTrace'
+$session = 'AvCamPhysicalMftTrace-' + $PID
 $folder = Join-Path $env:TEMP ('AvCamPhysicalETW-' + (Get-Date -Format yyyyMMdd-HHmmss))
 New-Item -ItemType Directory -Path $folder -Force | Out-Null
 $etl = Join-Path $folder 'AvCamPhysicalMft.etl'
 $logman = Join-Path $env:WINDIR 'System32\logman.exe'
+$started = $false
 Write-Host "Capturing AvCam MFT ETW for $Seconds seconds; target=$Target."
 try {
     & $logman start $session -p $provider 0xFFFFFFFF 5 -o $etl -ets | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "logman could not start session, code $LASTEXITCODE" }
+    $started = $true
     if ($Target -eq 'DeepLiveCam') {
         Write-Host 'TRACE_STARTED: Launch Deep Live Cam NOW; attempt to start the physical Logitech C270 once. Note the exact error.'
         Write-Host 'Do not open Chrome or Windows Camera during the reproduction.'
@@ -30,7 +32,7 @@ try {
     }
     Start-Sleep -Seconds $Seconds
 } finally {
-    & $logman stop $session -ets 2>&1 | Out-Host
+    if ($started) { & $logman stop $session -ets 2>&1 | Out-Host }
 }
 Write-Host "ETL_FILE=$etl"
 if (Test-Path -LiteralPath $etl) {
