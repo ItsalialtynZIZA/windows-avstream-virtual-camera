@@ -8,6 +8,8 @@
 #include <mftransform.h>
 #include <wrl/client.h>
 #include <mutex>
+#include <atomic>
+#include <evntprov.h>
 #include <unordered_set>
 #include <vector>
 #include <cstring>
@@ -20,6 +22,44 @@ std::unordered_set<const void*> g_mjpegQueues;
 std::mutex g_mapMutex;
 HANDLE g_mapping = nullptr;
 const unsigned char* g_view = nullptr;
+
+std::once_flag g_registerOnce;
+REGHANDLE g_eventHandle = 0;
+// Logman: {A56F32CA-31E5-4C6D-95F2-74DB9DA141E9}
+const GUID kProvider = {0xa56f32ca, 0x31e5, 0x4c6d,
+    {0x95,0xf2,0x74,0xdb,0x9d,0xa1,0x41,0xe9}};
+std::atomic<unsigned long long> g_sampleChecks{0};
+std::atomic<unsigned long long> g_replaceSuccess{0};
+std::atomic<unsigned long long> g_mapFailures{0};
+
+void TraceRaw(const wchar_t* message) {
+    std::call_once(g_registerOnce, [] {
+        (void)EventRegister(&kProvider, nullptr, nullptr, &g_eventHandle);
+    });
+    if (g_eventHandle && message) {
+        (void)EventWriteString(g_eventHandle, 4, 0, message);
+    }
+}
+
+void TraceMediaType(const wchar_t* path, IMFMediaType* input,
+                    IMFMediaType* output, bool enabled) {
+    GUID inSubtype{}, outSubtype{};
+    UINT32 inW=0, inH=0, outW=0, outH=0;
+    if (input) {
+        (void)input->GetGUID(MF_MT_SUBTYPE, &inSubtype);
+        (void)MFGetAttributeSize(input, MF_MT_FRAME_SIZE, &inW, &inH);
+    }
+    if (output) {
+        (void)output->GetGUID(MF_MT_SUBTYPE, &outSubtype);
+        (void)MFGetAttributeSize(output, MF_MT_FRAME_SIZE, &outW, &outH);
+    }
+    wchar_t message[320]{};
+    (void)swprintf_s(message, L"%s active=%d input=%08X/%ux%u output=%08X/%ux%u",
+        path, enabled ? 1 : 0,
+        inSubtype.Data1, inW, inH, outSubtype.Data1, outW, outH);
+    TraceRaw(message);
+}
+
 
 bool IsMjpeg1280(IMFMediaType* type) {
     if (!type) return false;
@@ -37,7 +77,16 @@ bool EnsureMap() {
     if (g_view) return true;
     HANDLE mapping = OpenFileMappingW(FILE_MAP_READ, FALSE,
                                       AvCamPhysical::kMappingName);
-    if (!mapping) return false;
+    if (!mapping) {
+        const auto attempts = ++g_mapFailures;
+        if (attempts <= 3 || attempts % 300 == 0) {
+            wchar_t msg[128]{};
+            (void)swprintf_s(msg, L"OpenFileMapping failed error=%lu attempts=%llu",
+                GetLastError(), attempts);
+            TraceRaw(msg);
+        }
+        return false;
+    }
     const auto* view = static_cast<const unsigned char*>(
         MapViewOfFile(mapping, FILE_MAP_READ, 0, 0, AvCamPhysical::kTotalBytes));
     if (!view) {
@@ -76,10 +125,16 @@ bool ReadFreshJpeg(std::vector<unsigned char>& dest) {
 
 void AvCamSetQueueFormat(const void* queue, IMFMediaType* input,
                          IMFMediaType* output) {
-    std::lock_guard<std::mutex> lock(g_modesMutex);
-    g_mjpegQueues.erase(queue);
-    if (IsMjpeg1280(input) && IsMjpeg1280(output))
-        g_mjpegQueues.insert(queue);
+    const bool enabled = IsMjpeg1280(input) && IsMjpeg1280(output);
+    {
+        std::lock_guard<std::mutex> lock(g_modesMutex);
+        g_mjpegQueues.erase(queue);
+        if (enabled) g_mjpegQueues.insert(queue);
+    }
+    TraceMediaType(L"QueueFormat", input, output, enabled);
+}
+void AvCamTrace(const wchar_t* message) {
+    TraceRaw(message);
 }
 void AvCamRemoveQueue(const void* queue) {
     std::lock_guard<std::mutex> lock(g_modesMutex);
@@ -89,12 +144,23 @@ bool AvCamReplaceMjpegSample(const void* queue, IMFSample* original,
                              IMFSample** replacement) {
     if (!replacement || !original) return false;
     *replacement = nullptr;
+    const auto checks = ++g_sampleChecks;
+    bool active = false;
     {
         std::lock_guard<std::mutex> lock(g_modesMutex);
-        if (g_mjpegQueues.find(queue) == g_mjpegQueues.end()) return false;
+        active = (g_mjpegQueues.find(queue) != g_mjpegQueues.end());
+    }
+    if (!active) {
+        if (checks <= 3 || checks % 300 == 0)
+            TraceRaw(L"SampleSkipped: queue not negotiated as MJPG 1280x720");
+        return false;
     }
     std::vector<unsigned char> jpeg;
-    if (!ReadFreshJpeg(jpeg)) return false;
+    if (!ReadFreshJpeg(jpeg)) {
+        if (checks <= 3 || checks % 300 == 0)
+            TraceRaw(L"SampleSkipped: shared JPEG missing, invalid or stale");
+        return false;
+    }
     Microsoft::WRL::ComPtr<IMFSample> result;
     Microsoft::WRL::ComPtr<IMFMediaBuffer> buffer;
     if (FAILED(MFCreateSample(&result)) ||
@@ -111,5 +177,8 @@ bool AvCamReplaceMjpegSample(const void* queue, IMFSample* original,
     if (SUCCEEDED(original->GetSampleTime(&time))) result->SetSampleTime(time);
     if (SUCCEEDED(original->GetSampleDuration(&duration))) result->SetSampleDuration(duration);
     *replacement = result.Detach();
+    const auto replacements = ++g_replaceSuccess;
+    if (replacements <= 3 || replacements % 300 == 0)
+        TraceRaw(L"SampleReplaced: fresh OBS MJPEG frame supplied to Device MFT");
     return true;
 }
