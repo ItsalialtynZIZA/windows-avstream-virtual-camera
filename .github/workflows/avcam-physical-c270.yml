@@ -74,6 +74,21 @@ jobs:
           # a temporary ETW trace session and writes only trace output files.
           Write-Host 'AVCAM_PHYSICAL_C270_ETW_CAPTURE_PARSE_PASSED'
 
+      - name: Validate release controller and one-click installer
+        shell: powershell
+        run: |
+          $scripts = @('AvCamPhysicalControl.ps1','AvCamSetup.ps1')
+          foreach ($name in $scripts) {
+            $path = (Resolve-Path ("research/physical-c270/" + $name)).Path
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile(
+              $path,[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) { throw "Syntax failure in $name : $errors" }
+          }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File research/physical-c270/AvCamPhysicalControl.ps1 -Action Status
+          if ($LASTEXITCODE -ne 0) { throw 'AvCam release controller status failed in clean Windows' }
+          Write-Host 'AVCAM_C270_RELEASE_CONTROLLER_WINDOWS_POWERSHELL_PASSED'
       - name: Compile user-mode OBS bridge and device MFT COM DLL
         shell: pwsh
         run: |
@@ -83,15 +98,27 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Physical C270 CMake configure failed' }
           cmake --build build/physical-c270 --config Release --parallel 4
           if ($LASTEXITCODE -ne 0) { throw 'Physical C270 compile failed' }
+
+      - name: Windows bridge retained-mapping restart selftest
+        shell: powershell
+        run: |
+          & ./build/physical-c270/Release/AvCamPhysicalBridge.exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw "Bridge mapping restart selftest failed with $LASTEXITCODE" }
+          Write-Host 'AVCAM_C270_BRIDGE_RESTART_SELFTEST_CI_PASSED'
       - name: Validate scripts and prepare owner-only opt-in package
         shell: pwsh
         run: |
-          $out = 'artifacts/AvCam-Physical-C270-OBS-EXPERIMENTAL'
+          $out = 'artifacts/AvCam-Physical-C270-RC1'
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $files = @(
             'build/physical-c270/Release/AvCamPhysicalBridge.exe',
             'build/physical-c270/Release/AvCamPhysicalDeviceMft.dll',
             'research/physical-c270/AvCamPhysicalInstall.ps1',
+            'research/physical-c270/AvCamPhysicalControl.ps1',
+            'research/physical-c270/AvCamSetup.ps1',
+            'research/physical-c270/AvCamSetup.cmd',
+            'research/physical-c270/AvCamStatus.cmd',
+            'research/physical-c270/AvCamUninstall.cmd',
             'research/physical-c270/AvCamPhysicalDiagnostics.ps1',
             'research/physical-c270/AvCamPhysicalDiagnostic.ps1',
             'research/physical-c270/AvCamPhysicalCaptureEtw.ps1',
@@ -109,7 +136,7 @@ jobs:
           Get-ChildItem $out -File | Get-FileHash -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash)  $(Split-Path $_.Path -Leaf)" } |
             Set-Content (Join-Path $out 'SHA256SUMS.txt')
-          Write-Host 'AVCAM_PHYSICAL_C270_DMFT_AND_OBS_BRIDGE_BUILT_NO_DEVICE_MODIFICATIONS'
+          Write-Host 'AVCAM_PHYSICAL_C270_RELEASE_CANDIDATE_BUILT_AND_SELFTESTED'
       - uses: actions/upload-artifact@v4
         with:
           name: AvCam-Physical-C270-OBS-EXPERIMENTAL
