@@ -16,7 +16,7 @@ try {
 Write-Host '--- PHYSICAL PNP ---'
 try {
     Get-PnpDevice -PresentOnly | Where-Object {
-        $_.InstanceId -match '(?i)^USB\VID_046D&PID_0825'
+        $_.InstanceId -match '(?i)^USB\\VID_046D&PID_0825'
     } | ForEach-Object {
         Write-Host ('{0} | {1} | {2}' -f $_.Status, $_.InstanceId, $_.FriendlyName)
     }
@@ -93,7 +93,7 @@ try {
     $ptr = [IntPtr]::Zero
     $hr = [AvCamComActivationProbe]::CoCreateInstance(
         [ref]$clsid, [IntPtr]::Zero, 1, [ref]$iid, [ref]$ptr)
-    Write-Host ('CoCreateInstance(CLSID_AvCam,IUnknown) HRESULT=0x{0:X8}' -f [uint32]($hr -band 0xffffffffL))
+    Write-Host ('CoCreateInstance(CLSID_AvCam,IUnknown) HRESULT=0x{0:X8}' -f [BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$hr), 0))
     if ($ptr -ne [IntPtr]::Zero) { [void][Runtime.InteropServices.Marshal]::Release($ptr) }
 } catch { Write-Warning ('COM probe failed: ' + $_.Exception.Message) }
 Write-Host 'AVCAM_PHYSICAL_DIAGNOSTIC_FINISHED_NO_SYSTEM_CHANGES'
