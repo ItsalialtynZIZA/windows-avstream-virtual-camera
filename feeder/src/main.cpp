@@ -434,6 +434,26 @@ int wmain(int argc, wchar_t* argv[])
 
     while (g_Running.load())
     {
+        // Do not open OBS while the AvCam sink is absent. This keeps the
+        // camera source free and avoids needless producer reinitialization.
+        const auto availableSinks = FindDevicePaths(GUID_DEVINTERFACE_AVCAM_FRAME_SINK);
+        if (availableSinks.empty())
+        {
+            if (sourceStarted)
+            {
+                source->Stop();
+                sourceStarted = false;
+            }
+            if (!announcedTransportWaiting)
+            {
+                std::wcout << L"Waiting for AvCam sink interface...\\n";
+                announcedTransportWaiting = true;
+            }
+            Sleep(1000);
+            continue;
+        }
+        announcedTransportWaiting = false;
+
         if (!sourceStarted)
         {
             if (!source->Start())
