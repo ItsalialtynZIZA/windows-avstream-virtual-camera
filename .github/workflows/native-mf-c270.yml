@@ -30,6 +30,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Native MF C ABI smoke failed' }
           if (-not (Test-Path 'native-mf-build/Release/AvCamMfCapture.dll')) { throw 'Native MF DLL missing' }
           Write-Host 'AVCAM_NATIVE_MF_C270_COMPILED_AND_SMOKE_PASSED'
+      - name: Upload native DLL independently of CUDA application packaging
+        uses: actions/upload-artifact@v4
+        with:
+          name: AvCamMfCapture-Windows-x64
+          path: |
+            native-mf-build/Release/AvCamMfCapture.dll
+            native-mf-build/Release/AvCamMfCaptureSmoke.exe
+          retention-days: 14
+          if-no-files-found: error
       - name: Checkout pinned Deep Live Cam Studio v2.2.4
         uses: actions/checkout@v4
         with:
