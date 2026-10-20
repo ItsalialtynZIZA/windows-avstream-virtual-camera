@@ -42,13 +42,20 @@ STDMETHODIMP_(VOID) CPinQueue::InsertInternal( _In_ IMFSample *pSample )
     // Never allow AvCam allocation/metadata exceptions to escape the
     // Microsoft sample's COM method before its own ExceptionBoundary.
     ComPtr<IMFSample> avcamSample;
+    IMFSample* const originalSample = pSample;
+    bool useReplacement = false;
     try {
-        if (AvCamReplaceMjpegSample(this, pSample, avcamSample.GetAddressOf()))
-            pSample = avcamSample.Get();
+        useReplacement = AvCamReplaceMjpegSample(
+            this, originalSample, avcamSample.GetAddressOf());
     } catch (...) {
+        // Do not change pSample inside the try block: Reset() might otherwise
+        // free the replacement while pSample still points to it.
         AvCamTrace(L"SampleSkipped: replacement exception; original frame retained");
         avcamSample.Reset();
+        useReplacement = false;
     }
+    if (useReplacement && avcamSample)
+        pSample = avcamSample.Get();
     HRESULT hr = ExceptionBoundary([&]()
 '@
 Replace-Once $helpers @'
