@@ -64,6 +64,7 @@ class VideoCapturer:
         self._handle = ctypes.c_void_p()
         self._frame = None
         self._failures = 0
+        self._blocked_close = False
         self._start_profile = (640, 480, 30)
         self.actual_width = 0
         self.actual_height = 0
@@ -96,6 +97,9 @@ class VideoCapturer:
 
     def start(self, width: int = 640, height: int = 480, fps: int = 30) -> bool:
         with self._mutex:
+            if self._blocked_close:
+                print("[DLC.MF] blocked camera thread; restart application before reopening", flush=True)
+                return False
             self.release()
             # Request USB-safe VGA; the native reader selects an actual
             # supported C270 media type and outputs decoded BGR frames.
@@ -180,6 +184,8 @@ class VideoCapturer:
 
     def recover(self) -> bool:
         # Bounded retry only; upstream UI capture worker owns this lifecycle.
+        if self._blocked_close:
+            return False
         params = self._start_profile
         self.release()
         time.sleep(0.25)
@@ -192,8 +198,8 @@ class VideoCapturer:
             if self._native and self._handle.value:
                 outcome = self._native.AvmfClose(self._handle)
                 if outcome:
-                    print("[DLC.MF] native camera worker did not exit in 3s; "
-                          "detached without killing the device thread", flush=True)
+                    self._blocked_close = True
+                    print("[DLC.MF] driver blocked during close; restart the application", flush=True)
             self._native = None
             self._handle = ctypes.c_void_p()
             self._frame = None
