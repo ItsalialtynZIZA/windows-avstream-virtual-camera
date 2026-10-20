@@ -37,7 +37,7 @@ target_compile_definitions(AvCamPhysicalDeviceMft PRIVATE
   SECURITY_WIN32 MFT_UNIQUE_METHOD_NAMES MF_DEVICEMFT_ALLOW_MFT0_LOAD)
 target_link_libraries(AvCamPhysicalDeviceMft PRIVATE
   onecore d2d1 mfcore mfplat mfuuid uuid ole32 oleaut32
-  mfreadwrite windowscodecs shlwapi)
+  mfreadwrite windowscodecs shlwapi advapi32)
 if(MSVC)
   target_compile_options(AvCamPhysicalBridge PRIVATE /W4 /permissive- /utf-8)
   target_compile_options(AvCamPhysicalDeviceMft PRIVATE /W3 /utf-8)
