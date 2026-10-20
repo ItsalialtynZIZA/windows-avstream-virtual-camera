@@ -463,7 +463,7 @@ int wmain(int argc, wchar_t* argv[])
             std::wcerr << L"OBS_CHECK source_open=failed\n";
             return 4;
         }
-        std::uint64_t frames = 0, changed = 0, failures = 0;
+        std::uint64_t frames = 0, changed = 0, failures = 0, totalFailures = 0;
         std::uint64_t previous = 0;
         bool havePrevious = false;
         const auto deadline = std::chrono::steady_clock::now() +
@@ -473,7 +473,7 @@ int wmain(int argc, wchar_t* argv[])
             if (!FillPacketFromSource(*source, packet))
             {
                 ++failures;
-                if (failures >= 5) break;
+                ++totalFailures;
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
                 continue;
             }
@@ -496,6 +496,7 @@ int wmain(int argc, wchar_t* argv[])
         std::wcout << L"OBS_CHECK frames=" << frames
                    << L" changed=" << changed
                    << L" consecutive_failures=" << failures
+                   << L" total_failures=" << totalFailures
                    << L" duration_seconds=" << options.checkSeconds << L"\n";
         return frames > 0 ? 0 : 5;
     }
