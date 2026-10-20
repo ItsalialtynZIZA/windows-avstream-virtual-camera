@@ -54,6 +54,38 @@ Replace-Once $helpers @'
 
     ComPtr<CNullTee> spNulltee = new (std::nothrow) CNullTee(this);
 '@
+# On modern Windows a sample queue can use the allocator-mode path, not
+# RecreateTee(). Both paths must record the negotiated media format.
+Replace-Once $helpers @'
+    Ctee::ReleaseTee(m_spTeer);// Should release the reference
+
+    ComPtr<CNullTee> spNulltee = new (std::nothrow) CNullTee(this);
+'@ @'
+    Ctee::ReleaseTee(m_spTeer);// Should release the reference
+    AvCamSetQueueFormat(this, inMediatype, outMediatype);
+
+    ComPtr<CNullTee> spNulltee = new (std::nothrow) CNullTee(this);
+'@
+
+# Make it possible to distinguish COM registration/activation from an
+# actual camera pipeline calling IMFDeviceTransform::InitializeTransform.
+$mftImpl = Join-Path $base 'multipinmft.cpp'
+$mftContent = [IO.File]::ReadAllText($mftImpl)
+$mftContent = '#include "AvCamPhysicalHook.h"' + [Environment]::NewLine + $mftContent
+[IO.File]::WriteAllText($mftImpl,$mftContent,[Text.UTF8Encoding]::new($false))
+Replace-Once $mftImpl @'
+STDMETHODIMP CMultipinMft::InitializeTransform ( 
+    _In_ IMFAttributes *pAttributes
+    )
+{
+'@ @'
+STDMETHODIMP CMultipinMft::InitializeTransform ( 
+    _In_ IMFAttributes *pAttributes
+    )
+{
+    AvCamTrace(L"InitializeTransform called by camera pipeline");
+'@
+
 $common=Join-Path $base 'common.h'
 # Microsoft's reference relies on WPP-generated check macros. The CMake
 # standalone build runs without WPP, so enable upstream's documented
