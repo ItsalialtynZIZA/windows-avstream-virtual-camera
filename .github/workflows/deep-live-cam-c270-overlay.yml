@@ -1,0 +1,62 @@
+name: Deep Live Cam C270 compact EXE hotfix
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev/manual-vhci]
+    paths:
+      - ".github/workflows/deep-live-cam-c270-overlay.yml"
+permissions:
+  actions: read
+  contents: read
+jobs:
+  extract-executables:
+    runs-on: windows-2022
+    timeout-minutes: 40
+    steps:
+      - name: Checkout user-safe installation and restoration scripts
+        uses: actions/checkout@v4
+      - name: Download previously successful full CUDA build
+        uses: actions/download-artifact@v4
+        with:
+          name: DeepLiveCamStudio-2.2.4-C270-CaptureFix-EXPERIMENTAL
+          run-id: 39408546854
+          github-token: ${{ github.token }}
+          repository: ItsalialtynZIZA/windows-avstream-virtual-camera
+          path: full
+      - name: Extract two EXEs only; retain original app runtimes
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $inner = Join-Path $PWD 'full\DeepLiveCamStudio-2.2.4-C270-CaptureFix-EXPERIMENTAL.zip'
+          if (-not (Test-Path -LiteralPath $inner -PathType Leaf)) { throw "Full artifact ZIP missing: $inner" }
+          $dir = Join-Path $PWD 'overlay'
+          New-Item -ItemType Directory -Path $dir -Force | Out-Null
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [IO.Compression.ZipFile]::OpenRead($inner)
+          try {
+            foreach ($name in @('DeepLiveCamStudio.exe', 'DeepLiveCamStudioCLI.exe')) {
+              $entry = $zip.GetEntry($name)
+              if ($null -eq $entry) { throw "Full artifact missing $name" }
+              [IO.Compression.ZipFileExtensions]::ExtractToFile($entry,(Join-Path $dir $name),$true)
+              Write-Host ("PATCHED_EXE {0}: {1} bytes" -f $name, (Get-Item (Join-Path $dir $name)).Length)
+            }
+          } finally { $zip.Dispose() }
+          Copy-Item research/deep-live-cam-c270/Install-C270Hotfix.ps1 -Destination $dir
+          Copy-Item research/deep-live-cam-c270/Install-C270Hotfix.cmd -Destination $dir
+          Copy-Item research/deep-live-cam-c270/Restore-C270Hotfix.cmd -Destination $dir
+          Copy-Item research/deep-live-cam-c270/C270_OVERLAY_README.txt -Destination $dir
+          foreach ($name in @('DeepLiveCamStudio.exe', 'DeepLiveCamStudioCLI.exe')) {
+            $sha=(Get-FileHash -LiteralPath (Join-Path $dir $name) -Algorithm SHA256).Hash
+            Write-Host "OVERLAY_SHA256 $name $sha"
+          }
+          [IO.Compression.ZipFile]::CreateFromDirectory(
+            $dir,(Join-Path $PWD 'DeepLiveCamStudio-2.2.4-C270-EXE-Hotfix.zip'),
+            [IO.Compression.CompressionLevel]::Optimal,$false)
+          Write-Host 'DLC_C270_COMPACT_REPAIR_BUNDLE_READY'
+      - name: Upload compact hotfix bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeepLiveCamStudio-2.2.4-C270-EXE-Hotfix
+          path: DeepLiveCamStudio-2.2.4-C270-EXE-Hotfix.zip
+          retention-days: 7
+          if-no-files-found: error
