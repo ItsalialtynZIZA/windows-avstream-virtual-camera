@@ -14,6 +14,8 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstring>
+#include <cwctype>
+#include <cstdlib>
 #include <mutex>
 #include <new>
 #include <string>
@@ -44,6 +46,7 @@ struct Capture {
     std::wstring error;
     std::wstring description;
     int width=0, height=0, fps=0;
+    std::atomic<bool> completed{false};
     std::vector<uint8_t> pixels;
     uint64_t sequence=0, delivered=0;
 };
@@ -118,12 +121,15 @@ bool ConfigureReader(IMFMediaSource* source, int desiredWidth,int desiredHeight,
     ComPtr<IMFAttributes> attrs;
     HRESULT hr=MFCreateAttributes(&attrs,2);
     if (FAILED(hr)) { error=L"MFCreateAttributes: "+HrText(hr);return false; }
-    // Source Reader inserts built-in video processing and decoding transforms.
-    (void)attrs->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING,TRUE);
+    // Permit decoder/video processor MFTs; check the HRESULT rather than ignoring it.
+    hr=attrs->SetUINT32(MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING,TRUE);
+    if (FAILED(hr)) { error=L"Enable MF video processing: "+HrText(hr);return false; }
     hr=MFCreateSourceReaderFromMediaSource(source,attrs.Get(),&reader);
     if (FAILED(hr)) {error=L"MFCreateSourceReaderFromMediaSource: "+HrText(hr); return false;}
-    (void)reader->SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS,FALSE);
-    (void)reader->SetStreamSelection(kStream,TRUE);
+    hr=reader->SetStreamSelection(MF_SOURCE_READER_ALL_STREAMS,FALSE);
+    if (FAILED(hr)) {error=L"Disable reader streams: "+HrText(hr);return false;}
+    hr=reader->SetStreamSelection(kStream,TRUE);
+    if (FAILED(hr)) {error=L"Select camera stream: "+HrText(hr);return false;}
     std::vector<Mode> choices;
     for (DWORD i=0;i<128;++i) {
         ComPtr<IMFMediaType> native;
@@ -140,6 +146,22 @@ bool ConfigureReader(IMFMediaSource* source, int desiredWidth,int desiredHeight,
     }
     std::sort(choices.begin(),choices.end(),[](const Mode& a,const Mode& b){return a.score>b.score;});
     for (const Mode& m:choices) {
+        // Negotiate a device-native mode first. Requesting RGB32 alone does
+        // not guarantee that the intended USB mode was selected.
+        ComPtr<IMFMediaType> native;
+        for (DWORD i=0;i<128;++i) {
+            ComPtr<IMFMediaType> candidate;
+            HRESULT e=reader->GetNativeMediaType(kStream,i,&candidate);
+            if (e==MF_E_NO_MORE_TYPES) break;
+            if (FAILED(e)) continue;
+            UINT32 w=0,h=0,n=0,d=0; GUID t{};
+            if (FAILED(MFGetAttributeSize(candidate.Get(),MF_MT_FRAME_SIZE,&w,&h)) ||
+                FAILED(candidate->GetGUID(MF_MT_SUBTYPE,&t))) continue;
+            (void)MFGetAttributeRatio(candidate.Get(),MF_MT_FRAME_RATE,&n,&d);
+            if (w==m.width && h==m.height && t==m.subtype &&
+                n==m.fpsN && d==m.fpsD) {native=candidate;break;}
+        }
+        if (!native || FAILED(reader->SetCurrentMediaType(kStream,nullptr,native.Get()))) continue;
         ComPtr<IMFMediaType> output;
         hr=MFCreateMediaType(&output);
         if (FAILED(hr)) continue;
@@ -151,7 +173,16 @@ bool ConfigureReader(IMFMediaSource* source, int desiredWidth,int desiredHeight,
                     m.fpsN ? m.fpsN : (UINT32)desiredFps,m.fpsD ? m.fpsD : 1);
         (void)output->SetUINT32(MF_MT_INTERLACE_MODE,MFVideoInterlace_Progressive);
         hr=reader->SetCurrentMediaType(kStream,nullptr,output.Get());
-        if (SUCCEEDED(hr)) {selected=m;return true;}
+        if (SUCCEEDED(hr)) {
+            ComPtr<IMFMediaType> negotiated;
+            UINT32 w=0,h=0; GUID subtype{};
+            if (FAILED(reader->GetCurrentMediaType(kStream,&negotiated)) ||
+                FAILED(MFGetAttributeSize(negotiated.Get(),MF_MT_FRAME_SIZE,&w,&h)) ||
+                FAILED(negotiated->GetGUID(MF_MT_SUBTYPE,&subtype)) ||
+                subtype!=MFVideoFormat_RGB32 || w!=m.width || h!=m.height)
+                continue;
+            selected=m;return true;
+        }
     }
     error=L"Cannot negotiate MF RGB32 output for native C270 modes; last HRESULT="+HrText(hr);
     return false;
@@ -255,6 +286,7 @@ void Worker(Capture* cap,int width,int height,int fps) {
     }
     MFShutdown();
     CoUninitialize();
+    cap->completed.store(true);
     cap->cv.notify_all();
 }
 } // namespace
@@ -288,7 +320,11 @@ extern "C" __declspec(dllexport) int __cdecl AvmfOpen(
         *actualWidth=c->width;*actualHeight=c->height;
         *captureOut=c;
         return 0;
-    } catch (...) {delete c;return -5;}
+    } catch (...) {
+        c->stopping.store(true);
+        if (c->worker.joinable()) c->worker.join();
+        delete c;return -5;
+    }
 }
 extern "C" __declspec(dllexport) int __cdecl AvmfRead(
     void* capture,void* out, unsigned bytes,int timeoutMs) {
