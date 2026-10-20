@@ -134,7 +134,36 @@ int wmain(int argc, wchar_t** argv) {
                 return 24;
             }
         }
+        // A stopped OBS publisher must not leave a permanently fresh
+        // frame in the mapping. The Device MFT uses the same monotonic
+        // timestamp rule before replacing a physical Logitech sample.
+        HANDLE verify = OpenFileMappingW(FILE_MAP_READ, FALSE,
+            AvCamPhysical::kMappingName);
+        // The retained handle keeps the section alive through the restart.
+        if (!verify) {
+            CloseHandle(retainedReader);
+            return 25;
+        }
+        const auto* view = static_cast<const BYTE*>(
+            MapViewOfFile(verify, FILE_MAP_READ, 0, 0,
+                          sizeof(AvCamPhysical::FrameHeader)));
+        if (!view) {
+            CloseHandle(verify);
+            CloseHandle(retainedReader);
+            return 26;
+        }
+        const auto* header =
+            reinterpret_cast<const AvCamPhysical::FrameHeader*>(view);
+        const std::uint64_t stamp = header->timestamp;
+        const std::uint64_t now = GetTickCount64() * 10000ull;
+        const bool published = header->magic == AvCamPhysical::kMagic &&
+            header->version == AvCamPhysical::kVersion &&
+            header->length == 32 && (header->sequence & 1) == 0 &&
+            stamp <= now && now - stamp <= 20000000ull;
+        UnmapViewOfFile(view);
+        CloseHandle(verify);
         CloseHandle(retainedReader);
+        if (!published) return 27;
         std::puts("AVCAM_BRIDGE_MAPPING_RESTART_SELFTEST_PASSED");
         return 0;
     }
