@@ -380,6 +380,20 @@ void PrintStats(const AvCamTransportStats& stats)
         << L"\n";
 }
 
+// OBS's first sample is asynchronous and can arrive after the filter runs.
+// Do not tear down a healthy DirectShow graph on an ordinary no-frame poll.
+bool WaitForFrame(IFrameSource& source, std::vector<std::byte>& packet, DWORD maxWaitMs)
+{
+    const ULONGLONG deadline = GetTickCount64() + maxWaitMs;
+    do
+    {
+        if (FillPacketFromSource(source, packet)) return true;
+        if (!g_Running.load()) return false;
+        Sleep(25);
+    } while (GetTickCount64() < deadline);
+    return false;
+}
+
 WinHandle FindAvCamFilter(std::vector<std::byte>& probePacket)
 {
     const auto cameraFilters = FindDevicePaths(KSCATEGORY_VIDEO_CAMERA);
@@ -564,7 +578,7 @@ int wmain(int argc, wchar_t* argv[])
             continue;
         }
 
-        if (!FillPacketFromSource(*source, packet))
+        if (!WaitForFrame(*source, packet, 8000))
         {
             std::wcerr << L"Frame source lost. Reconnecting source...\n";
             source->Stop();
@@ -591,7 +605,7 @@ int wmain(int argc, wchar_t* argv[])
 
         while (g_Running.load())
         {
-            if (!FillPacketFromSource(*source, packet))
+            if (!WaitForFrame(*source, packet, 1500))
             {
                 std::wcerr << L"Frame source lost. Reconnecting source...\n";
                 source->Stop();
