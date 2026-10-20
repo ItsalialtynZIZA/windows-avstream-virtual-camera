@@ -66,6 +66,7 @@ jobs:
                             'Starting live preview only; capture this window in OBS.')
           [IO.File]::WriteAllText((Join-Path $PWD $uiPath),$ui,[Text.UTF8Encoding]::new($false))
           python -m py_compile upstream/modules/video_capture.py upstream/modules/ui.py
+          python -m compileall -q upstream/modules
           if ($LASTEXITCODE -ne 0) { throw 'Python capture or UI compile failed' }
           Write-Host 'AVCAM_NATIVE_MF_C270_SOURCE_INTEGRATED'
       - name: Build packaged Deep Live Cam CUDA x64 using locked dependencies
@@ -76,6 +77,7 @@ jobs:
           & .\build\windows\build_windows.ps1 -Python (Get-Command python).Source -Accelerator Cuda
           if ($LASTEXITCODE -ne 0) { throw 'CUDA Studio build failed' }
           if (-not (Test-Path .\dist\DeepLiveCamStudio\DeepLiveCamStudio.exe)) { throw 'GUI binary missing' }
+          if (-not (Test-Path .\dist\DeepLiveCamStudio\DeepLiveCamStudioCLI.exe)) { throw 'CLI binary missing' }
       - name: Bundle install rollback native DLL and rebuilt EXEs
         shell: powershell
         run: |
