@@ -11,6 +11,7 @@ $bridgeFile = Join-Path $installDir 'AvCamPhysicalBridge.exe'
 $controlFile = Join-Path $installDir 'AvCamPhysicalControl.ps1'
 $installFile = Join-Path $installDir 'AvCamPhysicalInstall.ps1'
 $expectedClsid = '{1DE4C92F-A801-45BB-9D5A-74723A8EF460}'
+. (Join-Path $PSScriptRoot 'AvCamPhysicalTaskIdentity.ps1')
 
 function Test-Admin {
     $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -40,15 +41,22 @@ function Assert-PhysicalRegistration {
 }
 function Assert-TaskOwner($task) {
     if ($null -eq $task) { return }
-    $current = [Security.Principal.WindowsIdentity]::GetCurrent()
-    if ($task.Principal.UserId -and
-        $task.Principal.UserId -ine $current.Name -and
-        $task.Principal.UserId -ine $current.User.Value) {
-        throw "A task with this name belongs to a different user: $($task.Principal.UserId)."
+    # Validate the executable before changing the task. A short user
+    # name alone is not proof of ownership.
+    $actions = @($task.Actions)
+    if ($actions.Count -ne 1 -or -not $actions[0].Execute) {
+        throw 'An unexpected scheduled task uses the AvCam task name. No changes made.'
     }
-    if ($task.Actions.Execute -and
-        [IO.Path]::GetFullPath($task.Actions.Execute) -ine [IO.Path]::GetFullPath($bridgeFile)) {
-        throw 'Another program is using the reserved AvCam scheduled-task name.'
+    $actualExe = [Environment]::ExpandEnvironmentVariables([string]$actions[0].Execute)
+    if (-not [IO.Path]::IsPathRooted($actualExe) -or
+        [IO.Path]::GetFullPath($actualExe) -ine [IO.Path]::GetFullPath($bridgeFile)) {
+        throw 'An unrelated scheduled task already uses AvCam task name. No changes made.'
+    }
+    $current = [Security.Principal.WindowsIdentity]::GetCurrent()
+    $principalName = [string]$task.Principal.UserId
+    if (-not $principalName -or
+        -not (Test-AvCamTaskPrincipal -TaskUserId $principalName -CurrentAccount $current.Name -CurrentSid $current.User.Value)) {
+        throw "AvCam task principal does not match current Windows account: $principalName. No changes made."
     }
 }
 function Elevate-IfNeeded {
@@ -106,7 +114,7 @@ Assert-TaskOwner $existingTask
 switch ($Action) {
     'Setup' {
         Assert-PhysicalRegistration
-        foreach ($name in @('AvCamPhysicalBridge.exe','AvCamPhysicalControl.ps1','AvCamPhysicalInstall.ps1')) {
+        foreach ($name in @('AvCamPhysicalBridge.exe','AvCamPhysicalControl.ps1','AvCamPhysicalInstall.ps1','AvCamPhysicalTaskIdentity.ps1')) {
             if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $name) -PathType Leaf)) {
                 throw "Missing package file: $name"
             }
@@ -134,6 +142,7 @@ switch ($Action) {
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AvCamPhysicalBridge.exe') -Destination $bridgeFile -Force
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AvCamPhysicalControl.ps1') -Destination $controlFile -Force
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AvCamPhysicalInstall.ps1') -Destination $installFile -Force
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AvCamPhysicalTaskIdentity.ps1') -Destination (Join-Path $installDir 'AvCamPhysicalTaskIdentity.ps1') -Force
         $account = [Security.Principal.WindowsIdentity]::GetCurrent().Name
         $principal = New-ScheduledTaskPrincipal -UserId $account -LogonType Interactive -RunLevel Highest
         $trigger = New-ScheduledTaskTrigger -AtLogOn -User $account
