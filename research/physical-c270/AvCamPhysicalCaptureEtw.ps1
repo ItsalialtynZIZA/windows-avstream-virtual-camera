@@ -45,7 +45,20 @@ if (Test-Path -LiteralPath $etl) {
             Write-Host ('ETW {0} {1}' -f $record.TimeCreated.ToString('HH:mm:ss'),$payload)
         }
         if ($records.Count -eq 0) {
-            Write-Warning 'No provider records decoded. Keep the ETL file for further analysis.'
+            Write-Warning 'No AvCam MFT events observed. This does not prove that Device MFT was never activated: the host may use a different capture pipeline or tracing may have failed.'
+            Write-Host 'DIAGNOSIS=NO_MFT_EVENTS_OBSERVED'
+            Write-Host 'Keep the ETL file for further analysis.'
+        } elseif ($Target -eq 'DeepLiveCam') {
+            $messages = @($records | ForEach-Object {
+                (@($_.Properties | ForEach-Object { [string]$_.Value }) -join ' ')
+            })
+            $initialized = @($messages | Where-Object { $_ -match 'InitializeTransform called' }).Count -gt 0
+            $formats = @($messages | Where-Object { $_ -match 'QueueFormat' }).Count
+            $replaced = @($messages | Where-Object { $_ -match 'SampleReplaced' }).Count
+            Write-Host ('DEEP_LIVE_MFT_INITIALIZED=' + $initialized)
+            Write-Host ('DEEP_LIVE_MFT_QUEUE_FORMAT_EVENTS=' + $formats)
+            Write-Host ('DEEP_LIVE_MFT_REPLACEMENT_EVENTS=' + $replaced)
+            Write-Host 'Note: these counts are only observed log events, not a complete frame count.'
         }
     } catch {
         Write-Warning ('Windows could not decode ETW payloads: ' + $_.Exception.Message)
