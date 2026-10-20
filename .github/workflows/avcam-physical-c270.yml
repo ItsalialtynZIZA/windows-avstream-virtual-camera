@@ -139,6 +139,6 @@ jobs:
           Write-Host 'AVCAM_PHYSICAL_C270_RELEASE_CANDIDATE_BUILT_AND_SELFTESTED'
       - uses: actions/upload-artifact@v4
         with:
-          name: AvCam-Physical-C270-OBS-EXPERIMENTAL
-          path: artifacts/AvCam-Physical-C270-OBS-EXPERIMENTAL/
+          name: AvCam-Physical-C270-RC1
+          path: artifacts/AvCam-Physical-C270-RC1/
           if-no-files-found: error
