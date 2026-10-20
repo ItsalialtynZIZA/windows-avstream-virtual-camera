@@ -169,6 +169,22 @@ jobs:
           name: AvCamFeeder-x64
           path: runtime/feeder
 
+      - name: Prepare integrated prototype launcher
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force runtime | Out-Null
+          Copy-Item integration/START_AVCAM.cmd runtime/START_AVCAM.cmd -Force
+          @'
+          AVCAM INTEGRATED PROTOTYPE (EXPERIMENTAL)
+          1. OBS Studio: set up a scene and click Start Virtual Camera.
+          2. If a compatible AvCam AVStream test driver is already installed, run START_AVCAM.cmd.
+          3. Open Windows Camera or Chrome, and select AvCam Virtual Camera.
+          4. Stop with Ctrl+C. Do not install test drivers on a production Windows system.
+          WARNING: The driver in driver/ is test-signed, may require Windows Test Mode,
+          and has NOT been validated end-to-end with this feeder. It is NOT auto-installed.
+          The Deep Live Cam app remains separate and is never modified by this bundle.
+          '@ | Set-Content -Path runtime/README-FIRST.txt -Encoding UTF8
+
       - name: Show runtime bundle contents
         shell: pwsh
         run: Get-ChildItem runtime -Recurse | Select-Object FullName, Length
