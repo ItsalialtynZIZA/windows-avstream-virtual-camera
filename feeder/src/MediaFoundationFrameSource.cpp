@@ -342,15 +342,31 @@ bool MediaFoundationFrameSource::ConfigureReader()
         return false;
     }
 
-    if (FAILED(MFCreateSourceReaderFromMediaSource(
-            mediaSource_.Get(),
-            readerAttributes.Get(),
-            &reader_)))
+    HRESULT readerResult = MFCreateSourceReaderFromMediaSource(
+        mediaSource_.Get(), readerAttributes.Get(), &reader_);
+    if (FAILED(readerResult))
+    {
+        // Some virtual cameras do not support the advanced processor.
+        // Retry the documented standard video-processing path instead.
+        readerAttributes->DeleteItem(MF_SOURCE_READER_ENABLE_ADVANCED_VIDEO_PROCESSING);
+        if (FAILED(readerAttributes->SetUINT32(
+                MF_SOURCE_READER_ENABLE_VIDEO_PROCESSING, TRUE)))
+        {
+            return false;
+        }
+        readerResult = MFCreateSourceReaderFromMediaSource(
+            mediaSource_.Get(), readerAttributes.Get(), &reader_);
+        if (FAILED(readerResult))
+        {
+            return false;
+        }
+    }
+
+    if (FAILED(reader_->SetStreamSelection(
+            static_cast<DWORD>(MF_SOURCE_READER_ALL_STREAMS), FALSE)))
     {
         return false;
     }
-
-    reader_->SetStreamSelection(static_cast<DWORD>(MF_SOURCE_READER_ALL_STREAMS), FALSE);
     if (FAILED(reader_->SetStreamSelection(static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM), TRUE)))
     {
         return false;
@@ -391,6 +407,16 @@ bool MediaFoundationFrameSource::ConfigureReader()
             static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
             nullptr,
             outputType.Get());
+    }
+    if (FAILED(setType))
+    {
+        // A virtual camera can reject optional progressive/aspect hints.
+        // The frame contract is enforced on the negotiated output below.
+        outputType->DeleteItem(MF_MT_PIXEL_ASPECT_RATIO);
+        outputType->DeleteItem(MF_MT_INTERLACE_MODE);
+        setType = reader_->SetCurrentMediaType(
+            static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM),
+            nullptr, outputType.Get());
     }
     if (FAILED(setType))
     {
@@ -512,6 +538,11 @@ bool MediaFoundationFrameSource::ReadFrame(
         if (!sample)
         {
             continue;
+        }
+
+        if (actualStream != static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM))
+        {
+            return false;
         }
 
         ComPtr<IMFMediaBuffer> buffer;
