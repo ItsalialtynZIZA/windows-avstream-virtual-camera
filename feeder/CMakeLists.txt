@@ -8,6 +8,7 @@ add_executable(AvCamFeeder
     src/main.cpp
     src/TestPatternFrameSource.cpp
     src/MediaFoundationFrameSource.cpp
+    src/DirectShowFrameSource.cpp
 )
 
 target_include_directories(AvCamFeeder PRIVATE
@@ -35,4 +36,6 @@ target_link_libraries(AvCamFeeder PRIVATE
     mfreadwrite
     mfuuid
     ole32
+    oleaut32
+    strmiids
 )
