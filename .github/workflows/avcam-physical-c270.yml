@@ -46,7 +46,7 @@ jobs:
       - name: Validate read-only C270 diagnostics in Windows PowerShell 5.1
         shell: powershell
         run: |
-          foreach ($filename in @('AvCamPhysicalDiagnostics.ps1','AvCamPhysicalDiagnostic.ps1')) {
+          foreach ($filename in @('AvCamPhysicalDiagnostics.ps1','AvCamPhysicalDiagnostic.ps1','AvCamPhysicalCaptureEtw.ps1')) {
             $script = (Resolve-Path ("research/physical-c270/" + $filename)).Path
             $tokens = $null
             $errors = $null
@@ -84,6 +84,7 @@ jobs:
             'research/physical-c270/AvCamPhysicalInstall.ps1',
             'research/physical-c270/AvCamPhysicalDiagnostics.ps1',
             'research/physical-c270/AvCamPhysicalDiagnostic.ps1',
+            'research/physical-c270/AvCamPhysicalCaptureEtw.ps1',
             'research/physical-c270/README_PHYSICAL_C270.txt'
           )
           foreach ($file in $files) {
