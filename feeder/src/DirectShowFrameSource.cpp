@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cwctype>
 #include <utility>
+#include <iostream>
 
 using Microsoft::WRL::ComPtr;
 namespace {
@@ -122,7 +123,16 @@ bool DirectShowFrameSource::ReadFrame(unsigned char* dst,std::size_t bytes,std::
     if (FAILED(grabberFilter_.As(&grabber))) return false;
     long length=0;
     HRESULT hr=grabber->GetCurrentBuffer(&length,nullptr);
-    if (FAILED(hr) || length<=0 || static_cast<std::uint64_t>(length)>4096ull*2160*4) return false;
+    if (FAILED(hr) || length<=0 || static_cast<std::uint64_t>(length)>4096ull*2160*4) {
+        static HRESULT lastReported = S_OK;
+        if (hr != lastReported) {
+            std::wcerr << L"DirectShow GetCurrentBuffer: hr=0x" << std::hex
+                       << static_cast<unsigned long>(hr) << std::dec
+                       << L" bytes=" << length << L"\\n";
+            lastReported = hr;
+        }
+        return false;
+    }
     const std::size_t pitch=((static_cast<std::size_t>(width_)*32+31)/32)*4;
     if (static_cast<std::size_t>(length)<pitch*static_cast<std::size_t>(height_)) return false;
     raw_.resize(static_cast<std::size_t>(length));
