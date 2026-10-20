@@ -89,6 +89,11 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File research/physical-c270/AvCamPhysicalControl.ps1 -Action Status
           if ($LASTEXITCODE -ne 0) { throw 'AvCam release controller status failed in clean Windows' }
           Write-Host 'AVCAM_C270_RELEASE_CONTROLLER_WINDOWS_POWERSHELL_PASSED'
+      - name: Regression check task identity against localized short account names
+        shell: powershell
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File research/physical-c270/TaskIdentityTest.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'AvCam Task Scheduler principal ownership regression failed' }
       - name: Compile user-mode OBS bridge and device MFT COM DLL
         shell: pwsh
         run: |
@@ -108,13 +113,15 @@ jobs:
       - name: Validate scripts and prepare owner-only opt-in package
         shell: pwsh
         run: |
-          $out = 'artifacts/AvCam-Physical-C270-RC2'
+          $out = 'artifacts/AvCam-Physical-C270-RC3'
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $files = @(
             'build/physical-c270/Release/AvCamPhysicalBridge.exe',
             'build/physical-c270/Release/AvCamPhysicalDeviceMft.dll',
             'research/physical-c270/AvCamPhysicalInstall.ps1',
             'research/physical-c270/AvCamPhysicalControl.ps1',
+            'research/physical-c270/AvCamPhysicalTaskIdentity.ps1',
+            'research/physical-c270/TaskIdentityTest.ps1',
             'research/physical-c270/AvCamSetup.ps1',
             'research/physical-c270/AvCamSetup.cmd',
             'research/physical-c270/AvCamStatus.cmd',
@@ -139,6 +146,6 @@ jobs:
           Write-Host 'AVCAM_PHYSICAL_C270_RELEASE_CANDIDATE_BUILT_AND_SELFTESTED'
       - uses: actions/upload-artifact@v4
         with:
-          name: AvCam-Physical-C270-RC2
-          path: artifacts/AvCam-Physical-C270-RC2/
+          name: AvCam-Physical-C270-RC3
+          path: artifacts/AvCam-Physical-C270-RC3/
           if-no-files-found: error
