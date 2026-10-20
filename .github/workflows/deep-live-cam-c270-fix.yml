@@ -1,0 +1,84 @@
+name: Deep Live Cam C270 capture fix experimental build
+on:
+  workflow_dispatch:
+  push:
+    branches: [dev/manual-vhci]
+    paths:
+      - "research/deep-live-cam-c270/**"
+      - ".github/workflows/deep-live-cam-c270-fix.yml"
+permissions:
+  contents: read
+concurrency:
+  group: dlc-c270-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  windows-c270:
+    runs-on: windows-2022
+    timeout-minutes: 100
+    steps:
+      - name: Checkout AvCam capture patch
+        uses: actions/checkout@v4
+      - name: Checkout exact Deep Live Cam 2.2.4 upstream source
+        uses: actions/checkout@v4
+        with:
+          repository: CRSD-Lau/deep-live-cam
+          ref: 617c733d42a10a2fcba036385e19d66fabcc2cc1
+          path: upstream
+          persist-credentials: false
+      - name: Install CPython 3.11.9 for pinned Windows build
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11.9
+          architecture: x64
+      - name: Expand and verify reviewed capture module
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $patch = Get-Content research/deep-live-cam-c270/video_capture.py.gz.b64 -Raw
+          $bytes = [Convert]::FromBase64String($patch.Trim())
+          $stream = New-Object System.IO.MemoryStream(,$bytes)
+          try {
+            $gzip = New-Object System.IO.Compression.GZipStream($stream,[IO.Compression.CompressionMode]::Decompress)
+            try {
+              $out = New-Object System.IO.MemoryStream
+              $gzip.CopyTo($out)
+              $target = Join-Path $PWD 'upstream/modules/video_capture.py'
+              [IO.File]::WriteAllBytes($target,$out.ToArray())
+            } finally { $gzip.Dispose() }
+          } finally { $stream.Dispose() }
+          $hash = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash
+          if ($hash -ine 'D23262CF628A6EB6F90685397DECE848ED682E0330BC985B938E63396583DF9B') {
+            throw "Video capturer module hash mismatch: $hash"
+          }
+          python -m py_compile "$target"
+          if ($LASTEXITCODE -ne 0) { throw 'Python syntax check failed' }
+          Write-Host 'DLC_C270_FALLBACK_SOURCE_SHA256_VERIFIED'
+      - name: Build independent CUDA executable bundle from locked upstream dependencies
+        shell: powershell
+        working-directory: upstream
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\build\windows\build_windows.ps1 -Python (Get-Command python).Source -Accelerator Cuda
+          if ($LASTEXITCODE -ne 0) { throw 'Windows Deep Live Cam build failed' }
+          if (-not (Test-Path .\dist\DeepLiveCamStudio\DeepLiveCamStudio.exe)) {
+            throw 'Expected patched Windows executable is missing'
+          }
+      - name: Package patched independent portable build
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $PWD 'upstream\dist\DeepLiveCamStudio'
+          Copy-Item research/deep-live-cam-c270/C270_HOTFIX_README.txt -Destination (Join-Path $dir 'C270_HOTFIX_README.txt')
+          Copy-Item upstream/modules/video_capture.py -Destination (Join-Path $dir 'C270_HOTFIX_SOURCE_video_capture.py')
+          $archive = Join-Path $PWD 'DeepLiveCamStudio-2.2.4-C270-CaptureFix-EXPERIMENTAL.zip'
+          python -c "import pathlib,zipfile,sys; root=pathlib.Path(sys.argv[1]); out=pathlib.Path(sys.argv[2]); z=zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=6,allowZip64=True); [(z.write(f,str(f.relative_to(root)))) for f in root.rglob('*') if f.is_file()]; z.close(); print('Archive:',out,'files:',len(zipfile.ZipFile(out).namelist()))" "$dir" "$archive"
+          if ($LASTEXITCODE -ne 0) { throw 'Packaging failed' }
+          $sha = (Get-FileHash $archive -Algorithm SHA256).Hash
+          Write-Host "PATCHED_PORTABLE_ZIP_SHA256=$sha"
+      - name: Upload independent build
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeepLiveCamStudio-2.2.4-C270-CaptureFix-EXPERIMENTAL
+          path: DeepLiveCamStudio-2.2.4-C270-CaptureFix-EXPERIMENTAL.zip
+          retention-days: 7
+          if-no-files-found: error
