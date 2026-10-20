@@ -167,6 +167,15 @@ int wmain(int argc, wchar_t** argv) {
         std::puts("AVCAM_BRIDGE_MAPPING_RESTART_SELFTEST_PASSED");
         return 0;
     }
+    // Optional staged-start diagnostic: start Deep Live Cam against the
+    // unmodified physical stream before allowing OBS publication.
+    // No camera configuration is changed by this switch.
+    const bool waitForEnter =
+        argc == 2 && wcscmp(argv[1], L"--wait-for-enter") == 0;
+    if (argc > 1 && !waitForEnter) {
+        std::puts("Usage: AvCamPhysicalBridge.exe [--self-test|--wait-for-enter]");
+        return 2;
+    }
     SetConsoleCtrlHandler(CtrlHandler, TRUE);
     const HRESULT init = CoInitializeEx(nullptr, COINIT_MULTITHREADED);
     if (FAILED(init)) return 10;
@@ -199,6 +208,19 @@ int wmain(int argc, wchar_t** argv) {
     std::puts("AvCam Physical Bridge: persistent OBS watcher -> 1280x720 MJPEG.");
     std::puts("No direct capture of the physical Logitech C270 is performed by Bridge.");
     std::puts("Waiting for OBS Virtual Camera; press Ctrl+C to stop.");
+    if (waitForEnter) {
+        std::puts("STAGED_START: Start Deep Live Cam and verify its physical C270 input");
+        std::puts("before continuing. Press ENTER to permit OBS frame publication.");
+        std::puts("Press Ctrl+C instead to leave the camera unchanged.");
+        // Never enter the publishing loop until explicitly released.
+        // CLI option is intended for an interactive operator console only.
+        (void)getchar();
+        if (g_stop.load()) {
+            CoUninitialize();
+            return 0;
+        }
+        std::puts("STAGED_START_RELEASED: OBS publication may now begin.");
+    }
     while (!g_stop.load()) {
         ObsSharedMemorySource source;
         if (!source.Start()) {
