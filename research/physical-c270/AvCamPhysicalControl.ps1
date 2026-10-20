@@ -112,11 +112,23 @@ switch ($Action) {
             }
         }
         New-Item -ItemType Directory -Path $installDir -Force | Out-Null
-        $running = @(Get-CimInstance Win32_Process -Filter "Name='AvCamPhysicalBridge.exe'" -ErrorAction SilentlyContinue)
-        foreach ($p in $running) {
-            if ($p.ExecutablePath -ieq $bridgeFile) {
-                throw 'Installed bridge is still running. Choose AvCam - Stop before updating.'
-            }
+        # Updating only the already-owned scheduled task is safe. Stop
+        # its process before replacing the EXE; no webcam process,
+        # OBS, or Deep Live Cam is terminated or suspended here.
+        if ($null -ne $existingTask) {
+            Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+        }
+        $running = @()
+        for ($attempt = 0; $attempt -lt 12; $attempt++) {
+            $running = @(Get-CimInstance Win32_Process -Filter "Name='AvCamPhysicalBridge.exe'" -ErrorAction SilentlyContinue)
+            $installedRunning = @($running | Where-Object {
+                $_.ExecutablePath -ieq $bridgeFile
+            })
+            if ($installedRunning.Count -eq 0) { break }
+            Start-Sleep -Seconds 1
+        }
+        if ($installedRunning.Count -gt 0) {
+            throw 'AvCam scheduled task stopped but its EXE is still in use. Retry after it exits.'
         }
         # Do not replace the Device MFT DLL currently loaded by camera services.
         Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AvCamPhysicalBridge.exe') -Destination $bridgeFile -Force
@@ -129,8 +141,11 @@ switch ($Action) {
         $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable
         $null = Register-ScheduledTask -TaskName $taskName -Action $taskAction -Trigger $trigger -Principal $principal -Settings $settings -Description 'AvCam OBS camera watcher (Logitech C270 Media Foundation)' -Force
         Install-Shortcuts
-        if ($running.Count -gt 0) {
-            Write-Warning 'The previous Bridge is running. Stop it with Ctrl+C, then choose AvCam - Start.'
+        $external = @($running | Where-Object {
+            $_.ExecutablePath -and $_.ExecutablePath -ine $bridgeFile
+        })
+        if ($external.Count -gt 0) {
+            Write-Warning 'Another manually started AvCam Bridge is active. Close that window with Ctrl+C, then choose AvCam - Start. No process was forcibly killed.'
         } else {
             Start-ScheduledTask -TaskName $taskName
         }
