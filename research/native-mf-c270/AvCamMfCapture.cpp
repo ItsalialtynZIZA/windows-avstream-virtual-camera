@@ -47,7 +47,6 @@ struct Capture {
     std::wstring description;
     int width=0, height=0, fps=0;
     std::atomic<bool> completed{false};
-    std::atomic<bool> abandoned{false};
     std::vector<uint8_t> pixels;
     uint64_t sequence=0, delivered=0;
 };
@@ -228,10 +227,10 @@ bool ExtractBgr(IMFSample* sample, int width,int height,std::vector<uint8_t>& ds
 }
 void Worker(Capture* cap,int width,int height,int fps) {
     const HRESULT ci=CoInitializeEx(nullptr,COINIT_MULTITHREADED);
-    if (FAILED(ci)) {SetError(cap,L"CoInitializeEx: "+HrText(ci));cap->completed.store(true);cap->cv.notify_all();if(cap->abandoned.load()) delete cap;return;}
+    if (FAILED(ci)) {SetError(cap,L"CoInitializeEx: "+HrText(ci));cap->completed.store(true);cap->cv.notify_all();return;}
     const HRESULT ms=MFStartup(MF_VERSION,MFSTARTUP_NOSOCKET);
     if (FAILED(ms)) {
-        SetError(cap,L"MFStartup: "+HrText(ms));CoUninitialize();cap->completed.store(true);cap->cv.notify_all();if(cap->abandoned.load()) delete cap;return;
+        SetError(cap,L"MFStartup: "+HrText(ms));CoUninitialize();cap->completed.store(true);cap->cv.notify_all();return;
     }
     {
         ComPtr<IMFMediaSource> source;
@@ -301,7 +300,6 @@ void Worker(Capture* cap,int width,int height,int fps) {
     CoUninitialize();
     cap->completed.store(true);
     cap->cv.notify_all();
-    if (cap->abandoned.load()) delete cap;
 }
 } // namespace
 
@@ -328,7 +326,6 @@ extern "C" __declspec(dllexport) int __cdecl AvmfOpen(
                 if (WaitForSingleObject(h,1500)==WAIT_OBJECT_0) {
                     c->worker.join();delete c;
                 } else {
-                    c->abandoned.store(true);
                     c->worker.detach();
                 }
             }
@@ -381,9 +378,8 @@ extern "C" __declspec(dllexport) int __cdecl AvmfClose(void* capture) {
         if (WaitForSingleObject(h,3000)==WAIT_OBJECT_0) {
             c->worker.join();
         } else {
-            c->abandoned.store(true);
             c->worker.detach();
-            return 1; // Worker owns allocation; restart process before reopening.
+            return 1; // Retain state to avoid use-after-free; restart process.
         }
     }
     delete c;return 0;
