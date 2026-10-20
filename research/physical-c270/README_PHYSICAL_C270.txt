@@ -66,6 +66,26 @@ frames per application; the existing design cannot guarantee this.
 Do not change the installed original Deep Live Cam. Do not enable the
 experimental Device MFT automatically. Keep rollback available.
 
+ADDITIONAL DEEP LIVE CAM v2.2.4 OUTPUT CONFLICT (SOURCE VERIFIED)
+The tagged Deep Live Cam modules/ui.py _on_live explicitly sets
+modules.globals.virtual_cam = True, and _start_live_capture starts a
+VirtualCameraSink before it opens the physical input via VideoCapturer.
+runtime/virtual_cam.py opens pyvirtualcam.Camera in a background thread.
+modules/core.py exposes --virtual-cam-name; by default name is None
+and pyvirtualcam chooses its own supported output backend/device.
+Therefore Deep Live Cam may attempt to PUBLISH to OBS Virtual Camera
+at the same time OBS Studio Start Virtual Camera is publishing there.
+This is distinct from Deep Live Cam's physical DirectShow input and
+distinct from AvCam Physical Bridge's read-only OBS shared-memory input.
+Do NOT assume camera sharing or modify Windows Frame Server registry
+until the actual pyvirtualcam selected device/backend has been checked.
+The live preview can potentially remain usable after the virtual sink
+fails, since the sink runs in a separate thread, but that is not a
+guarantee of the whole physical C270 -> Chrome workflow.
+For the existing unmodified application, prefer OBS Window Capture
+of its preview and ensure Deep Live does not own OBS Virtual Camera.
+No code path in AvCam Physical Bridge opens the real C270.
+
 DEEP LIVE CAM + OBS (avoid competing camera publishers)
 When Deep Live Cam is processing the real Logitech C270, keep these
 roles distinct:
