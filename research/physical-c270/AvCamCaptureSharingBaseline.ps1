@@ -14,6 +14,37 @@ Write-Host ('C270_PRESENT=' + $dev.Count)
 $dev | Format-Table Status,Class,FriendlyName,InstanceId -AutoSize | Out-Host
 $task = Join-Path $env:ProgramFiles 'AvCamPhysicalC270\install-state.json'
 Write-Host ('AVCAM_INSTALL_STATE_EXISTS=' + (Test-Path -LiteralPath $task))
+# Query the actual physical camera interface registration, not just the
+# installer state file (which may be absent after a manual rollback).
+Write-Host '=== PHYSICAL C270 DEVICE MFT REGISTRATION (READ ONLY) ==='
+$cameraClass = '{E5323777-F976-4F5B-9B55-B94699C46E44}'
+$expectedMft = '{1DE4C92F-A801-45BB-9D5A-74723A8EF460}'
+$rootKey = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey(
+    ("SYSTEM\CurrentControlSet\Control\DeviceClasses\{0}" -f $cameraClass), $false)
+if ($null -eq $rootKey) {
+    Write-Host 'C270_CAMERA_INTERFACE_REGISTRY=NOT_FOUND'
+} else {
+    try {
+        foreach ($device in $dev) {
+            $encoded = $device.InstanceId.Replace('\','#')
+            $names = @($rootKey.GetSubKeyNames() | Where-Object {
+                $_.IndexOf($encoded,[StringComparison]::OrdinalIgnoreCase) -ge 0
+            })
+            Write-Host ("C270_MATCHED_CAMERA_INTERFACES={0}" -f $names.Count)
+            foreach ($name in $names) {
+                $settings = $rootKey.OpenSubKey(($name + '\#GLOBAL\Device Parameters'), $false)
+                if ($null -eq $settings) { continue }
+                try {
+                    $actual = $settings.GetValue('CameraDeviceMftClsid',$null)
+                    $chain = $settings.GetValue('CameraDeviceMftClsidChain',$null)
+                    Write-Host ("C270_DEVICE_MFT_CLSID={0}" -f $(if($null -eq $actual){'<absent>'}else{$actual}))
+                    Write-Host ("C270_DEVICE_MFT_CHAIN={0}" -f $(if($null -eq $chain){'<absent>'}else{($chain -join ',')}))
+                    Write-Host ("C270_AVCAM_MFT_ACTIVE={0}" -f ($actual -ieq $expectedMft))
+                } finally { $settings.Dispose() }
+            }
+        }
+    } finally { $rootKey.Dispose() }
+}
 foreach ($name in @('FrameServer','FrameServerMonitor')) {
     $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
     if ($null -eq $svc) { Write-Host ("SERVICE_{0}=MISSING" -f $name) }
