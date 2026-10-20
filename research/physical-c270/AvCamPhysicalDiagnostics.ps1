@@ -73,6 +73,34 @@ if ($null -eq $com) {
     } finally { $com.Dispose() }
 }
 
+# Frame Server may be disabled by a legacy override. Read only: do not
+# start/stop services or edit a system-wide camera setting during diagnostics.
+foreach ($serviceName in @('FrameServer','FrameServerMonitor')) {
+    $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+    if ($null -eq $service) {
+        Print ('SERVICE_{0}' -f $serviceName) 'NotFound'
+    } else {
+        Print ('SERVICE_{0}' -f $serviceName) $service.Status
+        Print ('SERVICE_{0}_START_TYPE' -f $serviceName) $service.StartType
+    }
+}
+foreach ($platformPath in @(
+    'SOFTWARE\Microsoft\Windows Media Foundation\Platform',
+    'SOFTWARE\WOW6432Node\Microsoft\Windows Media Foundation\Platform'
+)) {
+    $platform = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($platformPath,$false)
+    $flag = if ($null -eq $platform) {
+        '<absent>'
+    } else {
+        try {
+            if ($platform.GetValueNames() -contains 'EnableFrameServerMode') {
+                [string]$platform.GetValue('EnableFrameServerMode')
+            } else { '<absent>' }
+        } finally { $platform.Dispose() }
+    }
+    Print ('FRAMESERVER_OVERRIDE_{0}' -f $platformPath) $flag
+}
+
 # Best effort: Windows camera service processes may block module enumeration.
 # No processes are injected, restarted, paused, or modified.
 $hits = [System.Collections.Generic.List[string]]::new()
