@@ -1,0 +1,99 @@
+name: Native C270 Media Foundation capture prototype
+on:
+  push:
+    branches: [feature/native-mf-c270-capture]
+    paths:
+      - 'research/native-mf-c270/**'
+      - '.github/workflows/native-mf-c270.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: native-mf-c270-prototype
+  cancel-in-progress: true
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 110
+    steps:
+      - name: Checkout capture sources
+        uses: actions/checkout@v4
+      - name: Compile native Windows Media Foundation DLL
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cmake -S research/native-mf-c270 -B native-mf-build -G 'Visual Studio 17 2022' -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'CMake native MF configure failed' }
+          cmake --build native-mf-build --config Release --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw 'Native MF compilation failed' }
+          ctest --test-dir native-mf-build -C Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'Native MF C ABI smoke failed' }
+          if (-not (Test-Path 'native-mf-build/Release/AvCamMfCapture.dll')) { throw 'Native MF DLL missing' }
+          Write-Host 'AVCAM_NATIVE_MF_C270_COMPILED_AND_SMOKE_PASSED'
+      - name: Checkout pinned Deep Live Cam Studio v2.2.4
+        uses: actions/checkout@v4
+        with:
+          repository: CRSD-Lau/deep-live-cam
+          ref: 617c733d42a10a2fcba036385e19d66fabcc2cc1
+          path: upstream
+          persist-credentials: false
+      - name: Install locked Python 3.11.9
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11.9'
+          architecture: x64
+      - name: Replace physical camera reader and disable Deep Live Cam virtual camera output
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Copy-Item research/native-mf-c270/video_capture_mf.py -Destination upstream/modules/video_capture.py -Force
+          $uiPath = 'upstream/modules/ui.py'
+          $ui = [IO.File]::ReadAllText((Join-Path $PWD $uiPath))
+          $needle = 'modules.globals.virtual_cam = True'
+          $count = ([regex]::Matches($ui,[regex]::Escape($needle))).Count
+          if ($count -ne 2) { throw "Expected exactly 2 UI virtual camera auto-start toggles, got $count" }
+          $ui = $ui.Replace($needle,'modules.globals.virtual_cam = False')
+          $ui = $ui.Replace('Starting live output; models will load in the background.',
+                            'Starting live preview only; capture this window in OBS.')
+          [IO.File]::WriteAllText((Join-Path $PWD $uiPath),$ui,[Text.UTF8Encoding]::new($false))
+          python -m py_compile upstream/modules/video_capture.py upstream/modules/ui.py
+          if ($LASTEXITCODE -ne 0) { throw 'Python capture or UI compile failed' }
+          Write-Host 'AVCAM_NATIVE_MF_C270_SOURCE_INTEGRATED'
+      - name: Build packaged Deep Live Cam CUDA x64 using locked dependencies
+        shell: powershell
+        working-directory: upstream
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\build\windows\build_windows.ps1 -Python (Get-Command python).Source -Accelerator Cuda
+          if ($LASTEXITCODE -ne 0) { throw 'CUDA Studio build failed' }
+          if (-not (Test-Path .\dist\DeepLiveCamStudio\DeepLiveCamStudio.exe)) { throw 'GUI binary missing' }
+      - name: Bundle install rollback native DLL and rebuilt EXEs
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $out = Join-Path $PWD 'package'
+          New-Item -ItemType Directory -Path $out -Force | Out-Null
+          $exedir=Join-Path $PWD 'upstream\dist\DeepLiveCamStudio'
+          foreach ($file in @('DeepLiveCamStudio.exe','DeepLiveCamStudioCLI.exe')) {
+            Copy-Item -LiteralPath (Join-Path $exedir $file) -Destination (Join-Path $out $file)
+          }
+          Copy-Item native-mf-build/Release/AvCamMfCapture.dll -Destination $out
+          foreach ($file in @('Install-NativeMfC270.ps1','INSTALL_NATIVE_MF.cmd','RESTORE_ORIGINAL.cmd','START_PREVIEW.cmd','README.txt')) {
+            Copy-Item -LiteralPath (Join-Path research/native-mf-c270 $file) -Destination $out
+          }
+          Copy-Item research/native-mf-c270/video_capture_mf.py -Destination (Join-Path $out 'NATIVE_MF_CAPTURE_SOURCE.py.txt')
+          Copy-Item research/native-mf-c270/AvCamMfCapture.cpp -Destination (Join-Path $out 'NATIVE_MF_DLL_SOURCE.cpp.txt')
+          foreach ($file in @('DeepLiveCamStudio.exe','DeepLiveCamStudioCLI.exe','AvCamMfCapture.dll')) {
+            $hash = (Get-FileHash -LiteralPath (Join-Path $out $file) -Algorithm SHA256).Hash
+            Write-Host "PACKAGE_SHA256 $file $hash"
+          }
+          python -c "import pathlib,zipfile,sys; root=pathlib.Path(sys.argv[1]);out=pathlib.Path(sys.argv[2]); z=zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED,compresslevel=6,allowZip64=True); [z.write(f,f.name) for f in root.iterdir() if f.is_file()]; z.close(); print(out, out.stat().st_size)" "$out" "DeepLiveCam-C270-Native-MF-EXPERIMENTAL.zip"
+          if ($LASTEXITCODE -ne 0) { throw 'Package creation failed' }
+          Write-Host 'DLC_C270_NATIVE_MEDIA_FOUNDATION_PACKAGE_READY'
+      - name: Upload compact native MF Deep Live Cam prototype
+        uses: actions/upload-artifact@v4
+        with:
+          name: DeepLiveCam-C270-Native-MF-EXPERIMENTAL
+          path: DeepLiveCam-C270-Native-MF-EXPERIMENTAL.zip
+          retention-days: 7
+          if-no-files-found: error
