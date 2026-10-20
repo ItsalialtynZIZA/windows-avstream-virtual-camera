@@ -41,6 +41,46 @@ AvCam Physical C270 -> AvCam - Uninstall:
 
 There are also AvCamStatus.cmd and AvCamUninstall.cmd in the archive.
 
+DEEP LIVE CAM + OBS (avoid competing camera publishers)
+When Deep Live Cam is processing the real Logitech C270, keep these
+roles distinct:
+    Logitech C270 -> Deep Live Cam (capture)
+    Deep Live Cam Live Preview window -> OBS Window Capture
+    OBS Start Virtual Camera -> AvCamPhysicalBridge -> Camera Device MFT
+Do not enable Deep Live Cam's own output to "OBS Virtual Camera" while
+OBS Studio is also running Start Virtual Camera. The OBS virtual
+camera output is a single publisher; two programs cannot reliably
+publish to it concurrently. If Deep Live Cam uses pyvirtualcam, select
+a separate compatible device for its output or use window capture.
+
+OBS must NOT also try to capture Logitech C270 as another Video Capture
+Device source if Deep Live Cam holds that webcam exclusively. AvCam
+Bridge never opens the physical camera directly and can remain running
+while Deep Live Cam is open. It cannot override exclusive device access
+held by another app or start OBS Virtual Camera when another producer
+owns the output. Supported Camera Frame Server clients may share the
+physical camera, but DirectShow/OpenCV capture behavior can differ.
+
+CAUTION ABOUT VIDEO LOOPS
+The C270 Device MFT modifies suitable Media Foundation camera samples.
+If Deep Live Cam itself acquires the post-MFT Logitech stream, it may
+receive the OBS output as its input and cause a recursive feedback loop.
+This combination is NOT tested; use a camera input that does not depend
+on the modified output pipeline, or avoid feeding OBS back into the
+same capture chain. Do not try to defeat device permissions or sharing.
+
+TROUBLESHOOTING OBS OUTPUT
+"Failed to start virtual camera" in OBS is an OBS producer problem,
+not proof that Logitech USB is unavailable. Check whether Deep Live
+Cam is publishing to the same "OBS Virtual Camera" device. When OBS
+Virtual Camera fails to publish, AvCam logs a bounded "mapping exists
+but no fresh video frames" warning and waits without touching Logitech.
+Stop the competing OBS camera publisher, then start OBS Virtual Camera.
+AvCam automatically reconnects; no reboot or driver reinstall needed.
+The AvCam device transform leaves the original Logitech capture intact
+when fresh OBS frames are not available. The exact host app must still
+allow physical camera access.
+
 LONG-RUN BEHAVIOR
 At logon the bridge starts with highest privileges for the current
 interactive user. The process waits for OBS Virtual Camera, publishes
