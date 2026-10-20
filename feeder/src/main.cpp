@@ -446,7 +446,7 @@ int wmain(int argc, wchar_t* argv[])
             }
             if (!announcedTransportWaiting)
             {
-                std::wcout << L"Waiting for AvCam sink interface...\\n";
+                std::wcout << L"Waiting for AvCam sink interface...\n";
                 announcedTransportWaiting = true;
             }
             Sleep(1000);
