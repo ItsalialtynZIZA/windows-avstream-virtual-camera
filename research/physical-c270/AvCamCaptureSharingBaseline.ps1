@@ -22,7 +22,7 @@ foreach ($name in @('FrameServer','FrameServerMonitor')) {
 foreach ($view in @('Registry64','Registry32')) {
     $hive = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
         [Microsoft.Win32.RegistryHive]::LocalMachine,
-        [Microsoft.Win32.RegistryView]::$view)
+        [Enum]::Parse([Microsoft.Win32.RegistryView], $view))
     try {
         $key = $hive.OpenSubKey('SOFTWARE\Microsoft\Windows Media Foundation\Platform',$false)
         $value = if ($null -ne $key) { $key.GetValue('EnableFrameServerMode',$null) } else { $null }
