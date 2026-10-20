@@ -108,7 +108,7 @@ jobs:
       - name: Validate scripts and prepare owner-only opt-in package
         shell: pwsh
         run: |
-          $out = 'artifacts/AvCam-Physical-C270-RC1'
+          $out = 'artifacts/AvCam-Physical-C270-RC2'
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $files = @(
             'build/physical-c270/Release/AvCamPhysicalBridge.exe',
@@ -139,6 +139,6 @@ jobs:
           Write-Host 'AVCAM_PHYSICAL_C270_RELEASE_CANDIDATE_BUILT_AND_SELFTESTED'
       - uses: actions/upload-artifact@v4
         with:
-          name: AvCam-Physical-C270-RC1
-          path: artifacts/AvCam-Physical-C270-RC1/
+          name: AvCam-Physical-C270-RC2
+          path: artifacts/AvCam-Physical-C270-RC2/
           if-no-files-found: error
