@@ -79,6 +79,21 @@ function Test-Administrator {
         throw 'Administrator PowerShell required'
     }
 }
+
+function Invoke-AvCamRegsvr32 {
+    param([Parameter(Mandatory=$true)][string]$DllPath,[switch]$Unregister)
+    # regsvr32.exe is a GUI-subsystem executable. Windows PowerShell may not
+    # wait for its exit when invoked directly, leaving LASTEXITCODE unset.
+    $regsvr32 = Join-Path $env:WINDIR 'System32\regsvr32.exe'
+    $args = @()
+    if ($Unregister) { $args += '/u' }
+    $args += '/s'
+    $args += ('"{0}"' -f $DllPath)
+    $process = Start-Process -FilePath $regsvr32 -ArgumentList $args -Wait -PassThru -WindowStyle Hidden -ErrorAction Stop
+    if ($null -eq $process) { throw 'Unable to obtain regsvr32 process exit status' }
+    return [int]$process.ExitCode
+}
+
 # Rollback does not depend on the camera's current PnP health, status or
 # enumeration. A broken camera extension must NEVER prevent recovery.
 if ($Disable) {
@@ -106,9 +121,9 @@ if ($Disable) {
         Write-Warning 'Original USB camera registry interface is missing; no Device MFT key left to remove'
     }
     if (Test-Path -LiteralPath $installedDll) {
-        & "$env:WINDIR\System32\regsvr32.exe" /u /s $installedDll
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warning "COM unregister returned exit code $LASTEXITCODE; AvCam camera interface setting removed."
+        $unregisterExit = Invoke-AvCamRegsvr32 -DllPath $installedDll -Unregister
+        if ($unregisterExit -ne 0) {
+            throw "COM unregistration failed with exit code $unregisterExit. Camera interface property was removed; install-state preserved for a retry."
         }
     }
     Remove-Item -LiteralPath $backupState -Force
@@ -160,9 +175,9 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AvCamPhysicalDeviceMft.dll') -D
     Clsid=$clsid
     Created=(Get-Date).ToString('o')
 } | ConvertTo-Json | Set-Content -LiteralPath $backupState -Encoding UTF8
-& "$env:WINDIR\System32\regsvr32.exe" /s $installedDll
-if ($LASTEXITCODE -ne 0) {
-    throw "COM registration failed ($LASTEXITCODE). Physical Logitech registry was not changed."
+$registerExit = Invoke-AvCamRegsvr32 -DllPath $installedDll
+if ($registerExit -ne 0) {
+    throw "COM registration failed ($registerExit). Physical Logitech registry was not changed. Use -Disable to clean up the partial attempt."
 }
 try {
     New-ItemProperty -LiteralPath $key.PSPath -Name 'CameraDeviceMftClsid' -PropertyType String -Value $clsid -Force | Out-Null
@@ -173,6 +188,9 @@ try {
     Write-Host 'Close camera apps, start OBS Virtual Camera, then AvCamPhysicalBridge.exe as admin.'
 } catch {
     Remove-ItemProperty -LiteralPath $key.PSPath -Name 'CameraDeviceMftClsid' -ErrorAction SilentlyContinue
-    & "$env:WINDIR\System32\regsvr32.exe" /u /s $installedDll
+    $undoExit = Invoke-AvCamRegsvr32 -DllPath $installedDll -Unregister
+    if ($undoExit -ne 0) {
+        Write-Warning "Could not unregister AvCam COM class during rollback: $undoExit. Use -Disable."
+    }
     throw
 }
