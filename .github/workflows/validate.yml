@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+      - dev/manual-vhci
 
 concurrency:
   group: validate-${{ github.workflow }}-${{ github.ref }}
