@@ -51,6 +51,15 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Physical endpoint contract test failed: $LASTEXITCODE" }
           & ./build/c270-identity/Release/AvCamEnumeratePhysicalC270.exe
           if ($LASTEXITCODE -ne 0) { throw "Read-only camera enumeration failed: $LASTEXITCODE" }
+      - name: Publish read-only C270 PnP diagnostic separately
+        uses: actions/upload-artifact@v4
+        with:
+          name: AvCam-C270-ReadOnly-PnP
+          path: |
+            build/c270-identity/Release/AvCamEnumeratePhysicalC270.exe
+            build/c270-identity/Release/AvCamPhysicalEndpointAcceptanceTest.exe
+          if-no-files-found: error
+          retention-days: 14
   build-physical-c270:
     runs-on: windows-2022
     steps:
