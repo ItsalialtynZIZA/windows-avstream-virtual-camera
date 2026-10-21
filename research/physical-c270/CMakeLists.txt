@@ -32,6 +32,18 @@ add_library(AvCamPhysicalDeviceMft SHARED ${dmft_paths})
 target_include_directories(AvCamPhysicalDeviceMft PRIVATE
   "${sample}" "${base}" "${MICROSOFT_WIL_INCLUDE}")
 target_compile_features(AvCamPhysicalDeviceMft PRIVATE cxx_std_17)
+# The physical C270 is now shared by Deep Live Cam and Chrome using
+# Windows 11 25H2 Multi-app camera mode. A Device MFT is device-scoped;
+# unscoped OBS replacement risks processing Deep Live Cam's input and looping.
+# Refuse accidental enablement even when a builder passes -D or /D directly.
+get_target_property(avcam_dmft_defs AvCamPhysicalDeviceMft COMPILE_DEFINITIONS)
+if(avcam_dmft_defs)
+  string(JOIN ";" avcam_dmft_defs_joined ${avcam_dmft_defs})
+  if(avcam_dmft_defs_joined MATCHES "AVCAM_EXPERIMENTAL_UNSCOPED_MFT_REPLACEMENT")
+    message(FATAL_ERROR "Unscoped Device MFT replacement is forbidden in shipped builds")
+  endif()
+endif()
+
 target_compile_definitions(AvCamPhysicalDeviceMft PRIVATE
   UNICODE _UNICODE WINVER=0x0A00 _WIN32_WINNT=0x0A00
   SECURITY_WIN32 MFT_UNIQUE_METHOD_NAMES MF_DEVICEMFT_ALLOW_MFT0_LOAD)
