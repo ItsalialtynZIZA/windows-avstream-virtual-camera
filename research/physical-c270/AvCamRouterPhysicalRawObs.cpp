@@ -18,11 +18,13 @@ int wmain(int argc, wchar_t** argv) {
     bool rawOnly = false;
     bool continuous = false;
     std::uint64_t maxFrames = 0;
+    bool framesSpecified = false;
     for (int a = 1; a < argc; ++a) {
         const std::wstring arg(argv[a]);
         if (arg == L"--raw-only" && !rawOnly) rawOnly = true;
         else if (arg == L"--continuous" && !continuous) continuous = true;
-        else if (arg == L"--frames" && a + 1 < argc && maxFrames == 0) {
+        else if (arg == L"--frames" && a + 1 < argc && !framesSpecified) {
+            framesSpecified = true;
             const std::wstring value(argv[++a]);
             try {
                 std::size_t consumed = 0;
@@ -35,7 +37,7 @@ int wmain(int argc, wchar_t** argv) {
             }
         }
         else {
-            std::wcerr << L"USAGE: AvCamRouterPhysicalRawObs.exe [--raw-only] [--continuous]\n";
+            std::wcerr << L"USAGE: AvCamRouterPhysicalRawObs.exe [--raw-only] [--continuous] [--frames N]\n";
             return 9;
         }
     }
