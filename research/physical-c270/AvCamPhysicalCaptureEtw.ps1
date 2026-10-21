@@ -52,12 +52,13 @@ if (Test-Path -LiteralPath $etl) {
             $messages = @($records | ForEach-Object {
                 (@($_.Properties | ForEach-Object { [string]$_.Value }) -join ' ')
             })
-            $initialized = @($messages | Where-Object { $_ -match 'InitializeTransform called' }).Count -gt 0
-            $formats = @($messages | Where-Object { $_ -match 'QueueFormat' }).Count
+            $initialized = @($messages | Where-Object { $_ -match 'AvCamDeviceMftInitialize|InitializeTransform called' }).Count -gt 0
+            $formats = @($messages | Where-Object { $_ -match 'AvCamQueueNegotiated|QueueFormat' }).Count
             $replaced = @($messages | Where-Object { $_ -match 'SampleReplaced' }).Count
             Write-Host ('DEEP_LIVE_MFT_INITIALIZED=' + $initialized)
             Write-Host ('DEEP_LIVE_MFT_QUEUE_FORMAT_EVENTS=' + $formats)
             Write-Host ('DEEP_LIVE_MFT_REPLACEMENT_EVENTS=' + $replaced)
+            Write-Host 'Events identify MFT instances/queues, not authenticated application consumers.'
             Write-Host 'Note: these counts are only observed log events, not a complete frame count.'
         }
     } catch {
