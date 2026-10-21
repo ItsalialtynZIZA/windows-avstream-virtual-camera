@@ -245,6 +245,8 @@ jobs:
             }
           }
           Write-Host 'AVCAM_ROUTER_CLI_VALIDATION_PASSED'
+          & ./build/mock-fanout/Release/AvCamRouterRunPolicyTest.exe
+          if ($LASTEXITCODE -ne 0) { throw 'AvCam bounded run policy test failed' }
           & ./build/mock-fanout/Release/AvCamDualChannelRouterTest.exe
           if ($LASTEXITCODE -ne 0) { throw 'AvCam dual-channel RAW/OBS routing failed' }
           & ./build/mock-fanout/Release/AvCamMockFanout.exe
