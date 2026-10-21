@@ -93,6 +93,18 @@ jobs:
         shell: pwsh
         run: |
           ./research/physical-c270/Adapt-Sample.ps1 -SampleDir upstream/avstream/sampledevicemft
+      - name: Verify Device MFT safety header was staged
+        shell: pwsh
+        run: |
+          $source = 'research/physical-c270/AvCamMftBuildSafety.h'
+          $staged = 'upstream/avstream/sampledevicemft/AvCamMftBuildSafety.h'
+          if (-not (Test-Path -LiteralPath $staged -PathType Leaf)) {
+            throw 'Missing MFT safety header in staged Microsoft sample'
+          }
+          $a = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
+          $b = (Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash
+          if ($a -ne $b) { throw 'Staged MFT safety header is out of date' }
+          Write-Host 'AVCAM_MFT_SAFETY_HEADER_STAGED=PASS'
       - name: Test physical Logitech registry preflight without accessing protected subkeys
         shell: powershell
         run: |
