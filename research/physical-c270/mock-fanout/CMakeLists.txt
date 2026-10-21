@@ -1,3 +1,6 @@
+add_executable(AvCamRouterRunPolicyTest ../AvCamRouterRunPolicyTest.cpp)
+target_compile_features(AvCamRouterRunPolicyTest PRIVATE cxx_std_17)
+
 cmake_minimum_required(VERSION 3.20)
 project(AvCamMockFanout LANGUAGES CXX)
 add_executable(AvCamRouterPhysicalRawObs
