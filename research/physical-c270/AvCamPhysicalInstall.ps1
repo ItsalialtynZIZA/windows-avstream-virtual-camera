@@ -6,6 +6,13 @@ param([switch]$Enable,[switch]$Disable)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ($Enable -and $Disable) { throw 'Choose -Enable OR -Disable' }
+# Multi-app camera works on the owner's Windows 11 25H2 system. The current
+# Device MFT has no proven per-client isolation: it cannot safely route OBS
+# only to Chrome while preserving Deep Live Cam's raw sensor stream.
+# Keep preflight and rollback functional, but prohibit further opt-in installs.
+if ($Enable) {
+    throw 'AvCam physical C270 Device MFT installation is disabled until Chrome-only frame isolation is proven. Multi-app camera sharing must remain intact. -Disable remains available for rollback.'
+}
 $clsid = '{1DE4C92F-A801-45BB-9D5A-74723A8EF460}'
 $cameraClass = '{E5323777-F976-4F5B-9B55-B94699C46E44}'
 $deviceClassRoot = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\DeviceClasses\$cameraClass"
