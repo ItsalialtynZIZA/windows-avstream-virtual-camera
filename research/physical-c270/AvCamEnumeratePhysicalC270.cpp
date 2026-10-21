@@ -3,6 +3,8 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <setupapi.h>
+#include <cfgmgr32.h>
+#include <initguid.h>
 #include <ks.h>
 #include <ksmedia.h>
 #include <iostream>
