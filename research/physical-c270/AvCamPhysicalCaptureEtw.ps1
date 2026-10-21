@@ -58,15 +58,16 @@ if (Test-Path -LiteralPath $etl) {
             Write-Warning 'No AvCam MFT events observed. This does not prove that Device MFT was never activated: the host may use a different capture pipeline or tracing may have failed.'
             Write-Host 'DIAGNOSIS=NO_MFT_EVENTS_OBSERVED'
             Write-Host 'Keep the ETL file for further analysis.'
-        } elseif ($Target -eq 'DeepLiveCam') {
+        } else {
             $initialized = @($messages | Where-Object { $_ -match 'AvCamDeviceMftInitialize|InitializeTransform called' }).Count -gt 0
             $formats = @($messages | Where-Object { $_ -match 'AvCamQueueNegotiated|QueueFormat' }).Count
             $replaced = @($messages | Where-Object { $_ -match 'SampleReplaced' }).Count
-            Write-Host ('DEEP_LIVE_MFT_INITIALIZED=' + $initialized)
-            Write-Host ('DEEP_LIVE_MFT_QUEUE_FORMAT_EVENTS=' + $formats)
-            Write-Host ('DEEP_LIVE_MFT_REPLACEMENT_EVENTS=' + $replaced)
-            Write-Host 'Events identify MFT instances/queues, not authenticated application consumers.'
-            Write-Host 'Note: these counts are only observed log events, not a complete frame count.'
+            Write-Host ('AVCAM_MFT_INITIALIZED_OBSERVED=' + $initialized)
+            Write-Host ('AVCAM_MFT_QUEUE_EVENTS_OBSERVED=' + $formats)
+            Write-Host ('AVCAM_MFT_REPLACEMENT_EVENTS_OBSERVED=' + $replaced)
+            Write-Host 'EVIDENCE_LEVEL=DEVICE_MFT_ONLY'
+            Write-Host 'No event above proves an individual Chrome or Deep Live Cam consumer.'
+            Write-Host 'Note: observed ETW events are not a complete frame count.'
         }
     } catch {
         Write-Warning ('Windows could not decode ETW payloads: ' + $_.Exception.Message)
