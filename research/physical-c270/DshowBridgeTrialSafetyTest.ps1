@@ -15,7 +15,7 @@ $restore=$s.IndexOf('if ($Restore) {')
 $find=$s.IndexOf('$target = Find-C270Key')
 Need ($restore -ge 0 -and $find -gt $restore) 'restore-before-present-device-lookup'
 $restoreBody=$s.Substring($restore,$find-$restore)
-Need (-not $restoreBody.Contains('Get-PnpDevice')) 'rollback-independent-of-pnp-presence'
+Need (-not ([regex]::IsMatch($restoreBody,'(?m)^\s*(?!#).*Get-PnpDevice'))) 'rollback-independent-of-pnp-presence'
 Need ($restoreBody.Contains('Restore') -and $restoreBody.Contains('ConvertFrom-Json')) 'rollback-reads-persisted-snapshot'
 Need ($restoreBody.Contains('DeleteValue($property,$false)')) 'rollback-removes-property-if-originally-absent'
 Need ($restoreBody.Contains('SetValue($property,[int]$snapshot.Value')) 'rollback-restores-original-dword'
