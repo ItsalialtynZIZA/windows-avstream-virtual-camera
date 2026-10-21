@@ -103,6 +103,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Mock fanout compilation failed' }
           & ./build/mock-fanout/Release/AvCamMockFanout.exe
           if ($LASTEXITCODE -ne 0) { throw 'Mock fanout runtime selftest failed' }
+          & ./build/mock-fanout/Release/AvCamMockIpcFanout.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Mock IPC fanout selftest failed' }
       - name: Compile user-mode OBS bridge and device MFT COM DLL
         shell: pwsh
         run: |
