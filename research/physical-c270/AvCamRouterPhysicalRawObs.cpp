@@ -49,8 +49,11 @@ int wmain(int argc, wchar_t** argv) {
         if (!obsConnected) {
             std::cout << "AVCAM_OBS_SOURCE_FAILED code="
                       << obs.LastErrorCode() << "\n";
-            std::cout << "Run OBS Virtual Camera or use --raw-only explicitly.\n";
-            return 7;
+            if (!continuous) {
+                std::cout << "Run OBS Virtual Camera or use --raw-only explicitly.\n";
+                return 7;
+            }
+            std::cout << "AVCAM_OBS_WAITING_RAW_FALLBACK\n";
         }
     }
     avcam::dual::Router router(2000);
