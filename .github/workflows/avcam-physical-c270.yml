@@ -219,6 +219,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Strict original physical endpoint regression failed' }
           $obsRouter = Start-Process -FilePath (Resolve-Path ./build/mock-fanout/Release/AvCamRouterObsSmoke.exe).Path -ArgumentList '--obs' -Wait -PassThru -NoNewWindow
           if ($obsRouter.ExitCode -ne 8) { throw "Router OBS absent-source contract failed: $($obsRouter.ExitCode)" }
+          if (!(Test-Path -LiteralPath './build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe' -PathType Leaf)) {
+            throw 'Physical C270 and OBS router diagnostic executable was not compiled'
+          }
           & ./build/mock-fanout/Release/AvCamDualChannelRouterTest.exe
           if ($LASTEXITCODE -ne 0) { throw 'AvCam dual-channel RAW/OBS routing failed' }
           & ./build/mock-fanout/Release/AvCamMockFanout.exe
