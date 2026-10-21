@@ -7,7 +7,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
-constexpr unsigned W=320,H=180,Channels=4,Bytes=W*H*Channels,Frames=120;
+constexpr unsigned W=1280,H=720,Channels=4,Bytes=W*H*Channels,Frames=90;
 struct Header {
     volatile LONG epoch; // odd writer active, even stable
     volatile LONG finished;
@@ -28,6 +28,7 @@ int reader(){
     if(!p){std::cerr<<"IPC_FRAME_VIEW_FAILED error="<<GetLastError()<<std::endl;CloseHandle(m);return 3;}
     std::array<unsigned char,Bytes> local{};
     unsigned last=0,count=0;unsigned __int64 lastTs=0;bool valid=true;
+    unsigned observedGaps=0;
     for(int i=0;i<6000;i++){
         LONG before=p->header.epoch;
         if(before>0 && !(before&1)){
@@ -41,6 +42,7 @@ int reader(){
                     if(checksum(local.data())!=h.checksum || h.timestamp<=lastTs)valid=false;
                     // Verify actual image bytes instead of only metadata.
                     if(local[0]!=pixel(h.frameNumber,0) || local[Bytes-1]!=pixel(h.frameNumber,Bytes-1))valid=false;
+                    if(last && h.frameNumber>last+1)observedGaps+=h.frameNumber-last-1;
                     last=h.frameNumber;lastTs=h.timestamp;count++;
                 }
             }
@@ -49,7 +51,7 @@ int reader(){
         Sleep(1);
     }
     UnmapViewOfFile(p);CloseHandle(m);
-    std::cout<<"IPC_FRAME_READER count="<<count<<" last="<<last<<" valid="<<valid<<std::endl;
+    std::cout<<"IPC_FRAME_READER count="<<count<<" last="<<last<<" valid="<<valid<<" dropped_intermediate="<<observedGaps<<std::endl;
     return valid && count>0 && last==Frames?0:4;
 }
 int main(int argc,char**argv){
