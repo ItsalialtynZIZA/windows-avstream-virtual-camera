@@ -31,6 +31,7 @@ int reader(){
     unsigned last=0,count=0;unsigned __int64 lastTs=0;bool valid=true;
     auto readerStart=std::chrono::steady_clock::now();
     unsigned observedGaps=0;
+    unsigned firstFrame=0;
     unsigned __int64 maxReadUs=0;
     for(int i=0;i<6000;i++){
         LONG before=p->header.epoch;
@@ -48,6 +49,7 @@ int reader(){
                     if(checksum(local.data())!=h.checksum || h.timestamp<=lastTs)valid=false;
                     // Verify actual image bytes instead of only metadata.
                     if(local[0]!=pixel(h.frameNumber,0) || local[Bytes-1]!=pixel(h.frameNumber,Bytes-1))valid=false;
+                    if(!firstFrame)firstFrame=h.frameNumber;
                     if(last && h.frameNumber>last+1)observedGaps+=h.frameNumber-last-1;
                     last=h.frameNumber;lastTs=h.timestamp;count++;
                 }
@@ -57,9 +59,12 @@ int reader(){
         Sleep(1);
     }
     UnmapViewOfFile(p);CloseHandle(m);
+    const auto elapsedMs=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-readerStart).count();
+    const double receiveFps=elapsedMs>0?count*1000.0/static_cast<double>(elapsedMs):0.0;
     std::cout<<"IPC_FRAME_READER count="<<count<<" last="<<last<<" valid="<<valid<<" dropped_intermediate="<<observedGaps<<" max_copy_us="<<maxReadUs
-             <<" elapsed_ms="<<std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-readerStart).count()<<std::endl;
-    return valid && count>0 && last==Frames?0:4;
+             <<" elapsed_ms="<<elapsedMs<<" observed_fps="<<receiveFps<<" first="<<firstFrame<<std::endl;
+    // Smoke threshold catches catastrophic throughput regressions, not a strict 30 FPS guarantee.
+    return valid && count>=Frames*3/4 && last==Frames?0:4;
 }
 int main(int argc,char**argv){
     if(argc>1 && std::string(argv[1])=="--reader")return reader();
