@@ -14,7 +14,8 @@
 
 #pragma comment(lib, "setupapi.lib")
 
-static unsigned EnumCategory(const GUID& category, const wchar_t* label) {\n    unsigned found = 0;
+static unsigned EnumCategory(const GUID& category, const wchar_t* label) {
+    unsigned found = 0;
     HDEVINFO info = SetupDiGetClassDevsW(&category, nullptr, nullptr,
                                         DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
     if (info == INVALID_HANDLE_VALUE) {
