@@ -26,6 +26,12 @@ jobs:
             research/physical-c270/PhysicalEndpointAcceptanceTest.cpp \
             -o /tmp/avcam-c270-contract
           /tmp/avcam-c270-contract
+      - name: Verify per-client routing policy rejects unproven isolation
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -Iresearch/physical-c270 \
+            research/physical-c270/AvCamPerClientRoutingPolicyTest.cpp \
+            -o /tmp/avcam-client-policy
+          /tmp/avcam-client-policy
       - name: Verify unscoped MFT replacement is rejected by the compiler
         run: |
           echo '#include "AvCamMftBuildSafety.h"' > /tmp/avcam-safe-mft.cpp
