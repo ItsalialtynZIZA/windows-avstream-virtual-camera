@@ -78,6 +78,7 @@ int main(int argc,char**argv){
         std::cerr<<"OBS_SOURCE_START_FAILED code="<<obs.LastErrorCode()<<std::endl;
         return 8;
     }
+    if(obsMode)std::cout<<"OBS_LIVE_SOURCE_CONNECTED"<<std::endl;
     HANDLE m=CreateFileMappingW(INVALID_HANDLE_VALUE,nullptr,PAGE_READWRITE,0,sizeof(Region),Mapping);
     if(!m){std::cerr<<"IPC_FRAME_CREATE_FAILED error="<<GetLastError()<<std::endl;return 1;}
     auto* p=(Region*)MapViewOfFile(m,FILE_MAP_ALL_ACCESS,0,0,sizeof(Region));
@@ -95,6 +96,8 @@ int main(int argc,char**argv){
         }
     }
     p->header.sourceMode=obsMode?1u:0u;
+    if(obsMode)std::cout<<"AVCAM_IPC_SOURCE=OBS_LIVE"<<std::endl;
+    else std::cout<<"AVCAM_IPC_SOURCE=SYNTHETIC"<<std::endl;
     if(ok)for(unsigned frame=1;frame<=Frames;frame++){
         InterlockedExchange(&p->header.epoch,(LONG)(2*frame-1));
         unsigned __int64 sourceTimestamp=(unsigned __int64)frame*33333333ULL;
