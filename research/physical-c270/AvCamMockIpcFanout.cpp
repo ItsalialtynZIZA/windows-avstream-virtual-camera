@@ -33,7 +33,7 @@ int reader(){
             MemoryBarrier();
             auto ts=p->timestamp,v=p->payload;
             MemoryBarrier();
-            LONG b=InterlockedCompareExchange(const_cast<volatile LONG*>(&p->seq),0,0);
+            LONG b=p->seq;
             if(a==b && !(b&1)){
                 unsigned __int64 n=(unsigned __int64)(unsigned long)b/2;
                 if(n>previous){
