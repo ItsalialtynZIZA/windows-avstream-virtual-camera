@@ -278,3 +278,37 @@ jobs:
           name: AvCam-Physical-C270-RC3
           path: artifacts/AvCam-Physical-C270-RC3/
           if-no-files-found: error
+
+      - name: Package no-install OBS live diagnostic (no camera modifications)
+        shell: pwsh
+        run: |
+          $out = 'artifacts/AvCam-OBS-Live-Diagnostic'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          foreach ($f in @(
+            'build/mock-fanout/Release/AvCamMockFrameIpc.exe',
+            'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
+            'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
+            'research/physical-c270/OBS_IPC_LIVE_SMOKE.md'
+          )) {
+            if (!(Test-Path -LiteralPath $f -PathType Leaf)) { throw "Missing diagnostic input: $f" }
+            Copy-Item -LiteralPath $f -Destination $out
+          }
+          @'
+          AvCam OBS Live Diagnostic — safe, no-install Windows x64 package.
+          1. Run OBS Studio and start OBS Virtual Camera.
+          2. In an ordinary PowerShell window:
+             .\AvCamMockFrameIpc.exe --obs
+          3. Expected: AVCAM_IPC_FULL_FRAME_PASS and exit code 0.
+          This confirms OBS -> AvCam IPC only. It does NOT inject video into
+          the existing physical Logitech C270 or change Chrome's video.
+          No Device MFT, install scripts, registration, or driver modifications
+          are included. Do not confuse this diagnostic with OBS substitution.
+          '@ | Set-Content -Path (Join-Path $out 'README.txt') -Encoding utf8
+          Get-ChildItem $out -File | Get-FileHash -Algorithm SHA256 |
+            ForEach-Object { "$($_.Hash)  $(Split-Path $_.Path -Leaf)" } |
+            Set-Content (Join-Path $out 'SHA256SUMS.txt')
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AvCam-OBS-Live-Diagnostic
+          path: artifacts/AvCam-OBS-Live-Diagnostic/
+          if-no-files-found: error
