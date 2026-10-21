@@ -101,6 +101,9 @@ int main(int argc,char**argv){
             if(!obs.ReadFrame(p->bgra.data(),Bytes,obsTimestamp)){
                 std::cerr<<"OBS_SOURCE_FRAME_FAILED frame="<<frame<<" code="<<obs.LastErrorCode()<<std::endl;
                 ok=false;
+                // Publish a stable epoch before waking readers on source failure.
+                MemoryBarrier();
+                InterlockedExchange(&p->header.epoch,(LONG)(2*frame-2));
                 break;
             }
             // OBS timestamp may use a different epoch and unit; use a monotonic broker clock.
