@@ -3,6 +3,7 @@
 // This does NOT attach to the physical Logitech endpoint or Chrome.
 #include <cstdint>
 #include <mutex>
+#include <utility>
 #include <vector>
 
 namespace avcam::dual {
