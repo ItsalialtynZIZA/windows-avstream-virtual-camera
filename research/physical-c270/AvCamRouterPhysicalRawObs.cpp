@@ -29,7 +29,7 @@ int wmain(int argc, wchar_t** argv) {
                 if (consumed != value.size() || maxFrames == 0 || maxFrames > 10000000ULL)
                     throw std::invalid_argument("invalid frame count");
             } catch (...) {
-                std::wcerr << L"AVCAM_INVALID_FRAME_COUNT\\n";
+                std::wcerr << L"AVCAM_INVALID_FRAME_COUNT\n";
                 return 9;
             }
         }
