@@ -149,6 +149,17 @@ bool AvCamReplaceMjpegSample(const void* queue, IMFSample* original,
     // protection and per-client isolation are proven, never replace frames
     // in a production build. Experimental builds must explicitly opt in.
 #ifndef AVCAM_EXPERIMENTAL_UNSCOPED_MFT_REPLACEMENT
+    // Observe pipeline activity without touching frame data. The hook is
+    // device-scoped: a count here does not identify individual applications.
+    const auto observations = ++g_sampleChecks;
+    if (observations == 1 || observations == 30 ||
+        observations % 900 == 0) {
+        wchar_t event[160]{};
+        (void)swprintf_s(event,
+            L"AvCamMultiAppSafePassThrough count=%llu replaced=0",
+            observations);
+        TraceRaw(event);
+    }
     return false;
 #else
     const auto checks = ++g_sampleChecks;
