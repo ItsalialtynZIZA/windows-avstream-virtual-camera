@@ -26,6 +26,11 @@ jobs:
             research/physical-c270/PhysicalEndpointAcceptanceTest.cpp \
             -o /tmp/avcam-c270-contract
           /tmp/avcam-c270-contract
+      - name: Verify application-space dual-channel RAW/OBS router
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -pthread -Iresearch/physical-c270 \
+            research/physical-c270/AvCamDualChannelRouterTest.cpp -o /tmp/avcam-dual-router
+          /tmp/avcam-dual-router
       - name: Verify per-client routing policy rejects unproven isolation
         run: |
           c++ -std=c++17 -Wall -Wextra -Werror -Iresearch/physical-c270 \
