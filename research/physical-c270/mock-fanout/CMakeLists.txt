@@ -1,5 +1,15 @@
 cmake_minimum_required(VERSION 3.20)
 project(AvCamMockFanout LANGUAGES CXX)
+add_executable(AvCamRouterPhysicalRawObs
+  ../AvCamRouterPhysicalRawObs.cpp
+  ../../../feeder/src/MediaFoundationFrameSource.cpp
+  ../../../feeder/src/ObsSharedMemorySource.cpp)
+target_include_directories(AvCamRouterPhysicalRawObs PRIVATE
+  ../../../shared ../../../feeder/src)
+target_compile_features(AvCamRouterPhysicalRawObs PRIVATE cxx_std_17)
+target_link_libraries(AvCamRouterPhysicalRawObs PRIVATE
+  mfplat mfreadwrite mf mfuuid ole32)
+
 add_executable(AvCamRouterObsSmoke ../AvCamRouterObsSmoke.cpp ../../../feeder/src/ObsSharedMemorySource.cpp)
 target_include_directories(AvCamRouterObsSmoke PRIVATE ../../../shared)
 target_compile_features(AvCamRouterObsSmoke PRIVATE cxx_std_17)
