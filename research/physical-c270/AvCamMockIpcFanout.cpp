@@ -28,8 +28,9 @@ int reader(){
     if(!p){CloseHandle(map);return 3;}
     unsigned __int64 previous=0, previousTs=0; unsigned samples=0; bool ok=true;
     for(int attempt=0;attempt<4000;attempt++){
-        LONG a=InterlockedCompareExchange(const_cast<volatile LONG*>(&p->seq),0,0);
+        LONG a=p->seq;
         if(!(a&1) && a>0){
+            MemoryBarrier();
             auto ts=p->timestamp,v=p->payload;
             MemoryBarrier();
             LONG b=InterlockedCompareExchange(const_cast<volatile LONG*>(&p->seq),0,0);
@@ -41,7 +42,7 @@ int reader(){
                 }
             }
         }
-        if(InterlockedCompareExchange(const_cast<volatile LONG*>(&p->finished),0,0)!=0 && previous>=200)break;
+        if(p->finished!=0 && previous>=200)break;
         Sleep(1);
     }
     UnmapViewOfFile(p); CloseHandle(map);
