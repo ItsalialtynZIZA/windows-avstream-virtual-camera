@@ -6,6 +6,7 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <chrono>
+#include <cwchar>
 #include <cstdint>
 #include <string>
 #include <utility>
