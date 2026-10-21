@@ -22,12 +22,14 @@ public:
     // The producer must provide a deep copy of the real sensor frame.
     void PushRaw(Frame frame) {
         std::lock_guard<std::mutex> guard(lock_);
+        if (frame.bytes.empty()) return;
         if (!raw_.bytes.empty() && frame.sequence <= raw_.sequence) return;
         raw_ = std::move(frame);
     }
     // OBS frames never enter the raw buffer.
     void PushObs(Frame frame) {
         std::lock_guard<std::mutex> guard(lock_);
+        if (frame.bytes.empty()) return;
         if (!obs_.bytes.empty() && frame.sequence <= obs_.sequence) return;
         obs_ = std::move(frame);
     }
@@ -42,6 +44,8 @@ public:
             return {obs_, Source::ObsProcessed};
         return {raw_, raw_.bytes.empty() ? Source::None : Source::PhysicalRaw};
     }
+    // Release the processed source immediately. A reconnect starts a new
+    // sequence epoch, so a restarted OBS sender can begin at frame 1.
     void DisconnectObs() {
         std::lock_guard<std::mutex> guard(lock_);
         obs_ = {};
