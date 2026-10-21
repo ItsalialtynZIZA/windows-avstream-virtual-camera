@@ -135,6 +135,7 @@ jobs:
             'build/physical-c270/Release/AvCamPhysicalBridge.exe',
             'build/mock-fanout/Release/AvCamMockFrameIpc.exe',
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
+            'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
             'build/physical-c270/Release/AvCamPhysicalDeviceMft.dll',
             'research/physical-c270/AvCamPhysicalInstall.ps1',
             'research/physical-c270/AvCamPhysicalControl.ps1',
