@@ -251,6 +251,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Independent RAW/OBS IPC contract failed' }
           & ./build/mock-fanout/Release/AvCamRouterIpcProbe.exe --invalid
           if ($LASTEXITCODE -ne 9) { throw 'IPC consumer invalid argument rejection failed' }
+          & ./build/mock-fanout/Release/AvCamPreviewSelectionTest.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Preview source selection and freshness policy failed' }
+          & ./build/mock-fanout/Release/AvCamRouterPreview.exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows preview selftest failed' }
           & ./build/mock-fanout/Release/AvCamDualChannelRouterTest.exe
           if ($LASTEXITCODE -ne 0) { throw 'AvCam dual-channel RAW/OBS routing failed' }
           & ./build/mock-fanout/Release/AvCamMockFanout.exe
@@ -289,6 +293,7 @@ jobs:
             'build/mock-fanout/Release/AvCamRouterObsSmoke.exe',
             'build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe',
             'build/mock-fanout/Release/AvCamRouterIpcProbe.exe',
+            'build/mock-fanout/Release/AvCamRouterPreview.exe',
             'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
@@ -366,6 +371,7 @@ jobs:
             'build/mock-fanout/Release/AvCamRouterObsSmoke.exe',
             'build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe',
             'build/mock-fanout/Release/AvCamRouterIpcProbe.exe',
+            'build/mock-fanout/Release/AvCamRouterPreview.exe',
             'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md'
@@ -388,6 +394,9 @@ jobs:
              In a second PowerShell window (while the router runs):
              .\\AvCamRouterIpcProbe.exe --channel obs --frames 30
              Or use --channel raw for the original C270 frames.
+             To see actual video, open AvCamRouterPreview.exe
+             or run .\\AvCamRouterPreview.exe --mode compare (side by side).
+             --mode output prefers OBS with RAW fallback when unavailable.
              These mappings are Local\\AvCamRouterRawV1 and Local\\AvCamRouterObsV1.
           6. Expected: AVCAM_PHYSICAL_C270_ROUTER_PASS.
              C270 RAW acquisition may fail if a camera app or negotiated
