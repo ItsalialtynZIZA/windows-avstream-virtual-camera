@@ -26,6 +26,16 @@ jobs:
             research/physical-c270/PhysicalEndpointAcceptanceTest.cpp \
             -o /tmp/avcam-c270-contract
           /tmp/avcam-c270-contract
+      - name: Verify unscoped MFT replacement is rejected by the compiler
+        run: |
+          printf '#include "AvCamMftBuildSafety.h"\\nint main() { return 0; }\\n' > /tmp/avcam-safe-mft.cpp
+          c++ -std=c++17 -Iresearch/physical-c270 /tmp/avcam-safe-mft.cpp -o /tmp/avcam-safe-mft
+          /tmp/avcam-safe-mft
+          if c++ -std=c++17 -Iresearch/physical-c270 -DAVCAM_EXPERIMENTAL_UNSCOPED_MFT_REPLACEMENT /tmp/avcam-safe-mft.cpp -o /tmp/avcam-unsafe-mft 2>/tmp/avcam-unsafe-error.log; then
+            echo "ERROR: forbidden MFT mode unexpectedly compiled"
+            exit 1
+          fi
+          grep -q 'Unscoped OBS replacement is prohibited' /tmp/avcam-unsafe-error.log
   validate-windows-c270-enumerator:
     name: Build and check C270 SetupAPI utility (Windows, no camera required)
     runs-on: windows-2022
