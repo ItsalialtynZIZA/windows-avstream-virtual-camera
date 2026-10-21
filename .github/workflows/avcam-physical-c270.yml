@@ -163,6 +163,12 @@ jobs:
             (Resolve-Path 'research/physical-c270/AvCamPhysicalInstall.ps1').Path,
             [ref]$tokens,[ref]$errors) | Out-Null
           if ($errors.Count) { throw "Install script syntax errors: $($errors.Count)" }
+          $smokeTokens=$null; $smokeErrors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'research/physical-c270/Run-AvCamObsIpcSmoke.ps1').Path,
+            [ref]$smokeTokens,[ref]$smokeErrors) | Out-Null
+          if ($smokeErrors.Count) { throw "OBS IPC smoke script syntax errors: $($smokeErrors.Count)" }
+          Write-Host 'AVCAM_OBS_IPC_SMOKE_SCRIPT_SYNTAX_PASSED'
           $trialTokens=$null; $trialErrors=$null
           [System.Management.Automation.Language.Parser]::ParseFile(
             (Resolve-Path 'research/physical-c270/AvCamDshowBridgeTrial.ps1').Path,
