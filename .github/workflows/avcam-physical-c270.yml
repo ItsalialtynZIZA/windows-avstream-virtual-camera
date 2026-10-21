@@ -133,6 +133,8 @@ jobs:
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           $files = @(
             'build/physical-c270/Release/AvCamPhysicalBridge.exe',
+            'build/mock-fanout/Release/AvCamMockFrameIpc.exe',
+            'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
             'build/physical-c270/Release/AvCamPhysicalDeviceMft.dll',
             'research/physical-c270/AvCamPhysicalInstall.ps1',
             'research/physical-c270/AvCamPhysicalControl.ps1',
