@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include <chrono>
+#include "../../feeder/src/ObsSharedMemorySource.h"
 constexpr unsigned W=1280,H=720,Channels=4,Bytes=W*H*Channels,Frames=90;
 struct Header {
     volatile LONG epoch; // odd writer active, even stable
@@ -16,6 +17,7 @@ struct Header {
     unsigned __int64 timestamp;
     unsigned frameNumber;
     unsigned checksum;
+    unsigned sourceMode; // 0 synthetic; 1 OBS
 };
 struct Region {Header header; std::array<unsigned char,Bytes> bgra;};
 static constexpr wchar_t Mapping[]=L"Local\\AvCamFullFrameMockV1";
@@ -48,7 +50,7 @@ int reader(){
                     if((unsigned __int64)readUs>maxReadUs)maxReadUs=readUs;
                     if(checksum(local.data())!=h.checksum || h.timestamp<=lastTs)valid=false;
                     // Verify actual image bytes instead of only metadata.
-                    if(local[0]!=pixel(h.frameNumber,0) || local[Bytes-1]!=pixel(h.frameNumber,Bytes-1))valid=false;
+                    if(h.sourceMode==0 && (local[0]!=pixel(h.frameNumber,0) || local[Bytes-1]!=pixel(h.frameNumber,Bytes-1)))valid=false;
                     if(!firstFrame)firstFrame=h.frameNumber;
                     if(last && h.frameNumber>last+1)observedGaps+=h.frameNumber-last-1;
                     last=h.frameNumber;lastTs=h.timestamp;count++;
@@ -68,6 +70,12 @@ int reader(){
 }
 int main(int argc,char**argv){
     if(argc>1 && std::string(argv[1])=="--reader")return reader();
+    const bool obsMode=argc>1 && std::string(argv[1])=="--obs";
+    ObsSharedMemorySource obs;
+    if(obsMode && !obs.Start()){
+        std::cerr<<"OBS_SOURCE_START_FAILED code="<<obs.LastErrorCode()<<std::endl;
+        return 8;
+    }
     HANDLE m=CreateFileMappingW(INVALID_HANDLE_VALUE,nullptr,PAGE_READWRITE,0,sizeof(Region),Mapping);
     if(!m){std::cerr<<"IPC_FRAME_CREATE_FAILED error="<<GetLastError()<<std::endl;return 1;}
     auto* p=(Region*)MapViewOfFile(m,FILE_MAP_ALL_ACCESS,0,0,sizeof(Region));
@@ -84,15 +92,29 @@ int main(int argc,char**argv){
             std::cerr<<"IPC_FRAME_CHILD_START_FAILED error="<<GetLastError()<<std::endl;ok=false;break;
         }
     }
+    p->header.sourceMode=obsMode?1u:0u;
     if(ok)for(unsigned frame=1;frame<=Frames;frame++){
         InterlockedExchange(&p->header.epoch,(LONG)(2*frame-1));
-        for(size_t k=0;k<Bytes;k++)p->bgra[k]=pixel(frame,k);
+        unsigned __int64 sourceTimestamp=(unsigned __int64)frame*33333333ULL;
+        if(obsMode){
+            std::uint64_t obsTimestamp=0;
+            if(!obs.ReadFrame(p->bgra.data(),Bytes,obsTimestamp)){
+                std::cerr<<"OBS_SOURCE_FRAME_FAILED frame="<<frame<<" code="<<obs.LastErrorCode()<<std::endl;
+                ok=false;
+                break;
+            }
+            // OBS timestamp may use a different epoch and unit; use a monotonic broker clock.
+            sourceTimestamp=(unsigned __int64)std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now().time_since_epoch()).count();
+        }else{
+            for(size_t k=0;k<Bytes;k++)p->bgra[k]=pixel(frame,k);
+        }
         p->header.frameNumber=frame;
-        p->header.timestamp=(unsigned __int64)frame*33333333ULL;
+        p->header.timestamp=sourceTimestamp;
         p->header.checksum=checksum(p->bgra.data());
         MemoryBarrier();
         InterlockedExchange(&p->header.epoch,(LONG)(2*frame));
-        Sleep(33);
+        if(!obsMode)Sleep(33);
     }
     InterlockedExchange(&p->header.finished,1);
     for(auto& proc:child)if(proc.hProcess){
