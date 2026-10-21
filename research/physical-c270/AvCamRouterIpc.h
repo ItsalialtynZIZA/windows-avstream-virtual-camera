@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 #include <vector>
+#include <utility>
 
 namespace avcam::ipc {
 constexpr std::uint32_t Width = 1280;
