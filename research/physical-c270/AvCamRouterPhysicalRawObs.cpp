@@ -89,6 +89,13 @@ int wmain(int argc, wchar_t** argv) {
         std::cout << "AVCAM_ROUTER_FALLBACK_FAILED\n";
         return 3;
     }
+    // RAW fallback is correct runtime behavior, but dual-source acceptance
+    // must not pass unless all expected OBS frames were actually received.
+    if (!rawOnly && obsFrames != rawFrames) {
+        std::cout << "AVCAM_ROUTER_OBS_INCOMPLETE frames="
+                  << obsFrames << " expected=" << rawFrames << "\n";
+        return 5;
+    }
     std::cout << "AVCAM_PHYSICAL_RAW_FRAMES=" << rawFrames << "\n"
               << "AVCAM_OBS_PROCESSED_FRAMES=" << obsFrames << "\n"
               << "AVCAM_ROUTER_RAW_PROTECTED=1\n"
