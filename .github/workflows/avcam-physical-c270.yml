@@ -101,6 +101,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Mock fanout configure failed' }
           cmake --build build/mock-fanout --config Release
           if ($LASTEXITCODE -ne 0) { throw 'Mock fanout compilation failed' }
+          & ./build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Read-only SetupAPI enumerator failed' }
           & ./build/mock-fanout/Release/AvCamPhysicalEndpointAcceptanceTest.exe
           if ($LASTEXITCODE -ne 0) { throw 'Strict original physical endpoint regression failed' }
           & ./build/mock-fanout/Release/AvCamMockFanout.exe
@@ -136,6 +138,7 @@ jobs:
           $files = @(
             'build/physical-c270/Release/AvCamPhysicalBridge.exe',
             'build/mock-fanout/Release/AvCamMockFrameIpc.exe',
+            'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
             'research/physical-c270/AvCamC270EventCorrelation.ps1',
