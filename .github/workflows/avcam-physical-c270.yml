@@ -107,6 +107,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Mock IPC fanout selftest failed' }
           & ./build/mock-fanout/Release/AvCamMockFrameIpc.exe
           if ($LASTEXITCODE -ne 0) { throw 'Full-frame BGRA IPC selftest failed' }
+          # CI has no running OBS. The live-source mode must fail explicitly rather than silently generating synthetic frames.
+          & ./build/mock-fanout/Release/AvCamMockFrameIpc.exe --obs
+          if ($LASTEXITCODE -ne 8) { throw "OBS missing-source contract failed (expected 8, got $LASTEXITCODE)" }
       - name: Compile user-mode OBS bridge and device MFT COM DLL
         shell: pwsh
         run: |
