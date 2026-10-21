@@ -14,12 +14,12 @@
 
 #pragma comment(lib, "setupapi.lib")
 
-static void EnumCategory(const GUID& category, const wchar_t* label) {
+static unsigned EnumCategory(const GUID& category, const wchar_t* label) {\n    unsigned found = 0;
     HDEVINFO info = SetupDiGetClassDevsW(&category, nullptr, nullptr,
                                         DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
     if (info == INVALID_HANDLE_VALUE) {
         std::wcerr << L"ENUM_FAILED=" << label << L" code=" << GetLastError() << L"\n";
-        return;
+        return 0;
     }
     for (DWORD index = 0;; ++index) {
         SP_DEVICE_INTERFACE_DATA iface{};
@@ -48,6 +48,7 @@ static void EnumCategory(const GUID& category, const wchar_t* label) {
                        && avcam::acceptance::IsPhysicalLogitechC270InterfacePath(path);
         // Do not print non-C270 device names, paths or serials.
         if (c270) {
+            ++found;
             std::wcout << L"CATEGORY=" << label << L"\n"
                        << L"C270_PNP_INSTANCE=" << instance << L"\n"
                        << L"C270_INTERFACE=" << path << L"\n"
@@ -55,13 +56,17 @@ static void EnumCategory(const GUID& category, const wchar_t* label) {
         }
     }
     SetupDiDestroyDeviceInfoList(info);
+    return found;
 }
 
 int wmain() {
     std::wcout << L"AVCAM_READONLY_PNP_ENUM_BEGIN\n";
-    EnumCategory(KSCATEGORY_VIDEO_CAMERA, L"VIDEO_CAMERA");
-    EnumCategory(KSCATEGORY_CAPTURE, L"CAPTURE");
-    EnumCategory(KSCATEGORY_VIDEO, L"VIDEO");
+    unsigned found = 0;
+    found += EnumCategory(KSCATEGORY_VIDEO_CAMERA, L"VIDEO_CAMERA");
+    found += EnumCategory(KSCATEGORY_CAPTURE, L"CAPTURE");
+    found += EnumCategory(KSCATEGORY_VIDEO, L"VIDEO");
+    std::wcout << L"AVCAM_PHYSICAL_C270_INTERFACES_FOUND=" << found << L"\\n";
+    if (!found) std::wcout << L"AVCAM_NO_PHYSICAL_C270_INTERFACE_MATCH (not evidence of another camera)\\n";
     std::wcout << L"AVCAM_READONLY_PNP_ENUM_COMPLETE\n";
     return 0;
 }
