@@ -150,6 +150,8 @@ jobs:
             [ref]$trialTokens,[ref]$trialErrors) | Out-Null
           if ($trialErrors.Count) { throw "DShow trial syntax errors: $($trialErrors.Count)" }
           Write-Host 'AVCAM_DSHOW_TRIAL_POWERSHELL_SYNTAX_PASSED'
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File research/physical-c270/DshowBridgeTrialSafetyTest.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'DShow Bridge rollback safety regression failed' }
           Get-ChildItem $out -File | Get-FileHash -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash)  $(Split-Path $_.Path -Leaf)" } |
             Set-Content (Join-Path $out 'SHA256SUMS.txt')
