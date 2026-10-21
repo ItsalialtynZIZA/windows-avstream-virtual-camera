@@ -21,6 +21,15 @@ inline bool IsPhysicalLogitechC270Instance(std::wstring_view pnpInstanceId) {
            id.find(L"VID_046D&PID_0825") != std::wstring::npos;
 }
 
+inline bool IsPhysicalLogitechC270InterfacePath(std::wstring_view interfacePath) {
+    const auto path = Upper(interfacePath);
+    // Require the actual USB device interface namespace and VID/PID tokens.
+    // A friendly name, SWD virtual camera or ROOT software path is insufficient.
+    return (path.rfind(L"\\\\?\\USB#", 0) == 0 ||
+            path.rfind(L"\\??\\USB#", 0) == 0) &&
+           path.find(L"VID_046D&PID_0825") != std::wstring::npos;
+}
+
 inline bool IsExistingPhysicalC270Interface(
     std::wstring_view originalInterfacePath,
     std::wstring_view chromeSelectedInterfacePath,
@@ -30,6 +39,7 @@ inline bool IsExistingPhysicalC270Interface(
     return !originalInterfacePath.empty() &&
            !chromeSelectedInterfacePath.empty() &&
            Upper(originalInterfacePath) == Upper(chromeSelectedInterfacePath) &&
+           IsPhysicalLogitechC270InterfacePath(originalInterfacePath) &&
            IsPhysicalLogitechC270Instance(pnpInstanceId);
 }
 
