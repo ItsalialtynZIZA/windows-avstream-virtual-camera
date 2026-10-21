@@ -12,6 +12,9 @@ int main() {
     if (IsExistingPhysicalC270Interface(physical, LR"(\\?\SWD#VirtualCamera)", instance)) return 3;
     if (IsExistingPhysicalC270Interface(physical, physical, LR"(SWD\VID_046D&PID_0825)")) return 4;
     if (IsExistingPhysicalC270Interface(physical, physical, LR"(USB\VID_046D&PID_0826)")) return 5;
+    if (IsExistingPhysicalC270Interface(L"Logi C270 HD WebCam", L"Logi C270 HD WebCam", instance)) return 8;
+    if (IsExistingPhysicalC270Interface(LR"(\\?\SWD#VID_046D&PID_0825)", LR"(\\?\SWD#VID_046D&PID_0825)", instance)) return 9;
+    if (IsExistingPhysicalC270Interface(LR"(\\?\ROOT#VID_046D&PID_0825)", LR"(\\?\ROOT#VID_046D&PID_0825)", instance)) return 10;
     if (StrictCaptureAcceptance(true, true, true, false, true, true, true,
                                 physical, physical, instance)) return 6;
     if (!StrictCaptureAcceptance(true, true, true, true, true, true, true,
