@@ -134,13 +134,26 @@ void AvCamSetQueueFormat(const void* queue, IMFMediaType* input,
         if (enabled) g_mjpegQueues.insert(queue);
     }
     TraceMediaType(L"QueueFormat", input, output, enabled);
+    // Queue pointers identify MFT-internal streams, NOT browser processes.
+    // Never log pixels or mistake the FrameServer PID for a consumer PID.
+    wchar_t event[192]{};
+    (void)swprintf_s(event,
+        L"AvCamQueueNegotiated queue=%p pid=%lu mjpeg1280=%d shared_device=1",
+        queue, GetCurrentProcessId(), enabled ? 1 : 0);
+    TraceRaw(event);
 }
 void AvCamTrace(const wchar_t* message) {
     TraceRaw(message);
 }
 void AvCamRemoveQueue(const void* queue) {
-    std::lock_guard<std::mutex> lock(g_modesMutex);
-    g_mjpegQueues.erase(queue);
+    {
+        std::lock_guard<std::mutex> lock(g_modesMutex);
+        g_mjpegQueues.erase(queue);
+    }
+    wchar_t event[160]{};
+    (void)swprintf_s(event, L"AvCamQueueRemoved queue=%p pid=%lu",
+                    queue, GetCurrentProcessId());
+    TraceRaw(event);
 }
 bool AvCamReplaceMjpegSample(const void* queue, IMFSample* original,
                              IMFSample** replacement) {
