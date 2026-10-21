@@ -30,7 +30,8 @@ int SelfTest() {
         a.bgra != original || b.bgra != processed) return 5;
     // A caller can change its copy without contaminating published storage.
     a.bgra[0] = 0xff;
-    if (!rawReader.TryRead(a) || a.bgra[0] != 0x11) return 6;
+    if (!rawReader.TryRead(a) || a.bgra[0] != 0x11 ||
+        rawReader.TryRead(a, 1)) return 6;
     // OBS disconnection invalidates only the OBS channel.
     obs.Invalidate();
     if (obsReader.TryRead(b) || !rawReader.TryRead(a) || a.bgra != original)
@@ -95,7 +96,7 @@ int main(int argc, char** argv) {
         Snapshot frame;
         while (std::chrono::duration_cast<std::chrono::milliseconds>(
                std::chrono::steady_clock::now() - started).count() < timeoutMs) {
-            if (consumer.TryRead(frame) && frame.sequence > lastSequence) {
+            if (consumer.TryRead(frame, lastSequence)) {
                 lastSequence = frame.sequence;
                 ++seen;
                 if (seen == 1 || seen % 30 == 0)
