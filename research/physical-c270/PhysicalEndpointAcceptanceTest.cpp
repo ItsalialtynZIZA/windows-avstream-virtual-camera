@@ -17,6 +17,11 @@ int main() {
     if (IsExistingPhysicalC270Interface(LR"(\\?\ROOT#VID_046D&PID_0825)", LR"(\\?\ROOT#VID_046D&PID_0825)", instance)) return 10;
     if (IsPhysicalLogitechC270Instance(L"USB\\VID_046D&PID_08250\\fake")) return 11;
     if (IsPhysicalLogitechC270InterfacePath(LR"(\\?\USB#VID_046D&PID_08250#fake)")) return 12;
+    // A different USB device must not pass by embedding our VID/PID later.
+    if (IsPhysicalLogitechC270Instance(
+        LR"(USB\VID_1234&PID_5678\VID_046D&PID_0825)")) return 13;
+    if (IsPhysicalLogitechC270InterfacePath(
+        LR"(\\?\USB#VID_1234&PID_5678#VID_046D&PID_0825#fake)")) return 14;
     if (StrictCaptureAcceptance(true, true, true, false, true, true, true,
                                 physical, physical, instance)) return 6;
     if (!StrictCaptureAcceptance(true, true, true, true, true, true, true,
