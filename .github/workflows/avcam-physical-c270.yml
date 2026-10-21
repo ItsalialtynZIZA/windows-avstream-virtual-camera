@@ -132,6 +132,7 @@ jobs:
             'research/physical-c270/AvCamDeepLiveTrace.cmd',
             'research/physical-c270/Decode-AvCamPhysicalEtw.ps1',
             'research/physical-c270/AvCamCaptureSharingBaseline.ps1',
+            'research/physical-c270/AvCamDshowBridgeTrial.ps1',
             'research/physical-c270/README_PHYSICAL_C270.txt'
           )
           foreach ($file in $files) {
