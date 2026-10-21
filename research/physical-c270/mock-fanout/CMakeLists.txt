@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.20)
 project(AvCamMockFanout LANGUAGES CXX)
+add_executable(AvCamDualChannelRouterTest ../AvCamDualChannelRouterTest.cpp)
+target_compile_features(AvCamDualChannelRouterTest PRIVATE cxx_std_17)
+
 add_executable(AvCamMockFanout ../AvCamMockFanout.cpp)
 target_compile_features(AvCamMockFanout PRIVATE cxx_std_17)
 
