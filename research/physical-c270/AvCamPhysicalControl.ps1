@@ -108,6 +108,9 @@ function Show-Status {
     Write-Host 'OBS active: bridge publishes. OBS absent: original Logitech video passes through.'
 }
 if ($Action -eq 'Status') { Show-Status; return }
+if ($Action -in @('Setup','Start')) {
+    throw 'AvCam physical MFT bridge startup is disabled until Chrome-only OBS routing is proven. Status, Stop, RemoveAutostart and Uninstall remain available.'
+}
 if (Elevate-IfNeeded) { return }
 $existingTask = Get-Task
 Assert-TaskOwner $existingTask
