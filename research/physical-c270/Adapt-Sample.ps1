@@ -97,7 +97,12 @@ STDMETHODIMP CMultipinMft::InitializeTransform (
     _In_ IMFAttributes *pAttributes
     )
 {
-    AvCamTrace(L"InitializeTransform called by camera pipeline");
+    // This identifies the Device MFT instance, not the consuming application.
+    wchar_t avcamInitEvent[192]{};
+    (void)swprintf_s(avcamInitEvent,
+        L"AvCamDeviceMftInitialize instance=%p host_pid=%lu client_identity=unknown",
+        static_cast<void*>(this), GetCurrentProcessId());
+    AvCamTrace(avcamInitEvent);
 '@
 
 $common=Join-Path $base 'common.h'
