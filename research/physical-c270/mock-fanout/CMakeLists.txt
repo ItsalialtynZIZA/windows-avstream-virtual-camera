@@ -5,3 +5,6 @@ target_compile_features(AvCamMockFanout PRIVATE cxx_std_17)
 
 add_executable(AvCamMockIpcFanout ../AvCamMockIpcFanout.cpp)
 target_compile_features(AvCamMockIpcFanout PRIVATE cxx_std_17)
+
+add_executable(AvCamMockFrameIpc ../AvCamMockFrameIpc.cpp)
+target_compile_features(AvCamMockFrameIpc PRIVATE cxx_std_17)
