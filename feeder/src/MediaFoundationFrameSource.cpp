@@ -550,12 +550,17 @@ bool MediaFoundationFrameSource::ReadFrame(
 
         if (actualStream != static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM))
         {
+            std::wcerr << L"AVCAM_MF_UNEXPECTED_STREAM stream=" << actualStream << L"\n";
             return false;
         }
 
         ComPtr<IMFMediaBuffer> buffer;
-        if (FAILED(sample->ConvertToContiguousBuffer(&buffer)))
+        const HRESULT bufferResult = sample->ConvertToContiguousBuffer(&buffer);
+        if (FAILED(bufferResult))
         {
+            std::wcerr << L"AVCAM_MF_CONTIGUOUS_BUFFER_FAILED hr=0x"
+                       << std::hex << static_cast<unsigned long>(bufferResult)
+                       << std::dec << L"\n";
             return false;
         }
 
@@ -575,5 +580,6 @@ bool MediaFoundationFrameSource::ReadFrame(
         return true;
     }
 
+    std::wcerr << L"AVCAM_MF_NO_SAMPLE_AFTER_EIGHT_READS\n";
     return false;
 }
