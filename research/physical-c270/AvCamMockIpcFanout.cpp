@@ -23,9 +23,9 @@ int reader(){
         map=OpenFileMappingW(FILE_MAP_READ,FALSE,Name);
         if(!map)Sleep(25);
     }
-    if(!map){std::cerr<<"reader map unavailable\n";return 2;}
+    if(!map){std::cerr<<"reader map unavailable error="<<GetLastError()<<std::endl;return 2;}
     auto* p=(const Shared*)MapViewOfFile(map,FILE_MAP_READ,0,0,sizeof(Shared));
-    if(!p){CloseHandle(map);return 3;}
+    if(!p){std::cerr<<"reader map view unavailable error="<<GetLastError()<<std::endl;CloseHandle(map);return 3;}
     unsigned __int64 previous=0, previousTs=0; unsigned samples=0; bool ok=true;
     for(int attempt=0;attempt<4000;attempt++){
         LONG a=p->seq;
@@ -64,6 +64,7 @@ int main(int argc,char**argv){
         std::wstring cmd=L"\""+std::wstring(executable)+L"\" --reader";
         std::vector<wchar_t> buffer(cmd.begin(),cmd.end());buffer.push_back(0);
         if(!CreateProcessW(executable,buffer.data(),nullptr,nullptr,FALSE,0,nullptr,nullptr,&si,&children[i])){
+            std::cerr<<"CreateProcess failed reader="<<i<<" error="<<GetLastError()<<std::endl;
             created=false;break;
         }
     }
@@ -83,6 +84,7 @@ int main(int argc,char**argv){
         DWORD wait=WaitForSingleObject(ch.hProcess,15000);
         if(wait!=WAIT_OBJECT_0){TerminateProcess(ch.hProcess,5);ok=false;}
         DWORD code=999;GetExitCodeProcess(ch.hProcess,&code);
+        std::cout<<"IPC_CHILD_EXIT="<<code<<" wait="<<wait<<std::endl;
         if(code!=0)ok=false;
         CloseHandle(ch.hProcess);CloseHandle(ch.hThread);
     }
