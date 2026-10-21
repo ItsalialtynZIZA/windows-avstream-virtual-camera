@@ -4,6 +4,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <iostream>
+#include <stdexcept>
 #include <mutex>
 #include <thread>
 #include <vector>
