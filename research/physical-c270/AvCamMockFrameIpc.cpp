@@ -29,6 +29,7 @@ int reader(){
     if(!p){std::cerr<<"IPC_FRAME_VIEW_FAILED error="<<GetLastError()<<std::endl;CloseHandle(m);return 3;}
     std::vector<unsigned char> local(Bytes);
     unsigned last=0,count=0;unsigned __int64 lastTs=0;bool valid=true;
+    auto readerStart=std::chrono::steady_clock::now();
     unsigned observedGaps=0;
     unsigned __int64 maxReadUs=0;
     for(int i=0;i<6000;i++){
@@ -56,7 +57,8 @@ int reader(){
         Sleep(1);
     }
     UnmapViewOfFile(p);CloseHandle(m);
-    std::cout<<"IPC_FRAME_READER count="<<count<<" last="<<last<<" valid="<<valid<<" dropped_intermediate="<<observedGaps<<" max_copy_us="<<maxReadUs<<std::endl;
+    std::cout<<"IPC_FRAME_READER count="<<count<<" last="<<last<<" valid="<<valid<<" dropped_intermediate="<<observedGaps<<" max_copy_us="<<maxReadUs
+             <<" elapsed_ms="<<std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now()-readerStart).count()<<std::endl;
     return valid && count>0 && last==Frames?0:4;
 }
 int main(int argc,char**argv){
@@ -85,7 +87,7 @@ int main(int argc,char**argv){
         p->header.checksum=checksum(p->bgra.data());
         MemoryBarrier();
         InterlockedExchange(&p->header.epoch,(LONG)(2*frame));
-        Sleep(5);
+        Sleep(33);
     }
     InterlockedExchange(&p->header.finished,1);
     for(auto& proc:child)if(proc.hProcess){
