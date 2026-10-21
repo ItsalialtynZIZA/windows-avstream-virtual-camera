@@ -14,31 +14,25 @@ inline std::wstring Upper(std::wstring_view s) {
     return out;
 }
 
-inline bool HasExactC270VidPid(std::wstring_view source, wchar_t delimiter) {
-    constexpr std::wstring_view kId = L"VID_046D&PID_0825";
-    const auto pos = source.find(kId);
-    if (pos == std::wstring_view::npos) return false;
-    const auto end = pos + kId.size();
-    return (pos == 0 || source[pos - 1] == delimiter ||
-            source[pos - 1] == L'&') &&
-           (end == source.size() || source[end] == delimiter ||
-            source[end] == L'&');
-}
-
+// Match the VID/PID at the FIRST USB identity token only. Finding these
+// bytes somewhere later in a string is not proof of a physical C270.
 inline bool IsPhysicalLogitechC270Instance(std::wstring_view pnpInstanceId) {
-    auto id = Upper(pnpInstanceId);
-    // A USB instance, not USBSTOR, ROOT, SWD, or a friendly-name alias.
-    return id.rfind(L"USB\\", 0) == 0 &&
-           HasExactC270VidPid(id, L'\\');
+    const auto id = Upper(pnpInstanceId);
+    constexpr std::wstring_view prefix = L"USB\\VID_046D&PID_0825";
+    if (id.rfind(prefix, 0) != 0) return false;
+    return id.size() == prefix.size() ||
+           id[prefix.size()] == L'&' || id[prefix.size()] == L'\\';
 }
 
 inline bool IsPhysicalLogitechC270InterfacePath(std::wstring_view interfacePath) {
     const auto path = Upper(interfacePath);
-    // Require the actual USB device interface namespace and VID/PID tokens.
-    // A friendly name, SWD virtual camera or ROOT software path is insufficient.
-    return (path.rfind(L"\\\\?\\USB#", 0) == 0 ||
-            path.rfind(L"\\??\\USB#", 0) == 0) &&
-           HasExactC270VidPid(path, L'#');
+    constexpr std::wstring_view win32Prefix = L"\\\\?\\USB#VID_046D&PID_0825";
+    constexpr std::wstring_view ntPrefix = L"\\??\\USB#VID_046D&PID_0825";
+    const auto p = path.rfind(win32Prefix, 0) == 0 ? win32Prefix :
+                   path.rfind(ntPrefix, 0) == 0 ? ntPrefix : std::wstring_view{};
+    if (p.empty()) return false;
+    return path.size() == p.size() ||
+           path[p.size()] == L'&' || path[p.size()] == L'#';
 }
 
 inline bool IsExistingPhysicalC270Interface(
