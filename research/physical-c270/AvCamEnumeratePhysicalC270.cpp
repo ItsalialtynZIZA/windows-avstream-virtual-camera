@@ -80,12 +80,18 @@ int wmain(int argc, wchar_t** argv) {
     }
     const std::wstring expectedPath = verify ? argv[2] : L"";
     std::wcout << L"AVCAM_READONLY_PNP_ENUM_BEGIN\n";
-    unsigned found = 0;
-    found += EnumCategory(KSCATEGORY_VIDEO_CAMERA, L"VIDEO_CAMERA");
-    found += EnumCategory(KSCATEGORY_CAPTURE, L"CAPTURE");
-    found += EnumCategory(KSCATEGORY_VIDEO, L"VIDEO");
-    std::wcout << L"AVCAM_PHYSICAL_C270_INTERFACES_FOUND=" << found << L"\n";
-    if (!found) std::wcout << L"AVCAM_NO_PHYSICAL_C270_INTERFACE_MATCH (not evidence of another camera)\n";
+    MatchStats total{};
+    const auto a = EnumCategory(KSCATEGORY_VIDEO_CAMERA, L"VIDEO_CAMERA", expectedPath);
+    const auto b = EnumCategory(KSCATEGORY_CAPTURE, L"CAPTURE", expectedPath);
+    const auto d = EnumCategory(KSCATEGORY_VIDEO, L"VIDEO", expectedPath);
+    total.found = a.found + b.found + d.found;
+    total.exactMatches = a.exactMatches + b.exactMatches + d.exactMatches;
+    std::wcout << L"AVCAM_PHYSICAL_C270_INTERFACES_FOUND=" << total.found << L"\n";
+    if (!total.found)
+        std::wcout << L"AVCAM_NO_PHYSICAL_C270_INTERFACE_MATCH\n";
+    if (verify)
+        std::wcout << L"AVCAM_SELECTED_INTERFACE_IS_CURRENT_C270="
+                   << (total.exactMatches ? L"YES" : L"NO") << L"\n";
     std::wcout << L"AVCAM_READONLY_PNP_ENUM_COMPLETE\n";
-    return 0;
+    return verify && !total.exactMatches ? 3 : 0;
 }
