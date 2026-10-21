@@ -28,6 +28,10 @@ int wmain(int argc, wchar_t** argv) {
             const std::wstring value(argv[++a]);
             try {
                 std::size_t consumed = 0;
+                // std::stoull accepts a leading minus sign on some runtimes.
+                // Frame limits must be strictly decimal ASCII digits.
+                if (value.empty() || value.find_first_not_of(L"0123456789") != std::wstring::npos)
+                    throw std::invalid_argument("non-decimal frame count");
                 maxFrames = std::stoull(value, &consumed);
                 if (consumed != value.size() || maxFrames == 0 || maxFrames > 10000000ULL)
                     throw std::invalid_argument("invalid frame count");
