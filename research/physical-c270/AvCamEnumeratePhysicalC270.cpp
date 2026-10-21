@@ -65,8 +65,8 @@ int wmain() {
     found += EnumCategory(KSCATEGORY_VIDEO_CAMERA, L"VIDEO_CAMERA");
     found += EnumCategory(KSCATEGORY_CAPTURE, L"CAPTURE");
     found += EnumCategory(KSCATEGORY_VIDEO, L"VIDEO");
-    std::wcout << L"AVCAM_PHYSICAL_C270_INTERFACES_FOUND=" << found << L"\\n";
-    if (!found) std::wcout << L"AVCAM_NO_PHYSICAL_C270_INTERFACE_MATCH (not evidence of another camera)\\n";
+    std::wcout << L"AVCAM_PHYSICAL_C270_INTERFACES_FOUND=" << found << L"\n";
+    if (!found) std::wcout << L"AVCAM_NO_PHYSICAL_C270_INTERFACE_MATCH (not evidence of another camera)\n";
     std::wcout << L"AVCAM_READONLY_PNP_ENUM_COMPLETE\n";
     return 0;
 }
