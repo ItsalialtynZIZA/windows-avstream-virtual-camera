@@ -97,10 +97,11 @@ jobs:
       - name: Compile and run camera-independent mock capture fanout
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path build/mock-fanout | Out-Null
-          cl.exe /nologo /std:c++17 /EHsc /O2 /Fe:build/mock-fanout/AvCamMockFanout.exe research/physical-c270/AvCamMockFanout.cpp
+          cmake -S research/physical-c270/mock-fanout -B build/mock-fanout -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'Mock fanout configure failed' }
+          cmake --build build/mock-fanout --config Release
           if ($LASTEXITCODE -ne 0) { throw 'Mock fanout compilation failed' }
-          & ./build/mock-fanout/AvCamMockFanout.exe
+          & ./build/mock-fanout/Release/AvCamMockFanout.exe
           if ($LASTEXITCODE -ne 0) { throw 'Mock fanout runtime selftest failed' }
       - name: Compile user-mode OBS bridge and device MFT COM DLL
         shell: pwsh
