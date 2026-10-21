@@ -8,6 +8,7 @@ on:
       - 'research/physical-c270/**'
       - '.github/workflows/avcam-physical-c270.yml'
       - 'feeder/src/ObsSharedMemorySource.*'
+      - 'feeder/src/MediaFoundationFrameSource.*'
       - 'research/udecx/tools/AvCamUdeMjpegEncoder.*'
 permissions:
   contents: read
