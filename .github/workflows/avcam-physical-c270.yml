@@ -148,6 +148,24 @@ jobs:
           # a temporary ETW trace session and writes only trace output files.
           Write-Host 'AVCAM_PHYSICAL_C270_ETW_CAPTURE_PARSE_PASSED'
 
+      - name: Verify MFT diagnostic event contract and fail-closed policy
+        shell: powershell
+        run: |
+          $hook = Get-Content 'research/physical-c270/AvCamPhysicalHook.cpp' -Raw
+          $adapt = Get-Content 'research/physical-c270/Adapt-Sample.ps1' -Raw
+          $capture = Get-Content 'research/physical-c270/AvCamPhysicalCaptureEtw.ps1' -Raw
+          $safety = Get-Content 'research/physical-c270/AvCamMftBuildSafety.h' -Raw
+          foreach ($marker in @('AvCamQueueNegotiated','AvCamQueueRemoved','AvCamMultiAppSafePassThrough')) {
+            if (!$hook.Contains($marker)) { throw "Missing MFT event: $marker" }
+          }
+          if (!$adapt.Contains('AvCamDeviceMftInitialize')) { throw 'Missing Device MFT initialization event' }
+          foreach ($marker in @('AvCamQueueNegotiated','AvCamDeviceMftInitialize','EVIDENCE_LEVEL=DEVICE_MFT_ONLY')) {
+            if (!$capture.Contains($marker)) { throw "Trace parser lacks event/contract: $marker" }
+          }
+          if (!$safety.Contains('#error "Unscoped OBS replacement is prohibited')) {
+            throw 'Unsafe Device MFT substitution compile guard removed'
+          }
+          Write-Host 'AVCAM_MFT_DIAGNOSTIC_CONTRACT_PASS'
       - name: Validate release controller and one-click installer
         shell: powershell
         run: |
