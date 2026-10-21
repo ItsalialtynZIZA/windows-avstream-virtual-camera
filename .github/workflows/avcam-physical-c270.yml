@@ -28,7 +28,8 @@ jobs:
           /tmp/avcam-c270-contract
       - name: Verify unscoped MFT replacement is rejected by the compiler
         run: |
-          printf '#include "AvCamMftBuildSafety.h"\\nint main() { return 0; }\\n' > /tmp/avcam-safe-mft.cpp
+          echo '#include "AvCamMftBuildSafety.h"' > /tmp/avcam-safe-mft.cpp
+          echo 'int main() { return 0; }' >> /tmp/avcam-safe-mft.cpp
           c++ -std=c++17 -Iresearch/physical-c270 /tmp/avcam-safe-mft.cpp -o /tmp/avcam-safe-mft
           /tmp/avcam-safe-mft
           if c++ -std=c++17 -Iresearch/physical-c270 -DAVCAM_EXPERIMENTAL_UNSCOPED_MFT_REPLACEMENT /tmp/avcam-safe-mft.cpp -o /tmp/avcam-unsafe-mft 2>/tmp/avcam-unsafe-error.log; then
