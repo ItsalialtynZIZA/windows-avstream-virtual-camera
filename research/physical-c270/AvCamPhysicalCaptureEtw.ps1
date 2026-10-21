@@ -37,8 +37,16 @@ try {
 Write-Host "ETL_FILE=$etl"
 if (Test-Path -LiteralPath $etl) {
     try {
-        $records = @(Get-WinEvent -Path $etl -Oldest -ErrorAction Stop |
-            Where-Object { $_.ProviderId -eq [guid]$provider })
+        # An ETL file with no events is a valid diagnostic outcome.
+        # Get-WinEvent can throw NoMatchingEventsFound in that case; it
+        # must not be misreported as a decoder failure.
+        $allEvents = @()
+        try {
+            $allEvents = @(Get-WinEvent -Path $etl -Oldest -ErrorAction Stop)
+        } catch {
+            if ($_.FullyQualifiedErrorId -notmatch 'NoMatchingEventsFound') { throw }
+        }
+        $records = @($allEvents | Where-Object { $_.ProviderId -eq [guid]$provider })
         Write-Host ('ETW_PROVIDER_RECORDS=' + $records.Count)
         # EventWriteString publishes text via event properties. Some Windows
         # providers expose it only in Message, so support both representations.
