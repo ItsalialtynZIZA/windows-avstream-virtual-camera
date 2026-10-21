@@ -53,116 +53,6 @@ if ($null -eq $rootKey) {
         }
     } finally { $rootKey.Dispose() }
 }
-# Microsoft documents EnableDshowRedirection under the USB interface's
-# Device Parameters. It is a UVC device configuration signal; its absence
-# does NOT prove that an application bypasses or uses the frame server.
-Write-Host '=== PHYSICAL C270 DSHOW BRIDGE CONFIGURATION (READ ONLY) ==='
-$bridgePaths = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-foreach ($device in $dev) {
-    $instance = [string]$device.InstanceId
-    if ($instance -match '(?i)^(USB\\VID_046D&PID_0825[^\\]*)\\(.+)
-Write-Host ('C270_CAMERA_INTERFACE_MATCH_COUNT=' + $interfaceMatches)
-foreach ($name in @('FrameServer','FrameServerMonitor')) {
-    $svc = Get-Service -Name $name -ErrorAction SilentlyContinue
-    if ($null -eq $svc) { Write-Host ("SERVICE_{0}=MISSING" -f $name) }
-    else { Write-Host ("SERVICE_{0}={1};START={2}" -f $name,$svc.Status,$svc.StartType) }
-}
-foreach ($view in @('Registry64','Registry32')) {
-    $hive = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
-        [Microsoft.Win32.RegistryHive]::LocalMachine,
-        [Enum]::Parse([Microsoft.Win32.RegistryView], $view))
-    try {
-        $key = $hive.OpenSubKey('SOFTWARE\Microsoft\Windows Media Foundation\Platform',$false)
-        $value = if ($null -ne $key) { $key.GetValue('EnableFrameServerMode',$null) } else { $null }
-        Write-Host ("FRAME_SERVER_OVERRIDE_{0}={1}" -f $view, $(if($null -eq $value){'<absent>'}else{$value}))
-        if ($null -ne $key) { $key.Dispose() }
-    } finally { $hive.Dispose() }
-}
-Write-Host '=== CAMERA RELATED PROCESSES ==='
-Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-    Where-Object {
-        $_.Name -match '(?i)camera|obs|python|deep|chrome|frameserver'
-    } |
-    Select-Object ProcessId,Name,ExecutablePath |
-    Format-Table -AutoSize | Out-Host
-Write-Host '=== DEEP LIVE CAM LOADED CAMERA MODULES (BEST EFFORT) ==='
-$deep = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
-    $_.ProcessName -match '(?i)DeepLiveCam'
-})
-foreach ($process in $deep) {
-    Write-Host ("DEEP_PROCESS={0};PID={1}" -f $process.ProcessName, $process.Id)
-    try {
-        $loaded = @($process.Modules | Where-Object {
-            $_.ModuleName -match '(?i)opencv_videoio|opencv_world|mfplat|mfreadwrite|mf.dll|quartz|ksproxy|devenum|qedit|vidcap|dshow|ksuser'
-        } | Select-Object ModuleName,FileName)
-        if ($loaded.Count -eq 0) { Write-Host 'DEEP_CAMERA_MODULES=NONE_VISIBLE' }
-        else { $loaded | Format-Table -AutoSize | Out-Host }
-    } catch { Write-Host ("DEEP_MODULE_SCAN_ERROR={0}" -f $_.Exception.Message) }
-}
-Write-Host 'NOTE: Loaded modules indicate available backends, not necessarily the active capture backend.'
-Write-Host '=== DSHOW BRIDGE AND CAMERA FRAME SERVER MODULES (BEST EFFORT) ==='
-# A process loading a bridge DLL does not prove that it routes camera frames,
-# but comparing both hosts can rule out some proposed configurations.
-$all = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
-    $_.ProcessName -match '(?i)DeepLiveCam|svchost|FrameServer'
-})
-foreach ($proc in $all) {
-    try {
-        $matches = @($proc.Modules | Where-Object {
-            $_.ModuleName -match '(?i)dshowbridge|ksproxy|mfsensorgroup|mfcaptureengine|mfreadwrite|quartz'
-        } | Select-Object -ExpandProperty ModuleName -Unique)
-        if ($matches.Count -gt 0) {
-            Write-Host ("CAMERA_HOST_MODULES_PID={0};NAME={1};DLLS={2}" -f $proc.Id,$proc.ProcessName,($matches -join ','))
-        }
-    } catch {
-        # Some protected Windows service processes deny module enumeration.
-    }
-}
-Write-Host 'NOTE: This scan is informational; a DLL loaded into a process does not prove capture ownership.'
-Write-Host 'NOTE: Service processes can be protected and inaccessible; missing module results are inconclusive.'
-Write-Host 'NEXT: For conclusive backend selection capture the actual OpenCV backend name or trace during live operation.'
-Write-Host 'BASELINE_COMPLETE_NO_SETTINGS_CHANGED'
-) {
-        $null = $bridgePaths.Add(("SYSTEM\CurrentControlSet\Enum\USB\{0}\{1}\Device Parameters" -f $Matches[1],$Matches[2]))
-    }
-    # The USB composite parent may hold the Microsoft OS descriptor
-    # property instead of the MI_00 interface. Search only this C270 VID/PID.
-    $usbRoot = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Enum\USB',$false)
-    if ($null -ne $usbRoot) {
-        try {
-            foreach ($vidKeyName in @($usbRoot.GetSubKeyNames() | Where-Object { $_ -match '(?i)^VID_046D&PID_0825' })) {
-                $vidKey = $usbRoot.OpenSubKey($vidKeyName,$false)
-                if ($null -eq $vidKey) { continue }
-                try {
-                    foreach ($serial in $vidKey.GetSubKeyNames()) {
-                        $null = $bridgePaths.Add(("SYSTEM\CurrentControlSet\Enum\USB\{0}\{1}\Device Parameters" -f $vidKeyName,$serial))
-                    }
-                } finally { $vidKey.Dispose() }
-            }
-        } finally { $usbRoot.Dispose() }
-    }
-}
-$bridgeFound = 0
-foreach ($subkeyPath in $bridgePaths) {
-    $k = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($subkeyPath,$false)
-    if ($null -eq $k) { continue }
-    try {
-        if ($k.GetValueNames() -contains 'EnableDshowRedirection') {
-            $bridgeFound++
-            $v = $k.GetValue('EnableDshowRedirection',$null)
-            $kind = $k.GetValueKind('EnableDshowRedirection')
-            Write-Host ("DSHOW_BRIDGE_REG_PATH={0}" -f $subkeyPath)
-            Write-Host ("DSHOW_BRIDGE_FLAGS={0};TYPE={1}" -f $v,$kind)
-            if ($kind -eq [Microsoft.Win32.RegistryValueKind]::DWord) {
-                $flags = [int]$v
-                Write-Host ("DSHOW_BRIDGE_OPT_IN_BIT={0}" -f (($flags -band 1) -ne 0))
-                Write-Host ("DSHOW_BRIDGE_MJPEG_DECODE_BIT={0}" -f (($flags -band 2) -ne 0))
-            }
-        }
-    } finally { $k.Dispose() }
-}
-Write-Host ("DSHOW_BRIDGE_REG_FOUND_COUNT={0}" -f $bridgeFound)
-Write-Host 'NOTE: Registry descriptor values alone cannot establish the active DShow pipeline.'
 Write-Host ('C270_AVCAM_MFT_REGISTRATION_COUNT=' + $registrationMatches)
 Write-Host ('C270_CAMERA_INTERFACE_MATCH_COUNT=' + $interfaceMatches)
 foreach ($name in @('FrameServer','FrameServerMonitor')) {
@@ -181,6 +71,38 @@ foreach ($view in @('Registry64','Registry32')) {
         if ($null -ne $key) { $key.Dispose() }
     } finally { $hive.Dispose() }
 }
+Write-Host '=== UVC DSHOW BRIDGE FLAGS (READ ONLY) ==='
+$usbRoot = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SYSTEM\CurrentControlSet\Enum\USB', $false)
+$bridgeFound = 0
+if ($null -ne $usbRoot) {
+    try {
+        foreach ($deviceName in @($usbRoot.GetSubKeyNames() | Where-Object { $_ -match '(?i)^VID_046D&PID_0825' })) {
+            $deviceKey = $usbRoot.OpenSubKey($deviceName, $false)
+            if ($null -eq $deviceKey) { continue }
+            try {
+                foreach ($instanceName in $deviceKey.GetSubKeyNames()) {
+                    $params = $deviceKey.OpenSubKey(($instanceName + '\Device Parameters'), $false)
+                    if ($null -eq $params) { continue }
+                    try {
+                        if ($params.GetValueNames() -contains 'EnableDshowRedirection') {
+                            $value = $params.GetValue('EnableDshowRedirection')
+                            $kind = $params.GetValueKind('EnableDshowRedirection')
+                            Write-Host ("DSHOW_BRIDGE_DEVICE={0}\{1}" -f $deviceName,$instanceName)
+                            Write-Host ("DSHOW_BRIDGE_FLAGS={0};TYPE={1}" -f $value,$kind)
+                            if ($kind -eq [Microsoft.Win32.RegistryValueKind]::DWord) {
+                                Write-Host ("DSHOW_BRIDGE_OPT_IN_BIT={0}" -f (([int]$value -band 1) -ne 0))
+                                Write-Host ("DSHOW_BRIDGE_MJPEG_DECODE_BIT={0}" -f (([int]$value -band 2) -ne 0))
+                            }
+                            $bridgeFound++
+                        }
+                    } finally { $params.Dispose() }
+                }
+            } finally { $deviceKey.Dispose() }
+        }
+    } finally { $usbRoot.Dispose() }
+}
+Write-Host ("DSHOW_BRIDGE_REG_FOUND_COUNT={0}" -f $bridgeFound)
+Write-Host 'NOTE: These configuration values do not prove which backend currently owns capture.'
 Write-Host '=== CAMERA RELATED PROCESSES ==='
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
     Where-Object {
