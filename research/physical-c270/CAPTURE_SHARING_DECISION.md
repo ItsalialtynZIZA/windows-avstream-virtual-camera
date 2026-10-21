@@ -34,6 +34,33 @@ Status: investigation; NOT a working fix for simultaneous Deep Live Cam + Chrome
   a NEW software camera is not equivalent to changing the physical C270:
   https://learn.microsoft.com/en-us/windows-hardware/drivers/stream/frame-server-custom-media-source
 
+## Completed C270 DShow Bridge hardware experiment (2026-10-21)
+- Device MFT registration was confirmed absent, C270 present and OK,
+  FrameServer running, and EnableDshowRedirection initially absent.
+- The opt-in DShow Bridge trial wrote bit 0x1 to the C270's MI_00 device
+  parameters and persisted a per-device rollback snapshot.
+- After reconnecting C270, Deep Live Cam live processing worked, but Chrome
+  still reported the physical camera was used/blocked.
+- The owner executed -Restore; it reported RESTORED_ORIGINAL_DSHOW_VALUE,
+  retaining the backup. This is evidence that restore code succeeded,
+  not a separate post-reconnect registry inspection.
+- Outcome: this opt-in did NOT solve simultaneous capture. Do not repeat
+  this toggle as a purported fix or enable it automatically.
+
+## Next implementation decision
+The existing original physical C270 endpoint cannot serve both consumers in
+the observed mode. Choose explicitly between two acceptance contracts:
+(A) Strict physical C270 endpoint in Chrome: research a validated shared
+    Windows camera capture integration. There is NO verified implementation
+    meeting this contract yet, and a generic application-only broker does
+    not meet it.
+(B) Processed video in Chrome under a separate virtual camera: use original
+    Deep Live Cam preview -> OBS Window Capture -> OBS Virtual Camera; this
+    can avoid Chrome's second open of physical C270. This is an optional
+    functional fallback, NOT equivalent to the physical identity contract.
+Do not claim (B) satisfies (A). Never propose masking a software camera as
+a physical USB descriptor or changing USB VID/PID as a verified solution.
+
 ## Architectural constraints and next engineering steps
 1. Keep the physical Logitech and unmodified Deep Live Cam functional.
    Do not toggle system-wide Frame Server registry switches or replace
