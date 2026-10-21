@@ -7,6 +7,7 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <chrono>
 constexpr unsigned W=1280,H=720,Channels=4,Bytes=W*H*Channels,Frames=90;
 struct Header {
     volatile LONG epoch; // odd writer active, even stable
@@ -29,16 +30,20 @@ int reader(){
     std::array<unsigned char,Bytes> local{};
     unsigned last=0,count=0;unsigned __int64 lastTs=0;bool valid=true;
     unsigned observedGaps=0;
+    unsigned __int64 maxReadUs=0;
     for(int i=0;i<6000;i++){
         LONG before=p->header.epoch;
         if(before>0 && !(before&1)){
             MemoryBarrier();
             Header h=p->header;
             if(h.width==W && h.height==H && h.stride==W*Channels && h.bytes==Bytes){
+                auto readStarted=std::chrono::steady_clock::now();
                 memcpy(local.data(),p->bgra.data(),Bytes);
                 MemoryBarrier();
                 LONG after=p->header.epoch;
                 if(before==after && !(after&1) && h.frameNumber>last){
+                    auto readUs=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-readStarted).count();
+                    if((unsigned __int64)readUs>maxReadUs)maxReadUs=readUs;
                     if(checksum(local.data())!=h.checksum || h.timestamp<=lastTs)valid=false;
                     // Verify actual image bytes instead of only metadata.
                     if(local[0]!=pixel(h.frameNumber,0) || local[Bytes-1]!=pixel(h.frameNumber,Bytes-1))valid=false;
@@ -51,7 +56,7 @@ int reader(){
         Sleep(1);
     }
     UnmapViewOfFile(p);CloseHandle(m);
-    std::cout<<"IPC_FRAME_READER count="<<count<<" last="<<last<<" valid="<<valid<<" dropped_intermediate="<<observedGaps<<std::endl;
+    std::cout<<"IPC_FRAME_READER count="<<count<<" last="<<last<<" valid="<<valid<<" dropped_intermediate="<<observedGaps<<" max_copy_us="<<maxReadUs<<std::endl;
     return valid && count>0 && last==Frames?0:4;
 }
 int main(int argc,char**argv){
