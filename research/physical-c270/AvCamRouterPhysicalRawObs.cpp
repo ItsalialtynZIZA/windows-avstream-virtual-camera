@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <objbase.h>
 #include <chrono>
+#include <limits>
 #include <cstdint>
 #include <iostream>
 #include <string>
@@ -13,10 +14,16 @@
 #include "../../feeder/src/ObsSharedMemorySource.h"
 
 int wmain(int argc, wchar_t** argv) {
-    const bool rawOnly = argc == 2 && std::wstring(argv[1]) == L"--raw-only";
-    if (argc != 1 && !rawOnly) {
-        std::wcerr << L"USAGE: AvCamRouterPhysicalRawObs.exe [--raw-only]\n";
-        return 9;
+    bool rawOnly = false;
+    bool continuous = false;
+    for (int a = 1; a < argc; ++a) {
+        const std::wstring arg(argv[a]);
+        if (arg == L"--raw-only" && !rawOnly) rawOnly = true;
+        else if (arg == L"--continuous" && !continuous) continuous = true;
+        else {
+            std::wcerr << L"USAGE: AvCamRouterPhysicalRawObs.exe [--raw-only] [--continuous]\n";
+            return 9;
+        }
     }
     constexpr std::size_t frameBytes = 1280u * 720u * 4u;
     const auto nowMs = [] {
@@ -48,8 +55,22 @@ int wmain(int argc, wchar_t** argv) {
     }
     avcam::dual::Router router(2000);
     std::vector<unsigned char> raw(frameBytes), processed(frameBytes);
-    unsigned rawFrames = 0, obsFrames = 0;
-    for (std::uint64_t i = 1; i <= 30; ++i) {
+    std::uint64_t rawFrames = 0, obsFrames = 0, reconnects = 0;
+    std::uint64_t lastReconnectAttemptMs = 0;
+    std::uint64_t lastStatusMs = nowMs();
+    std::uint64_t obsSequence = 0;
+    std::cout << "AVCAM_ROUTER_MODE=" << (continuous ? "CONTINUOUS" : "SMOKE") << "\n";
+    for (std::uint64_t i = 1; continuous || i <= 30; ++i) {
+        if (continuous && !rawOnly && !obsConnected &&
+            (nowMs() - lastReconnectAttemptMs >= 2000)) {
+            lastReconnectAttemptMs = nowMs();
+            if (obs.Start()) {
+                obsConnected = true;
+                obsSequence = 0;
+                ++reconnects;
+                std::cout << "AVCAM_OBS_RECONNECTED count=" << reconnects << "\n";
+            }
+        }
         std::uint64_t timestamp = 0;
         if (!physical.ReadFrame(raw.data(), raw.size(), timestamp)) {
             std::cout << "AVCAM_PHYSICAL_READ_FAILED frame=" << i << "\n";
@@ -58,10 +79,11 @@ int wmain(int argc, wchar_t** argv) {
         router.PushRaw({raw, i, nowMs()});
         if (obsConnected) {
             if (obs.ReadFrame(processed.data(), processed.size(), timestamp)) {
-                router.PushObs({processed, i, nowMs()});
+                router.PushObs({processed, ++obsSequence, nowMs()});
                 ++obsFrames;
             } else {
                 obsConnected = false;
+                obs.Stop();
                 router.DisconnectObs();
                 std::cout << "AVCAM_OBS_DISCONNECTED_RAW_FALLBACK frame="
                           << i << " code=" << obs.LastErrorCode() << "\n";
@@ -81,6 +103,13 @@ int wmain(int argc, wchar_t** argv) {
             return 4;
         }
         ++rawFrames;
+        if (continuous && nowMs() - lastStatusMs >= 5000) {
+            lastStatusMs = nowMs();
+            std::cout << "AVCAM_ROUTER_STATUS raw=" << rawFrames
+                      << " obs=" << obsFrames
+                      << " obs_connected=" << (obsConnected ? 1 : 0)
+                      << " reconnects=" << reconnects << "\n";
+        }
     }
     router.DisconnectObs();
     const auto fallback = router.ReadForOutput(nowMs());
@@ -91,7 +120,7 @@ int wmain(int argc, wchar_t** argv) {
     }
     // RAW fallback is correct runtime behavior, but dual-source acceptance
     // must not pass unless all expected OBS frames were actually received.
-    if (!rawOnly && obsFrames != rawFrames) {
+    if (!continuous && !rawOnly && obsFrames != rawFrames) {
         std::cout << "AVCAM_ROUTER_OBS_INCOMPLETE frames="
                   << obsFrames << " expected=" << rawFrames << "\n";
         return 5;
