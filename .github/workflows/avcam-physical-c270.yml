@@ -137,6 +137,7 @@ jobs:
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
             'research/physical-c270/AvCamC270EventCorrelation.ps1',
+            'research/physical-c270/AvCamC270CapturePhase.ps1',
             'build/physical-c270/Release/AvCamPhysicalDeviceMft.dll',
             'research/physical-c270/AvCamPhysicalInstall.ps1',
             'research/physical-c270/AvCamPhysicalControl.ps1',
@@ -164,6 +165,11 @@ jobs:
             (Resolve-Path 'research/physical-c270/AvCamPhysicalInstall.ps1').Path,
             [ref]$tokens,[ref]$errors) | Out-Null
           if ($errors.Count) { throw "Install script syntax errors: $($errors.Count)" }
+          $phaseTokens=$null; $phaseErrors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'research/physical-c270/AvCamC270CapturePhase.ps1').Path,
+            [ref]$phaseTokens,[ref]$phaseErrors) | Out-Null
+          if ($phaseErrors.Count) { throw "Capture phase script syntax errors: $($phaseErrors.Count)" }
           $eventTokens=$null; $eventErrors=$null
           [System.Management.Automation.Language.Parser]::ParseFile(
             (Resolve-Path 'research/physical-c270/AvCamC270EventCorrelation.ps1').Path,
