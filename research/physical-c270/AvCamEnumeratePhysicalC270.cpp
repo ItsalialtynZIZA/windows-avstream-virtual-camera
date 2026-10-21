@@ -10,17 +10,25 @@
 #include <iostream>
 #include <string>
 #include <vector>
+#include <utility>
+#include <initializer_list>
 #include "PhysicalEndpointAcceptance.h"
 
 #pragma comment(lib, "setupapi.lib")
 
-static unsigned EnumCategory(const GUID& category, const wchar_t* label) {
+struct MatchStats {
     unsigned found = 0;
+    unsigned exactMatches = 0;
+};
+
+static MatchStats EnumCategory(const GUID& category, const wchar_t* label,
+                               const std::wstring& expectedPath) {
+    MatchStats stats{};
     HDEVINFO info = SetupDiGetClassDevsW(&category, nullptr, nullptr,
                                         DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
     if (info == INVALID_HANDLE_VALUE) {
         std::wcerr << L"ENUM_FAILED=" << label << L" code=" << GetLastError() << L"\n";
-        return 0;
+        return stats;
     }
     for (DWORD index = 0;; ++index) {
         SP_DEVICE_INTERFACE_DATA iface{};
@@ -49,7 +57,11 @@ static unsigned EnumCategory(const GUID& category, const wchar_t* label) {
                        && avcam::acceptance::IsPhysicalLogitechC270InterfacePath(path);
         // Do not print non-C270 device names, paths or serials.
         if (c270) {
-            ++found;
+            ++stats.found;
+            if (!expectedPath.empty() &&
+                avcam::acceptance::Upper(expectedPath) ==
+                    avcam::acceptance::Upper(path))
+                ++stats.exactMatches;
             std::wcout << L"CATEGORY=" << label << L"\n"
                        << L"C270_PNP_INSTANCE=" << instance << L"\n"
                        << L"C270_INTERFACE=" << path << L"\n"
@@ -57,10 +69,16 @@ static unsigned EnumCategory(const GUID& category, const wchar_t* label) {
         }
     }
     SetupDiDestroyDeviceInfoList(info);
-    return found;
+    return stats;
 }
 
-int wmain() {
+int wmain(int argc, wchar_t** argv) {
+    const bool verify = argc == 3 && std::wstring(argv[1]) == L"--verify-interface";
+    if (argc != 1 && !verify) {
+        std::wcerr << L"USAGE: AvCamEnumeratePhysicalC270.exe [--verify-interface <device-interface-path>]\\n";
+        return 2;
+    }
+    const std::wstring expectedPath = verify ? argv[2] : L"";
     std::wcout << L"AVCAM_READONLY_PNP_ENUM_BEGIN\n";
     unsigned found = 0;
     found += EnumCategory(KSCATEGORY_VIDEO_CAMERA, L"VIDEO_CAMERA");
