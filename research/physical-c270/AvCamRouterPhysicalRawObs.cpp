@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <iostream>
 #include <string>
+#include <stdexcept>
 #include <vector>
 #include "AvCamDualChannelRouter.h"
 #include "../../feeder/src/MediaFoundationFrameSource.h"
