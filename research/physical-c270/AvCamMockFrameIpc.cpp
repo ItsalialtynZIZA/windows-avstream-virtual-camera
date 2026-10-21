@@ -96,28 +96,29 @@ int main(int argc,char**argv){
             std::cerr<<"IPC_FRAME_CHILD_START_FAILED error="<<GetLastError()<<std::endl;ok=false;break;
         }
     }
+    std::vector<unsigned char> producerFrame(Bytes);
     p->header.sourceMode=obsMode?1u:0u;
     if(obsMode)std::cout<<"AVCAM_IPC_SOURCE=OBS_LIVE"<<std::endl;
     else std::cout<<"AVCAM_IPC_SOURCE=SYNTHETIC"<<std::endl;
     if(ok)for(unsigned frame=1;frame<=Frames;frame++){
-        InterlockedExchange(&p->header.epoch,(LONG)(2*frame-1));
         unsigned __int64 sourceTimestamp=(unsigned __int64)frame*33333333ULL;
         if(obsMode){
             std::uint64_t obsTimestamp=0;
-            if(!obs.ReadFrame(p->bgra.data(),Bytes,obsTimestamp)){
+            if(!obs.ReadFrame(producerFrame.data(),Bytes,obsTimestamp)){
                 std::cerr<<"OBS_SOURCE_FRAME_FAILED frame="<<frame<<" code="<<obs.LastErrorCode()<<std::endl;
                 ok=false;
-                // Publish a stable epoch before waking readers on source failure.
-                MemoryBarrier();
-                InterlockedExchange(&p->header.epoch,(LONG)(2*frame-2));
                 break;
             }
             // OBS timestamp may use a different epoch and unit; use a monotonic broker clock.
             sourceTimestamp=(unsigned __int64)std::chrono::duration_cast<std::chrono::nanoseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count();
         }else{
-            for(size_t k=0;k<Bytes;k++)p->bgra[k]=pixel(frame,k);
+            for(size_t k=0;k<Bytes;k++)producerFrame[k]=pixel(frame,k);
         }
+        // Never hold the publication epoch odd while waiting for OBS.
+        // Readers must be able to consume the last completed frame.
+        InterlockedExchange(&p->header.epoch,(LONG)(2*frame-1));
+        memcpy(p->bgra.data(),producerFrame.data(),Bytes);
         p->header.frameNumber=frame;
         p->header.timestamp=sourceTimestamp;
         p->header.checksum=checksum(p->bgra.data());
