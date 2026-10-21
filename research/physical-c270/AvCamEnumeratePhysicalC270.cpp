@@ -17,6 +17,7 @@
 struct MatchStats {
     unsigned found = 0;
     unsigned exactMatches = 0;
+    unsigned errors = 0;
 };
 
 static MatchStats EnumCategory(const GUID& category, const wchar_t* label,
@@ -26,30 +27,39 @@ static MatchStats EnumCategory(const GUID& category, const wchar_t* label,
                                         DIGCF_PRESENT | DIGCF_DEVICEINTERFACE);
     if (info == INVALID_HANDLE_VALUE) {
         std::wcerr << L"ENUM_FAILED=" << label << L" code=" << GetLastError() << L"\n";
+        ++stats.errors;
         return stats;
     }
     for (DWORD index = 0;; ++index) {
         SP_DEVICE_INTERFACE_DATA iface{};
         iface.cbSize = sizeof(iface);
         if (!SetupDiEnumDeviceInterfaces(info, nullptr, &category, index, &iface)) {
-            if (GetLastError() != ERROR_NO_MORE_ITEMS)
+            if (GetLastError() != ERROR_NO_MORE_ITEMS) {
                 std::wcerr << L"INTERFACE_ENUM_ERROR=" << GetLastError() << L"\n";
+                ++stats.errors;
+            }
             break;
         }
         DWORD required = 0;
         SetupDiGetDeviceInterfaceDetailW(info, &iface, nullptr, 0, &required, nullptr);
-        if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || required == 0)
+        if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || required == 0) {
+            ++stats.errors;
             continue;
+        }
         std::vector<BYTE> buffer(required);
         auto* detail = reinterpret_cast<SP_DEVICE_INTERFACE_DETAIL_DATA_W*>(buffer.data());
         detail->cbSize = sizeof(SP_DEVICE_INTERFACE_DETAIL_DATA_W);
         SP_DEVINFO_DATA device{};
         device.cbSize = sizeof(device);
-        if (!SetupDiGetDeviceInterfaceDetailW(info, &iface, detail, required, nullptr, &device))
+        if (!SetupDiGetDeviceInterfaceDetailW(info, &iface, detail, required, nullptr, &device)) {
+            ++stats.errors;
             continue;
+        }
         wchar_t instance[MAX_DEVICE_ID_LEN + 1]{};
-        if (!SetupDiGetDeviceInstanceIdW(info, &device, instance, MAX_DEVICE_ID_LEN + 1, nullptr))
+        if (!SetupDiGetDeviceInstanceIdW(info, &device, instance, MAX_DEVICE_ID_LEN + 1, nullptr)) {
+            ++stats.errors;
             continue;
+        }
         const std::wstring path(detail->DevicePath);
         const bool c270 = avcam::acceptance::IsPhysicalLogitechC270Instance(instance)
                        && avcam::acceptance::IsPhysicalLogitechC270InterfacePath(path);
@@ -84,12 +94,15 @@ int wmain(int argc, wchar_t** argv) {
     const auto d = EnumCategory(KSCATEGORY_VIDEO, L"VIDEO", expectedPath);
     total.found = a.found + b.found + d.found;
     total.exactMatches = a.exactMatches + b.exactMatches + d.exactMatches;
+    total.errors = a.errors + b.errors + d.errors;
     std::wcout << L"AVCAM_PHYSICAL_C270_INTERFACES_FOUND=" << total.found << L"\n";
+    std::wcout << L"AVCAM_SETUPAPI_ENUM_ERRORS=" << total.errors << L"\n";
     if (!total.found)
         std::wcout << L"AVCAM_NO_PHYSICAL_C270_INTERFACE_MATCH\n";
     if (verify)
         std::wcout << L"AVCAM_SELECTED_INTERFACE_IS_CURRENT_C270="
                    << (total.exactMatches ? L"YES" : L"NO") << L"\n";
     std::wcout << L"AVCAM_READONLY_PNP_ENUM_COMPLETE\n";
+    if (total.errors) return 4;
     return verify && !total.exactMatches ? 3 : 0;
 }
