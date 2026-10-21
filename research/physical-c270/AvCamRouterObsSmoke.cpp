@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cstdint>
 #include <iostream>
+#include <string>
 #include <vector>
 #include "AvCamDualChannelRouter.h"
 #include "../../feeder/src/ObsSharedMemorySource.h"
