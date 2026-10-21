@@ -39,9 +39,12 @@ int wmain(int argc, wchar_t** argv) {
     bool obsConnected = false;
     if (!rawOnly) {
         obsConnected = obs.Start();
-        if (!obsConnected)
-            std::cout << "AVCAM_OBS_UNAVAILABLE_RAW_FALLBACK code="
+        if (!obsConnected) {
+            std::cout << "AVCAM_OBS_SOURCE_FAILED code="
                       << obs.LastErrorCode() << "\n";
+            std::cout << "Run OBS Virtual Camera or use --raw-only explicitly.\n";
+            return 7;
+        }
     }
     avcam::dual::Router router(2000);
     std::vector<unsigned char> raw(frameBytes), processed(frameBytes);
