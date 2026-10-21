@@ -40,18 +40,25 @@ if (Test-Path -LiteralPath $etl) {
         $records = @(Get-WinEvent -Path $etl -Oldest -ErrorAction Stop |
             Where-Object { $_.ProviderId -eq [guid]$provider })
         Write-Host ('ETW_PROVIDER_RECORDS=' + $records.Count)
-        foreach ($record in $records | Select-Object -First 80) {
-            $payload = @($record.Properties | ForEach-Object { [string]$_.Value }) -join ' '
-            Write-Host ('ETW {0} {1}' -f $record.TimeCreated.ToString('HH:mm:ss'),$payload)
+        # EventWriteString publishes text via event properties. Some Windows
+        # providers expose it only in Message, so support both representations.
+        function Get-AvCamEtwText($record) {
+            $values = @($record.Properties | ForEach-Object { [string]$_.Value })
+            if ($values.Count -gt 0 -and ($values -join '').Trim()) {
+                return ($values -join ' ')
+            }
+            if ($record.Message) { return [string]$record.Message }
+            return ''
+        }
+        $messages = @($records | ForEach-Object { Get-AvCamEtwText $_ })
+        for ($i = 0; $i -lt [Math]::Min(80, $records.Count); ++$i) {
+            Write-Host ('ETW {0} {1}' -f $records[$i].TimeCreated.ToString('HH:mm:ss'),$messages[$i])
         }
         if ($records.Count -eq 0) {
             Write-Warning 'No AvCam MFT events observed. This does not prove that Device MFT was never activated: the host may use a different capture pipeline or tracing may have failed.'
             Write-Host 'DIAGNOSIS=NO_MFT_EVENTS_OBSERVED'
             Write-Host 'Keep the ETL file for further analysis.'
         } elseif ($Target -eq 'DeepLiveCam') {
-            $messages = @($records | ForEach-Object {
-                (@($_.Properties | ForEach-Object { [string]$_.Value }) -join ' ')
-            })
             $initialized = @($messages | Where-Object { $_ -match 'AvCamDeviceMftInitialize|InitializeTransform called' }).Count -gt 0
             $formats = @($messages | Where-Object { $_ -match 'AvCamQueueNegotiated|QueueFormat' }).Count
             $replaced = @($messages | Where-Object { $_ -match 'SampleReplaced' }).Count
