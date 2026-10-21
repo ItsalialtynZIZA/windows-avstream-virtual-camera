@@ -227,13 +227,17 @@ jobs:
           # the executable entry point on hosted Windows CI without hardware.
           & ./build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe --invalid
           if ($LASTEXITCODE -ne 9) { throw "Router invalid-option contract failed: $LASTEXITCODE" }
-          foreach ($argsToCheck in @(
-            @('--frames','0','--continuous'),
-            @('--frames','abc','--continuous'),
-            @('--frames','2','--frames','3','--continuous'),
-            @('--frames','2'),
-            @('--continuous','--continuous')
-          )) {
+          # Explicitly preserve each argument vector as its own array.
+          # PowerShell's pipeline enumeration can otherwise flatten nested
+          # arrays, causing spurious invocations with valid-looking options.
+          $invalidRouterArguments = @(
+            ,@('--frames','0','--continuous')
+            ,@('--frames','abc','--continuous')
+            ,@('--frames','2','--frames','3','--continuous')
+            ,@('--frames','2')
+            ,@('--continuous','--continuous')
+          )
+          foreach ($argsToCheck in $invalidRouterArguments) {
             & ./build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe @argsToCheck
             if ($LASTEXITCODE -ne 9) {
               throw "Router CLI rejection failed ($($argsToCheck -join ' ')): $LASTEXITCODE"
