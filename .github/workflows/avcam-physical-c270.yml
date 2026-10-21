@@ -247,6 +247,10 @@ jobs:
           Write-Host 'AVCAM_ROUTER_CLI_VALIDATION_PASSED'
           & ./build/mock-fanout/Release/AvCamRouterRunPolicyTest.exe
           if ($LASTEXITCODE -ne 0) { throw 'AvCam bounded run policy test failed' }
+          & ./build/mock-fanout/Release/AvCamRouterIpcProbe.exe --self-test
+          if ($LASTEXITCODE -ne 0) { throw 'Independent RAW/OBS IPC contract failed' }
+          & ./build/mock-fanout/Release/AvCamRouterIpcProbe.exe --invalid
+          if ($LASTEXITCODE -ne 9) { throw 'IPC consumer invalid argument rejection failed' }
           & ./build/mock-fanout/Release/AvCamDualChannelRouterTest.exe
           if ($LASTEXITCODE -ne 0) { throw 'AvCam dual-channel RAW/OBS routing failed' }
           & ./build/mock-fanout/Release/AvCamMockFanout.exe
@@ -284,6 +288,7 @@ jobs:
             'build/mock-fanout/Release/AvCamMockFrameIpc.exe',
             'build/mock-fanout/Release/AvCamRouterObsSmoke.exe',
             'build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe',
+            'build/mock-fanout/Release/AvCamRouterIpcProbe.exe',
             'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
@@ -360,6 +365,7 @@ jobs:
             'build/mock-fanout/Release/AvCamMockFrameIpc.exe',
             'build/mock-fanout/Release/AvCamRouterObsSmoke.exe',
             'build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe',
+            'build/mock-fanout/Release/AvCamRouterIpcProbe.exe',
             'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md'
@@ -377,7 +383,13 @@ jobs:
              .\AvCamRouterPhysicalRawObs.exe
              Or with only physical C270:
              .\AvCamRouterPhysicalRawObs.exe --raw-only
-          5. Expected: AVCAM_PHYSICAL_C270_ROUTER_PASS.
+          5. To publish both feeds to independent named BGRA mappings:
+             .\\AvCamRouterPhysicalRawObs.exe --continuous --frames 300 --publish-ipc
+             In a second PowerShell window (while the router runs):
+             .\\AvCamRouterIpcProbe.exe --channel obs --frames 30
+             Or use --channel raw for the original C270 frames.
+             These mappings are Local\\AvCamRouterRawV1 and Local\\AvCamRouterObsV1.
+          6. Expected: AVCAM_PHYSICAL_C270_ROUTER_PASS.
              C270 RAW acquisition may fail if a camera app or negotiated
              capture format prevents simultaneous access. No driver changes.
           This confirms OBS -> AvCam IPC or router isolation only. It does NOT inject video into
