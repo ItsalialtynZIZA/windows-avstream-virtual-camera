@@ -15,6 +15,7 @@
 #include <cstring>
 #include "AvCamPhysicalWire.h"
 #include "AvCamPhysicalHook.h"
+#include "AvCamMftBuildSafety.h"
 
 namespace {
 std::mutex g_modesMutex;
