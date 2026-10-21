@@ -16,6 +16,7 @@
 #include "AvCamPhysicalWire.h"
 #include "AvCamPhysicalHook.h"
 #include "AvCamMftBuildSafety.h"
+#include "AvCamPerClientRoutingPolicy.h"
 
 namespace {
 std::mutex g_modesMutex;
@@ -150,6 +151,18 @@ bool AvCamReplaceMjpegSample(const void* queue, IMFSample* original,
     // protection and per-client isolation are proven, never replace frames
     // in a production build. Experimental builds must explicitly opt in.
 #ifndef AVCAM_EXPERIMENTAL_UNSCOPED_MFT_REPLACEMENT
+    // A Device MFT operates on the shared camera pipeline. This is NOT
+    // authenticated per-consumer evidence, regardless of which process
+    // later requests the camera. Keep Chrome and Deep Live Cam raw.
+    constexpr avcam::routing::Evidence sharedDeviceEvidence{
+        true, false, false, false, false,
+        avcam::routing::PipelineScope::SharedDevice
+    };
+    static_assert(
+        avcam::routing::Choose(avcam::routing::Consumer::Browser,
+                               sharedDeviceEvidence) ==
+        avcam::routing::FrameSource::PhysicalRaw,
+        "Device MFT may not authorize Chrome-only OBS replacement");
     // Observe pipeline activity without touching frame data. The hook is
     // device-scoped: a count here does not identify individual applications.
     const auto observations = ++g_sampleChecks;
