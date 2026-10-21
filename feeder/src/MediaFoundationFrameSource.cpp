@@ -548,7 +548,10 @@ bool MediaFoundationFrameSource::ReadFrame(
             continue;
         }
 
-        if (actualStream != static_cast<DWORD>(MF_SOURCE_READER_FIRST_VIDEO_STREAM))
+        // ReadSample's actualStream is a zero-based stream index, whereas
+        // MF_SOURCE_READER_FIRST_VIDEO_STREAM is a special input selector.
+        // For the selected capture device the first video stream is index 0.
+        if (actualStream != 0u)
         {
             std::wcerr << L"AVCAM_MF_UNEXPECTED_STREAM stream=" << actualStream << L"\n";
             return false;
