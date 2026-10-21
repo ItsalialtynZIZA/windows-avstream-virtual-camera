@@ -112,6 +112,21 @@ jobs:
           $b = (Get-FileHash -LiteralPath $staged -Algorithm SHA256).Hash
           if ($a -ne $b) { throw 'Staged MFT safety header is out of date' }
           Write-Host 'AVCAM_MFT_SAFETY_HEADER_STAGED=PASS'
+          # The Device MFT hook includes the routing policy. Ensure the
+          # adapted upstream build uses the exact tested policy, not a stale
+          # header from an older checkout.
+          foreach ($name in @('AvCamPerClientRoutingPolicy.h','AvCamPhysicalHook.cpp')) {
+            $src = Join-Path 'research/physical-c270' $name
+            $dst = Join-Path 'upstream/avstream/sampledevicemft' $name
+            if (!(Test-Path -LiteralPath $dst -PathType Leaf)) {
+              throw "Missing staged MFT component: $name"
+            }
+            if ((Get-FileHash -LiteralPath $src -Algorithm SHA256).Hash -ne
+                (Get-FileHash -LiteralPath $dst -Algorithm SHA256).Hash) {
+              throw "Stale MFT component staged: $name"
+            }
+          }
+          Write-Host 'AVCAM_MFT_ROUTING_POLICY_AND_HOOK_STAGED=PASS'
       - name: Test physical Logitech registry preflight without accessing protected subkeys
         shell: powershell
         run: |
