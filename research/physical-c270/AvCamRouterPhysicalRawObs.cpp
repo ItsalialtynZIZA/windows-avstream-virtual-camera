@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <vector>
 #include "AvCamDualChannelRouter.h"
+#include "AvCamRouterRunPolicy.h"
 #include "../../feeder/src/MediaFoundationFrameSource.h"
 #include "../../feeder/src/ObsSharedMemorySource.h"
 
@@ -87,7 +88,7 @@ int wmain(int argc, wchar_t** argv) {
     std::uint64_t lastStatusMs = nowMs();
     std::uint64_t obsSequence = 0;
     std::cout << "AVCAM_ROUTER_MODE=" << (continuous ? "CONTINUOUS" : "SMOKE") << "\n";
-    for (std::uint64_t i = 1; (continuous && (maxFrames == 0 || i <= maxFrames)) || (!continuous && i <= 30); ++i) {
+    for (std::uint64_t i = 1; avcam::run::ShouldRead(i, continuous, maxFrames); ++i) {
         if (continuous && !rawOnly && !obsConnected &&
             (nowMs() - lastReconnectAttemptMs >= 2000)) {
             lastReconnectAttemptMs = nowMs();
