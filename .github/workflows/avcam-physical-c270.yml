@@ -94,6 +94,14 @@ jobs:
         run: |
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File research/physical-c270/TaskIdentityTest.ps1
           if ($LASTEXITCODE -ne 0) { throw 'AvCam Task Scheduler principal ownership regression failed' }
+      - name: Compile and run camera-independent mock capture fanout
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path build/mock-fanout | Out-Null
+          cl.exe /nologo /std:c++17 /EHsc /O2 /Fe:build/mock-fanout/AvCamMockFanout.exe research/physical-c270/AvCamMockFanout.cpp
+          if ($LASTEXITCODE -ne 0) { throw 'Mock fanout compilation failed' }
+          & ./build/mock-fanout/AvCamMockFanout.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Mock fanout runtime selftest failed' }
       - name: Compile user-mode OBS bridge and device MFT COM DLL
         shell: pwsh
         run: |
