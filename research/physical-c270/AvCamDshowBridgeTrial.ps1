@@ -37,6 +37,31 @@ function Read-Value($path) {
         return @{ Exists=$true; Value=$key.GetValue($property); Kind=([string]$key.GetValueKind($property)) }
     } finally { $key.Dispose() }
 }
+# Restore first: a camera can become absent after a failed trial.
+# Never require Get-PnpDevice -PresentOnly or a running camera service to
+# restore the original USB interface registry value.
+if ($Restore) {
+    if (-not (Test-Path -LiteralPath $BackupFile -PathType Leaf)) { throw 'Required backup missing; no change made' }
+    $snapshot = Get-Content -LiteralPath $BackupFile -Raw | ConvertFrom-Json
+    $id = [string]$snapshot.InstanceId
+    $reg = [string]$snapshot.RegistryPath
+    if (-not $id.StartsWith($expectedDevice,[StringComparison]::OrdinalIgnoreCase)) {
+        throw 'Backup does not describe the Logitech C270 camera interface'
+    }
+    $expectedRegistryPath = 'SYSTEM\CurrentControlSet\Enum\' + $id + '\Device Parameters'
+    if ($reg -cne $expectedRegistryPath) { throw 'Backup device registry path does not match its instance ID' }
+    if ($snapshot.Kind -notin @('Absent','DWord')) { throw 'Unsupported original value type' }
+    $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($reg,$true)
+    if ($null -eq $key) { throw 'Device registry key unavailable; no changes made. Keep the backup.' }
+    try {
+        if ($snapshot.Kind -eq 'Absent') { $key.DeleteValue($property,$false) }
+        else { $key.SetValue($property,[int]$snapshot.Value,[Microsoft.Win32.RegistryValueKind]::DWord) }
+    } finally { $key.Dispose() }
+    Write-Host 'RESTORED_ORIGINAL_DSHOW_VALUE'
+    Write-Host ('BACKUP_RETAINED=' + $BackupFile)
+    Write-Host 'Close camera apps and reconnect C270 if possible; do not delete backup yet.'
+    exit 0
+}
 $target = Find-C270Key
 $before = Read-Value $target.Path
 Write-Host ('C270_INSTANCE=' + $target.InstanceId)
@@ -58,34 +83,14 @@ try {
     $iface = @($ifaceRoot.GetSubKeyNames() | Where-Object { $_.IndexOf($encoded,[StringComparison]::OrdinalIgnoreCase) -ge 0 })
     if ($iface.Count -ne 1) { throw 'Camera interface is not uniquely identified' }
     $k = $ifaceRoot.OpenSubKey(($iface[0] + '\#GLOBAL\Device Parameters'),$false)
-    if ($null -ne $k) {
-        try {
-            $mft = $k.GetValue('CameraDeviceMftClsid',$null)
-            if ($null -ne $mft -and [string]$mft -ne '') { throw 'CameraDeviceMftClsid is registered; do not perform bridge trial' }
-            $chain = $k.GetValue('CameraDeviceMftClsidChain',$null)
-            if ($null -ne $chain) { throw 'CameraDeviceMftClsidChain is registered; do not perform bridge trial' }
-        } finally { $k.Dispose() }
-    }
-} finally { $ifaceRoot.Dispose() }
-if ($Restore) {
-    if (-not (Test-Path -LiteralPath $BackupFile -PathType Leaf)) { throw 'Required backup missing; no change made' }
-    $snapshot = Get-Content -LiteralPath $BackupFile -Raw | ConvertFrom-Json
-    if ($snapshot.InstanceId -cne $target.InstanceId -or $snapshot.RegistryPath -cne $target.Path) {
-        throw 'Backup belongs to a different camera interface; no change made'
-    }
-    if ($snapshot.Kind -ne 'Absent' -and $snapshot.Kind -ne 'DWord') {
-        throw 'Unsupported original value type; no change made'
-    }
-    $key = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey($target.Path,$true)
-    if ($null -eq $key) { throw 'No permission to restore device parameters' }
+    if ($null -eq $k) { throw 'Camera interface device parameters not found; trial refused' }
     try {
-        if ($snapshot.Kind -eq 'Absent') { $key.DeleteValue($property,$false) }
-        else { $key.SetValue($property,[int]$snapshot.Value,[Microsoft.Win32.RegistryValueKind]::DWord) }
-    } finally { $key.Dispose() }
-    Write-Host 'RESTORED_ORIGINAL_DSHOW_VALUE'
-    Write-Host 'Reconnect the C270 only after closing all camera applications.'
-    exit 0
-}
+        $mft = $k.GetValue('CameraDeviceMftClsid',$null)
+        if ($null -ne $mft -and [string]$mft -ne '') { throw 'CameraDeviceMftClsid is registered; do not perform bridge trial' }
+        $chain = $k.GetValue('CameraDeviceMftClsidChain',$null)
+        if ($null -ne $chain) { throw 'CameraDeviceMftClsidChain is registered; do not perform bridge trial' }
+    } finally { $k.Dispose() }
+} finally { $ifaceRoot.Dispose() }
 if ($before.Kind -notin @('Absent','DWord')) { throw 'Unexpected value type; no change made' }
 if (Test-Path -LiteralPath $BackupFile) { throw 'Existing rollback backup must be resolved before another trial' }
 $other = @(Get-Process -ErrorAction SilentlyContinue | Where-Object {
