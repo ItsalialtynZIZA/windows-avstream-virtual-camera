@@ -3,6 +3,9 @@
 param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+# Multi-app C270 now works without our MFT. This legacy one-click setup
+# cannot guarantee Chrome-only OBS frames, even for an existing installation.
+throw 'AvCamSetup is disabled: physical C270 shared capture works, but Chrome-only OBS routing is not proven. Use AvCamPhysicalControl.ps1 -Action Status or -Action Uninstall for an existing installation.'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $state = Join-Path $env:ProgramFiles 'AvCamPhysicalC270\install-state.json'
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
