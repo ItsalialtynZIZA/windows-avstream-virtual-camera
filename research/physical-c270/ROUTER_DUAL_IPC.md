@@ -63,11 +63,43 @@ failure and 12 for a frame publishing failure. Without `--publish-ipc`, it
 does not create the two new mappings. With `--raw-only --publish-ipc`,
 only the RAW mapping is created.
 
+## Live video preview (independent Windows application)
+
+The updated no-install artifact also contains `AvCamRouterPreview.exe`.
+Start the router with `--publish-ipc`, then run in a second Windows terminal:
+
+```powershell
+.\\AvCamRouterPreview.exe --mode output
+.\\AvCamRouterPreview.exe --mode compare
+```
+
+Alternatively, double-click `AvCamRouterPreview.exe` to open `output`
+mode. Only launch one mode at a time per window; multiple independent
+viewer instances may safely attach to the same published channels.
+Available modes:
+
+- `output` (default): show a fresh OBS frame, otherwise the latest fresh
+  RAW frame. If neither source is fresh, display a waiting placeholder.
+- `compare`: show original RAW and processed OBS in separate panes.
+  Missing streams never substitute frames from the other pane.
+- `raw`: display the physical capture only.
+- `obs`: display the processed OBS stream only (no RAW fallback).
+
+The viewer is a **regular Win32 video window**, not a camera driver or a
+DirectShow / Media Foundation camera source. It checks frame timestamps
+against a 2000 ms freshness limit, discards invalid OBS frames promptly
+when a disconnect is signaled, and reattaches following source restart.
+It does not change Chrome's video feed or Deep Live Cam's input.
+
 ## Camera-independent regression test
 
 ```powershell
 .\AvCamRouterIpcProbe.exe --self-test
 ```
+
+Also run `AvCamPreviewSelectionTest.exe` (no camera required) to validate
+freshness boundaries and the output selection/fallback decision. Windows CI
+builds the native viewer and runs `AvCamRouterPreview.exe --self-test`.
 
 This uses synthetic RAW/OBS image data and tests isolation, caller copy
 independence, OBS invalidation and recovery; it is executed by Windows CI.
