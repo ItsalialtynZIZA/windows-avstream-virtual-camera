@@ -66,6 +66,14 @@ Implementation gate before writing a capture broker:
   can open the existing physical endpoint for Chrome while the sole
   hardware capture owner is active. Without this, the contract is unproven.
 
+## 2026-10-21 hardware ETW evidence
+See [C270_ETW_2026-10-21_FINDINGS.md](C270_ETW_2026-10-21_FINDINGS.md).
+Chrome PID 3920 emitted Media Foundation HRESULT 0xC00D3704 while physical
+C270 FrameServer frame events occurred immediately before and after the failure.
+This isolates a Chrome streaming/start problem, not a lack of OBS IPC frames.
+It does **not** establish that an unmodified Deep Live Cam can coexist with
+Chrome on the original C270 endpoint; no supported adapter is verified.
+
 ## Next implementation decision
 The existing original physical C270 endpoint cannot serve both consumers in
 the observed mode. Choose explicitly between two acceptance contracts:
