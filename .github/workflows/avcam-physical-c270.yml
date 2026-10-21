@@ -233,6 +233,9 @@ jobs:
           $invalidRouterArguments = @(
             ,@('--frames','0','--continuous')
             ,@('--frames','abc','--continuous')
+            ,@('--frames','-1','--continuous')
+            ,@('--frames','+3','--continuous')
+            ,@('--frames','10000001','--continuous')
             ,@('--frames','2','--frames','3','--continuous')
             ,@('--frames','2')
             ,@('--continuous','--continuous')
