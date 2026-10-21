@@ -12,6 +12,7 @@ target_compile_features(AvCamPreviewSelectionTest PRIVATE cxx_std_17)
 
 add_executable(AvCamRouterPreview WIN32 ../AvCamRouterPreview.cpp)
 target_compile_features(AvCamRouterPreview PRIVATE cxx_std_17)
+target_compile_definitions(AvCamRouterPreview PRIVATE UNICODE _UNICODE)
 target_link_libraries(AvCamRouterPreview PRIVATE user32 gdi32 shell32)
 
 add_executable(AvCamRouterPhysicalRawObs
