@@ -16,14 +16,31 @@
 int wmain(int argc, wchar_t** argv) {
     bool rawOnly = false;
     bool continuous = false;
+    std::uint64_t maxFrames = 0;
     for (int a = 1; a < argc; ++a) {
         const std::wstring arg(argv[a]);
         if (arg == L"--raw-only" && !rawOnly) rawOnly = true;
         else if (arg == L"--continuous" && !continuous) continuous = true;
+        else if (arg == L"--frames" && a + 1 < argc && maxFrames == 0) {
+            const std::wstring value(argv[++a]);
+            try {
+                std::size_t consumed = 0;
+                maxFrames = std::stoull(value, &consumed);
+                if (consumed != value.size() || maxFrames == 0 || maxFrames > 10000000ULL)
+                    throw std::invalid_argument("invalid frame count");
+            } catch (...) {
+                std::wcerr << L"AVCAM_INVALID_FRAME_COUNT\\n";
+                return 9;
+            }
+        }
         else {
             std::wcerr << L"USAGE: AvCamRouterPhysicalRawObs.exe [--raw-only] [--continuous]\n";
             return 9;
         }
+    }
+    if (maxFrames && !continuous) {
+        std::wcerr << L"AVCAM_FRAMES_REQUIRES_CONTINUOUS\n";
+        return 9;
     }
     constexpr std::size_t frameBytes = 1280u * 720u * 4u;
     const auto nowMs = [] {
@@ -63,7 +80,7 @@ int wmain(int argc, wchar_t** argv) {
     std::uint64_t lastStatusMs = nowMs();
     std::uint64_t obsSequence = 0;
     std::cout << "AVCAM_ROUTER_MODE=" << (continuous ? "CONTINUOUS" : "SMOKE") << "\n";
-    for (std::uint64_t i = 1; continuous || i <= 30; ++i) {
+    for (std::uint64_t i = 1; (continuous && (maxFrames == 0 || i <= maxFrames)) || (!continuous && i <= 30); ++i) {
         if (continuous && !rawOnly && !obsConnected &&
             (nowMs() - lastReconnectAttemptMs >= 2000)) {
             lastReconnectAttemptMs = nowMs();
@@ -127,6 +144,11 @@ int wmain(int argc, wchar_t** argv) {
         std::cout << "AVCAM_ROUTER_OBS_INCOMPLETE frames="
                   << obsFrames << " expected=" << rawFrames << "\n";
         return 5;
+    }
+    if (continuous) {
+        obs.Stop();
+        physical.Stop();
+        std::cout << "AVCAM_ROUTER_CLEAN_SHUTDOWN=1\n";
     }
     std::cout << "AVCAM_PHYSICAL_RAW_FRAMES=" << rawFrames << "\n"
               << "AVCAM_OBS_PROCESSED_FRAMES=" << obsFrames << "\n"
