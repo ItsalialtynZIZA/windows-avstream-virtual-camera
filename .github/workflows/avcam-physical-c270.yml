@@ -144,6 +144,12 @@ jobs:
             (Resolve-Path 'research/physical-c270/AvCamPhysicalInstall.ps1').Path,
             [ref]$tokens,[ref]$errors) | Out-Null
           if ($errors.Count) { throw "Install script syntax errors: $($errors.Count)" }
+          $trialTokens=$null; $trialErrors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'research/physical-c270/AvCamDshowBridgeTrial.ps1').Path,
+            [ref]$trialTokens,[ref]$trialErrors) | Out-Null
+          if ($trialErrors.Count) { throw "DShow trial syntax errors: $($trialErrors.Count)" }
+          Write-Host 'AVCAM_DSHOW_TRIAL_POWERSHELL_SYNTAX_PASSED'
           Get-ChildItem $out -File | Get-FileHash -Algorithm SHA256 |
             ForEach-Object { "$($_.Hash)  $(Split-Path $_.Path -Leaf)" } |
             Set-Content (Join-Path $out 'SHA256SUMS.txt')
