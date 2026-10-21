@@ -222,6 +222,10 @@ jobs:
           if (!(Test-Path -LiteralPath './build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe' -PathType Leaf)) {
             throw 'Physical C270 and OBS router diagnostic executable was not compiled'
           }
+          # A malformed CLI must fail without opening any camera. This checks
+          # the executable entry point on hosted Windows CI without hardware.
+          & ./build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe --invalid
+          if ($LASTEXITCODE -ne 9) { throw "Router invalid-option contract failed: $LASTEXITCODE" }
           & ./build/mock-fanout/Release/AvCamDualChannelRouterTest.exe
           if ($LASTEXITCODE -ne 0) { throw 'AvCam dual-channel RAW/OBS routing failed' }
           & ./build/mock-fanout/Release/AvCamMockFanout.exe
