@@ -10,8 +10,6 @@
 #include <iostream>
 #include <string>
 #include <vector>
-#include <utility>
-#include <initializer_list>
 #include "PhysicalEndpointAcceptance.h"
 
 #pragma comment(lib, "setupapi.lib")
@@ -75,7 +73,7 @@ static MatchStats EnumCategory(const GUID& category, const wchar_t* label,
 int wmain(int argc, wchar_t** argv) {
     const bool verify = argc == 3 && std::wstring(argv[1]) == L"--verify-interface";
     if (argc != 1 && !verify) {
-        std::wcerr << L"USAGE: AvCamEnumeratePhysicalC270.exe [--verify-interface <device-interface-path>]\\n";
+        std::wcerr << L"USAGE: AvCamEnumeratePhysicalC270.exe [--verify-interface <device-interface-path>]\n";
         return 2;
     }
     const std::wstring expectedPath = verify ? argv[2] : L"";
