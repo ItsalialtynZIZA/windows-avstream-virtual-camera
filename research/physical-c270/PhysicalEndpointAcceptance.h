@@ -14,11 +14,22 @@ inline std::wstring Upper(std::wstring_view s) {
     return out;
 }
 
+inline bool HasExactC270VidPid(std::wstring_view source, wchar_t delimiter) {
+    constexpr std::wstring_view kId = L"VID_046D&PID_0825";
+    const auto pos = source.find(kId);
+    if (pos == std::wstring_view::npos) return false;
+    const auto end = pos + kId.size();
+    return (pos == 0 || source[pos - 1] == delimiter ||
+            source[pos - 1] == L'&') &&
+           (end == source.size() || source[end] == delimiter ||
+            source[end] == L'&');
+}
+
 inline bool IsPhysicalLogitechC270Instance(std::wstring_view pnpInstanceId) {
     auto id = Upper(pnpInstanceId);
     // A USB instance, not USBSTOR, ROOT, SWD, or a friendly-name alias.
     return id.rfind(L"USB\\", 0) == 0 &&
-           id.find(L"VID_046D&PID_0825") != std::wstring::npos;
+           HasExactC270VidPid(id, L'\\');
 }
 
 inline bool IsPhysicalLogitechC270InterfacePath(std::wstring_view interfacePath) {
@@ -27,7 +38,7 @@ inline bool IsPhysicalLogitechC270InterfacePath(std::wstring_view interfacePath)
     // A friendly name, SWD virtual camera or ROOT software path is insufficient.
     return (path.rfind(L"\\\\?\\USB#", 0) == 0 ||
             path.rfind(L"\\??\\USB#", 0) == 0) &&
-           path.find(L"VID_046D&PID_0825") != std::wstring::npos;
+           HasExactC270VidPid(path, L'#');
 }
 
 inline bool IsExistingPhysicalC270Interface(
