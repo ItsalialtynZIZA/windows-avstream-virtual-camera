@@ -147,6 +147,11 @@ public:
         channel_ = channel;
         return true;
     }
+    // Readers immediately observe an explicit OBS disconnect. The caller
+    // still checks capturedMs so a crashed writer cannot leave stale video.
+    bool IsActive() const noexcept {
+        return region_ && region_->header.active != 0;
+    }
     // A consumer can pass its last sequence to avoid copying stale 3.5 MiB frames.
     bool TryRead(Snapshot& output, std::uint64_t afterSequence = 0) const {
         if (!region_) return false;
