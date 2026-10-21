@@ -12,3 +12,7 @@ target_compile_features(AvCamMockFrameIpc PRIVATE cxx_std_17)
 
 add_executable(AvCamPhysicalEndpointAcceptanceTest ../PhysicalEndpointAcceptanceTest.cpp)
 target_compile_features(AvCamPhysicalEndpointAcceptanceTest PRIVATE cxx_std_17)
+
+add_executable(AvCamEnumeratePhysicalC270 ../AvCamEnumeratePhysicalC270.cpp)
+target_compile_features(AvCamEnumeratePhysicalC270 PRIVATE cxx_std_17)
+target_link_libraries(AvCamEnumeratePhysicalC270 PRIVATE setupapi)
