@@ -26,6 +26,31 @@ jobs:
             research/physical-c270/PhysicalEndpointAcceptanceTest.cpp \
             -o /tmp/avcam-c270-contract
           /tmp/avcam-c270-contract
+  validate-windows-c270-enumerator:
+    name: Build and check C270 SetupAPI utility (Windows, no camera required)
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: microsoft/setup-msbuild@v2
+        with:
+          msbuild-architecture: x64
+      - name: Configure camera-independent tools
+        shell: pwsh
+        run: |
+          cmake -S research/physical-c270/mock-fanout -B build/c270-identity -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'C270 identity configure failed' }
+      - name: Compile SetupAPI enumerator and strict identity test
+        shell: pwsh
+        run: |
+          cmake --build build/c270-identity --config Release --target AvCamEnumeratePhysicalC270 AvCamPhysicalEndpointAcceptanceTest
+          if ($LASTEXITCODE -ne 0) { throw 'C270 SetupAPI compilation failed' }
+      - name: Run identity selftests without physical camera
+        shell: pwsh
+        run: |
+          & ./build/c270-identity/Release/AvCamPhysicalEndpointAcceptanceTest.exe
+          if ($LASTEXITCODE -ne 0) { throw "Physical endpoint contract test failed: $LASTEXITCODE" }
+          & ./build/c270-identity/Release/AvCamEnumeratePhysicalC270.exe
+          if ($LASTEXITCODE -ne 0) { throw "Read-only camera enumeration failed: $LASTEXITCODE" }
   build-physical-c270:
     runs-on: windows-2022
     steps:
