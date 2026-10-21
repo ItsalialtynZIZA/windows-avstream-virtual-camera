@@ -227,6 +227,19 @@ jobs:
           # the executable entry point on hosted Windows CI without hardware.
           & ./build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe --invalid
           if ($LASTEXITCODE -ne 9) { throw "Router invalid-option contract failed: $LASTEXITCODE" }
+          foreach ($argsToCheck in @(
+            @('--frames','0','--continuous'),
+            @('--frames','abc','--continuous'),
+            @('--frames','2','--frames','3','--continuous'),
+            @('--frames','2'),
+            @('--continuous','--continuous')
+          )) {
+            & ./build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe @argsToCheck
+            if ($LASTEXITCODE -ne 9) {
+              throw "Router CLI rejection failed ($($argsToCheck -join ' ')): $LASTEXITCODE"
+            }
+          }
+          Write-Host 'AVCAM_ROUTER_CLI_VALIDATION_PASSED'
           & ./build/mock-fanout/Release/AvCamDualChannelRouterTest.exe
           if ($LASTEXITCODE -ne 0) { throw 'AvCam dual-channel RAW/OBS routing failed' }
           & ./build/mock-fanout/Release/AvCamMockFanout.exe
