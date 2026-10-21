@@ -227,19 +227,17 @@ jobs:
           # the executable entry point on hosted Windows CI without hardware.
           & ./build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe --invalid
           if ($LASTEXITCODE -ne 9) { throw "Router invalid-option contract failed: $LASTEXITCODE" }
-          # Explicitly preserve each argument vector as its own array.
-          # PowerShell's pipeline enumeration can otherwise flatten nested
-          # arrays, causing spurious invocations with valid-looking options.
-          $invalidRouterArguments = @(
-            ,@('--frames','0','--continuous')
-            ,@('--frames','abc','--continuous')
-            ,@('--frames','-1','--continuous')
-            ,@('--frames','+3','--continuous')
-            ,@('--frames','10000001','--continuous')
-            ,@('--frames','2','--frames','3','--continuous')
-            ,@('--frames','2')
-            ,@('--continuous','--continuous')
-          )
+          # Strongly typed list prevents PowerShell's implicit flattening
+          # of nested arrays, even for vectors with only one argument.
+          $invalidRouterArguments = [System.Collections.Generic.List[string[]]]::new()
+          $invalidRouterArguments.Add([string[]]@('--frames','0','--continuous'))
+          $invalidRouterArguments.Add([string[]]@('--frames','abc','--continuous'))
+          $invalidRouterArguments.Add([string[]]@('--frames','-1','--continuous'))
+          $invalidRouterArguments.Add([string[]]@('--frames','+3','--continuous'))
+          $invalidRouterArguments.Add([string[]]@('--frames','10000001','--continuous'))
+          $invalidRouterArguments.Add([string[]]@('--frames','2','--frames','3','--continuous'))
+          $invalidRouterArguments.Add([string[]]@('--frames','2'))
+          $invalidRouterArguments.Add([string[]]@('--continuous','--continuous'))
           foreach ($argsToCheck in $invalidRouterArguments) {
             & ./build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe @argsToCheck
             if ($LASTEXITCODE -ne 9) {
