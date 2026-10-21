@@ -57,7 +57,9 @@ int reader(){
                 }
             }
         }
-        if(p->header.finished && last>=Frames)break;
+        // Stop promptly on source termination, including incomplete OBS runs.
+        // The final frame-count assertion still makes an incomplete run fail.
+        if(p->header.finished)break;
         Sleep(1);
     }
     UnmapViewOfFile(p);CloseHandle(m);
