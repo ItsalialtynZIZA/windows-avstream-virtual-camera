@@ -1,10 +1,9 @@
 @echo off
 setlocal
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0AvCamSetup.ps1"
-if errorlevel 1 (
-  echo AvCam setup stopped with an error. No USB driver has been changed.
-  pause
-  exit /b 1
-)
-echo AvCam Physical C270 setup finished. Use Start Menu - AvCam Physical C270.
+echo AvCam physical C270 experimental installation is disabled.
+echo Windows 11 25H2 multi-app camera is already working.
+echo Chrome-only OBS routing via the original C270 is not yet implemented.
+echo Use AvCamStatus.cmd for read-only status, or AvCamUninstall.cmd
+echo only when an old AvCam Device MFT installation needs rollback.
 pause
+exit /b 2
