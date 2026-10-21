@@ -12,18 +12,21 @@
 #include <vector>
 #include "AvCamDualChannelRouter.h"
 #include "AvCamRouterRunPolicy.h"
+#include "AvCamRouterIpc.h"
 #include "../../feeder/src/MediaFoundationFrameSource.h"
 #include "../../feeder/src/ObsSharedMemorySource.h"
 
 int wmain(int argc, wchar_t** argv) {
     bool rawOnly = false;
     bool continuous = false;
+    bool publishIpc = false;
     std::uint64_t maxFrames = 0;
     bool framesSpecified = false;
     for (int a = 1; a < argc; ++a) {
         const std::wstring arg(argv[a]);
         if (arg == L"--raw-only" && !rawOnly) rawOnly = true;
         else if (arg == L"--continuous" && !continuous) continuous = true;
+        else if (arg == L"--publish-ipc" && !publishIpc) publishIpc = true;
         else if (arg == L"--frames" && a + 1 < argc && !framesSpecified) {
             framesSpecified = true;
             const std::wstring value(argv[++a]);
@@ -42,7 +45,7 @@ int wmain(int argc, wchar_t** argv) {
             }
         }
         else {
-            std::wcerr << L"USAGE: AvCamRouterPhysicalRawObs.exe [--raw-only] [--continuous] [--frames N]\n";
+            std::wcerr << L"USAGE: AvCamRouterPhysicalRawObs.exe [--raw-only] [--continuous] [--frames N] [--publish-ipc]\n";
             return 9;
         }
     }
@@ -81,6 +84,17 @@ int wmain(int argc, wchar_t** argv) {
             std::cout << "AVCAM_OBS_WAITING_RAW_FALLBACK\n";
         }
     }
+    avcam::ipc::Publisher rawPublisher;
+    avcam::ipc::Publisher obsPublisher;
+    if (publishIpc) {
+        if (!rawPublisher.Start(avcam::ipc::Channel::Raw) ||
+            (!rawOnly && !obsPublisher.Start(avcam::ipc::Channel::Obs))) {
+            std::cout << "AVCAM_IPC_PUBLISHER_START_FAILED error=" << GetLastError() << "\n";
+            return 11;
+        }
+        std::cout << "AVCAM_IPC_CHANNELS=RAW"
+                  << (rawOnly ? "" : ",OBS") << "\n";
+    }
     avcam::dual::Router router(2000);
     std::vector<unsigned char> raw(frameBytes), processed(frameBytes);
     std::uint64_t rawFrames = 0, obsFrames = 0, reconnects = 0;
@@ -104,15 +118,26 @@ int wmain(int argc, wchar_t** argv) {
             std::cout << "AVCAM_PHYSICAL_READ_FAILED frame=" << i << "\n";
             return 6;
         }
-        router.PushRaw({raw, i, nowMs()});
+        const auto capturedMs = nowMs();
+        router.PushRaw({raw, i, capturedMs});
+        if (publishIpc && !rawPublisher.Publish(raw.data(), raw.size(), i, capturedMs)) {
+            std::cout << "AVCAM_IPC_RAW_PUBLISH_FAILED frame=" << i << "\n";
+            return 12;
+        }
         if (obsConnected) {
             if (obs.ReadFrame(processed.data(), processed.size(), timestamp)) {
                 router.PushObs({processed, ++obsSequence, nowMs()});
                 ++obsFrames;
+                if (publishIpc && !obsPublisher.Publish(processed.data(), processed.size(),
+                                                        obsFrames, nowMs())) {
+                    std::cout << "AVCAM_IPC_OBS_PUBLISH_FAILED frame=" << i << "\n";
+                    return 12;
+                }
             } else {
                 obsConnected = false;
                 obs.Stop();
                 router.DisconnectObs();
+                if (publishIpc) obsPublisher.Invalidate();
                 std::cout << "AVCAM_OBS_DISCONNECTED_RAW_FALLBACK frame="
                           << i << " code=" << obs.LastErrorCode() << "\n";
             }
@@ -140,6 +165,7 @@ int wmain(int argc, wchar_t** argv) {
         }
     }
     router.DisconnectObs();
+    if (publishIpc && !rawOnly) obsPublisher.Invalidate();
     const auto fallback = router.ReadForOutput(nowMs());
     if (fallback.source != avcam::dual::Source::PhysicalRaw ||
         fallback.frame.bytes != raw) {
