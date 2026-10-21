@@ -8,6 +8,8 @@
 #include <cstddef>
 #include <cstring>
 #include <vector>
+#include <iostream>
+#include <iomanip>
 
 using Microsoft::WRL::ComPtr;
 
@@ -526,12 +528,18 @@ bool MediaFoundationFrameSource::ReadFrame(
             (flags & MF_SOURCE_READERF_ENDOFSTREAM) != 0 ||
             (flags & MF_SOURCE_READERF_ERROR) != 0)
         {
+            std::wcerr << L"AVCAM_MF_READ_SAMPLE_FAILED hr=0x" << std::hex
+                       << static_cast<unsigned long>(readResult)
+                       << L" flags=0x" << flags << std::dec
+                       << L" attempt=" << attempt << L"\n";
             return false;
         }
 
         if ((flags & MF_SOURCE_READERF_CURRENTMEDIATYPECHANGED) != 0 &&
             !ValidateCurrentOutputType())
         {
+            std::wcerr << L"AVCAM_MF_OUTPUT_TYPE_CHANGED_INVALID flags=0x"
+                       << std::hex << flags << std::dec << L"\n";
             return false;
         }
 
@@ -557,6 +565,9 @@ bool MediaFoundationFrameSource::ReadFrame(
                 DestinationBytes,
                 defaultStride_))
         {
+            std::wcerr << L"AVCAM_MF_BUFFER_COPY_FAILED stride="
+                       << defaultStride_ << L" bytes=" << DestinationBytes
+                       << L"\n";
             return false;
         }
 
