@@ -15,6 +15,17 @@ concurrency:
   group: avcam-physical-c270
   cancel-in-progress: true
 jobs:
+  validate-portable-endpoint-contract:
+    name: Check C270 endpoint contract (Linux, no camera required)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and execute physical endpoint contract tests
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -Iresearch/physical-c270 \
+            research/physical-c270/PhysicalEndpointAcceptanceTest.cpp \
+            -o /tmp/avcam-c270-contract
+          /tmp/avcam-c270-contract
   build-physical-c270:
     runs-on: windows-2022
     steps:
