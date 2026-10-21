@@ -1,10 +1,16 @@
 #Requires -Version 5.1
 [CmdletBinding()]
 param(
-    [string]$Executable = (Join-Path $PSScriptRoot 'AvCamMockFrameIpc.exe'),
-    [string]$ReportDirectory = (Join-Path $env:LOCALAPPDATA 'AvCam\ObsIpcSmoke')
+    [string]$Executable = '',
+    [string]$ReportDirectory = ''
 )
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($Executable)) {
+    $Executable = Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) 'AvCamMockFrameIpc.exe'
+}
+if ([string]::IsNullOrWhiteSpace($ReportDirectory)) {
+    $ReportDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'AvCam\ObsIpcSmoke'
+}
 $exe = (Resolve-Path -LiteralPath $Executable -ErrorAction Stop).Path
 New-Item -ItemType Directory -Force -Path $ReportDirectory | Out-Null
 $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
