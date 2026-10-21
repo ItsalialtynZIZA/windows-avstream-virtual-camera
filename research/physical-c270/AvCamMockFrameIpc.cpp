@@ -115,13 +115,14 @@ int main(int argc,char**argv){
         }else{
             for(size_t k=0;k<Bytes;k++)producerFrame[k]=pixel(frame,k);
         }
+        const unsigned frameChecksum=checksum(producerFrame.data());
         // Never hold the publication epoch odd while waiting for OBS.
         // Readers must be able to consume the last completed frame.
         InterlockedExchange(&p->header.epoch,(LONG)(2*frame-1));
         memcpy(p->bgra.data(),producerFrame.data(),Bytes);
         p->header.frameNumber=frame;
         p->header.timestamp=sourceTimestamp;
-        p->header.checksum=checksum(p->bgra.data());
+        p->header.checksum=frameChecksum;
         MemoryBarrier();
         InterlockedExchange(&p->header.epoch,(LONG)(2*frame));
         if(!obsMode)Sleep(33);
