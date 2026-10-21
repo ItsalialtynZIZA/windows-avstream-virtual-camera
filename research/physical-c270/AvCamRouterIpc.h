@@ -147,7 +147,8 @@ public:
         channel_ = channel;
         return true;
     }
-    bool TryRead(Snapshot& output) const {
+    // A consumer can pass its last sequence to avoid copying stale 3.5 MiB frames.
+    bool TryRead(Snapshot& output, std::uint64_t afterSequence = 0) const {
         if (!region_) return false;
         const Header& h = region_->header;
         const LONG before = h.epoch;
@@ -159,6 +160,7 @@ public:
             h.stride != Stride || h.bytes != FrameBytes || !h.sequence)
             return false;
         const std::uint64_t seq = h.sequence;
+        if (seq <= afterSequence) return false;
         const std::uint64_t time = h.capturedMs;
         // Do not copy to the caller until a complete, stable frame is verified.
         std::vector<unsigned char> bytes(FrameBytes);
