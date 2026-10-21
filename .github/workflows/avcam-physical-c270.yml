@@ -136,6 +136,7 @@ jobs:
             'build/mock-fanout/Release/AvCamMockFrameIpc.exe',
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
+            'research/physical-c270/AvCamC270EventCorrelation.ps1',
             'build/physical-c270/Release/AvCamPhysicalDeviceMft.dll',
             'research/physical-c270/AvCamPhysicalInstall.ps1',
             'research/physical-c270/AvCamPhysicalControl.ps1',
@@ -163,6 +164,12 @@ jobs:
             (Resolve-Path 'research/physical-c270/AvCamPhysicalInstall.ps1').Path,
             [ref]$tokens,[ref]$errors) | Out-Null
           if ($errors.Count) { throw "Install script syntax errors: $($errors.Count)" }
+          $eventTokens=$null; $eventErrors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path 'research/physical-c270/AvCamC270EventCorrelation.ps1').Path,
+            [ref]$eventTokens,[ref]$eventErrors) | Out-Null
+          if ($eventErrors.Count) { throw "Event correlation script syntax errors: $($eventErrors.Count)" }
+          Write-Host 'AVCAM_EVENT_CORRELATION_SYNTAX_PASSED'
           $smokeTokens=$null; $smokeErrors=$null
           [System.Management.Automation.Language.Parser]::ParseFile(
             (Resolve-Path 'research/physical-c270/Run-AvCamObsIpcSmoke.ps1').Path,
