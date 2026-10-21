@@ -73,6 +73,7 @@ int reader(){
 int main(int argc,char**argv){
     if(argc>1 && std::string(argv[1])=="--reader")return reader();
     const bool obsMode=argc>1 && std::string(argv[1])=="--obs";
+    if(argc>1 && !obsMode){std::cerr<<"USAGE: AvCamMockFrameIpc.exe [--obs]"<<std::endl;return 9;}
     ObsSharedMemorySource obs;
     if(obsMode && !obs.Start()){
         std::cerr<<"OBS_SOURCE_START_FAILED code="<<obs.LastErrorCode()<<std::endl;
@@ -134,6 +135,7 @@ int main(int argc,char**argv){
         CloseHandle(proc.hProcess);CloseHandle(proc.hThread);
     }
     UnmapViewOfFile(p);CloseHandle(m);
+    std::cout<<"AVCAM_IPC_CAPTURE_MODE="<<(obsMode?"OBS_LIVE":"SYNTHETIC")<<std::endl;
     std::cout<<(ok?"AVCAM_IPC_FULL_FRAME_PASS":"AVCAM_IPC_FULL_FRAME_FAIL")<<std::endl;
     return ok?0:1;
 }
