@@ -27,7 +27,7 @@ int reader(){
     if(!m){std::cerr<<"IPC_FRAME_OPEN_FAILED error="<<GetLastError()<<std::endl;return 2;}
     auto* p=(const Region*)MapViewOfFile(m,FILE_MAP_READ,0,0,sizeof(Region));
     if(!p){std::cerr<<"IPC_FRAME_VIEW_FAILED error="<<GetLastError()<<std::endl;CloseHandle(m);return 3;}
-    std::array<unsigned char,Bytes> local{};
+    std::vector<unsigned char> local(Bytes);
     unsigned last=0,count=0;unsigned __int64 lastTs=0;bool valid=true;
     unsigned observedGaps=0;
     unsigned __int64 maxReadUs=0;
