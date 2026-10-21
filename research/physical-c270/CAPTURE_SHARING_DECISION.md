@@ -47,6 +47,25 @@ Status: investigation; NOT a working fix for simultaneous Deep Live Cam + Chrome
 - Outcome: this opt-in did NOT solve simultaneous capture. Do not repeat
   this toggle as a purported fix or enable it automatically.
 
+## Owner decision: strict physical C270 endpoint + single-owner capture
+Owner selected architecture A. The Chrome selector must remain the existing
+physical Logi C270 HD WebCam, not a newly registered software device.
+
+Implementation gate before writing a capture broker:
+- A process that exclusively opens C270 and distributes frames cannot make
+  legacy Deep Live Cam open that already-occupied physical C270.
+- A new software camera may feed the unmodified Deep Live Cam if the user
+  changes its selected input, but does not preserve the C270 source selection
+  there, and the existing Chrome physical endpoint would still need a
+  separately implementable no-hardware-frame Server/KS integration.
+- Device MFT sample substitution only works after the original endpoint
+  opens. The C270 simultaneous DirectShow/Chrome open currently fails.
+- Do not implement an application-only broker and report it as fulfillment
+  of the strict physical-endpoint contract.
+- Next proof-of-feasibility must show a supported OS capture route that
+  can open the existing physical endpoint for Chrome while the sole
+  hardware capture owner is active. Without this, the contract is unproven.
+
 ## Next implementation decision
 The existing original physical C270 endpoint cannot serve both consumers in
 the observed mode. Choose explicitly between two acceptance contracts:
