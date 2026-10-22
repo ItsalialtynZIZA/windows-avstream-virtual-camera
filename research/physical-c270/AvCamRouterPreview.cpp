@@ -32,26 +32,26 @@ struct Feed {
     Channel channel;
     avcam::ipc::Subscriber reader;
     Snapshot last;
-    std::uint64_t sequence = 0;
+    avcam::ipc::Cursor cursor{};
     std::uint64_t openedMs = 0;
     bool attached = false;
 
     void Poll(std::uint64_t now) {
         if (!attached) {
             attached = reader.Start(channel);
-            if (attached) { openedMs = now; sequence = 0; }
+            if (attached) { openedMs = now; cursor = {}; }
             else return;
         }
         // Explicit invalidation must remove OBS immediately, not after TTL.
         if (!reader.IsActive()) {
             last.bgra.clear();
-            sequence = 0;
+            cursor = {};
             if (now >= openedMs && now - openedMs > 2000) Detach();
             return;
         }
         Snapshot next;
-        if (reader.TryRead(next, sequence)) {
-            sequence = next.sequence;
+        if (reader.TryRead(next, cursor)) {
+            cursor = next.Position();
             last = std::move(next);
         }
         if (!last.bgra.empty() &&
@@ -69,7 +69,7 @@ struct Feed {
     void Detach() {
         reader.Stop();
         last.bgra.clear();
-        sequence = 0;
+        cursor = {};
         attached = false;
     }
 };
