@@ -12,7 +12,9 @@ target_compile_features(AvCamRouterDiagnosticsTest PRIVATE cxx_std_17)
 # Unregistered, camera-independent native Media Foundation COM server.
 # The first streaming source is IPC V2 OBS ONLY. Never auto-install or
 # use a third-party/physical Logitech CLSID on the Windows runner.
-add_library(AvCamMfSource SHARED ../mf-source/AvCamMfSource.cpp)
+add_library(AvCamMfSource SHARED
+  ../mf-source/AvCamMfSource.cpp
+  ../mf-source/AvCamMfSource.def)
 target_compile_features(AvCamMfSource PRIVATE cxx_std_17)
 target_link_libraries(AvCamMfSource PRIVATE mfplat mfuuid ole32)
 set_target_properties(AvCamMfSource PROPERTIES PREFIX "")
