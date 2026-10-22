@@ -10,6 +10,7 @@
 #include <mferror.h>
 #include <wrl.h>
 #include <wrl/client.h>
+#include <ks.h>
 #include <ksmedia.h>
 #include <atomic>
 #include <chrono>
