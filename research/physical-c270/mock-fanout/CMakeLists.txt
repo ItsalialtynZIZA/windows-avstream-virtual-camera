@@ -39,6 +39,11 @@ add_executable(AvCamMfSourceSmoke ../mf-source/AvCamMfSourceSmoke.cpp)
 target_compile_features(AvCamMfSourceSmoke PRIVATE cxx_std_17)
 target_link_libraries(AvCamMfSourceSmoke PRIVATE mfplat mfuuid ole32)
 
+# COM lifetime regression for Start() returning MF_E_SHUTDOWN on Windows.
+add_executable(AvCamMfActivationLifetimeSmoke ../mf-source/AvCamMfActivationLifetimeSmoke.cpp)
+target_compile_features(AvCamMfActivationLifetimeSmoke PRIVATE cxx_std_17)
+target_link_libraries(AvCamMfActivationLifetimeSmoke PRIVATE mfplat mfuuid ole32)
+
 # Full synthetic OBS IPC -> separate broker -> MF COM source -> MEMediaSample.
 # No COM registration, camera, installed driver or service required in CI.
 add_executable(AvCamMfEndToEndSmoke ../mf-source/AvCamMfEndToEndSmoke.cpp)
