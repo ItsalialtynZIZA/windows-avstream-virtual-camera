@@ -266,312 +266,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "IPC V2 feeder frame integration failed: $LASTEXITCODE" }
           & ./build/mock-fanout/Release/AvCamVirtualReadinessTest.exe
           if ($LASTEXITCODE -ne 0) { throw "Virtual camera readiness classification failed: $LASTEXITCODE" }
-          # Genuine Win11 software camera controller; no COM source is installed.
-          # All checks must be harmless and fail closed on a clean hosted runner.
+          # No AvCam COM media-source is registered on a clean Windows runner.
+          # MFCreateVirtualCamera availability is read-only; no device created.
           $softwareCamera = (Resolve-Path './build/mock-fanout/Release/AvCamSoftwareCameraControl.exe').Path
           $softwarePreflight = @(& $softwareCamera --preflight)
           $softwareExit = $LASTEXITCODE
           $softwarePreflight | ForEach-Object { Write-Host $_ }
           if ($softwareExit -ne 6 -or
-              $softwarePreflight -notmatch '^AVCAM_MF_VIRTUAL_CAMERA_API=[01] media_source_registered=0 current_user_only=1
-          # Exercise the ACTUAL packaged feeder, not only its source class,
-          # against a different Windows process publishing synthetic OBS.
-          # No AVStream driver, Logitech camera, or OBS Studio is needed.
-          $feederBinary = (Resolve-Path './build/mock-fanout/avcam-feeder/Release/AvCamFeeder.exe').Path
-          $fakeWriterBinary = (Resolve-Path './build/mock-fanout/Release/AvCamRouterIpcProcessTest.exe').Path
-          $sinkProbe = @(& $feederBinary --check-sink)
-          $sinkCode = $LASTEXITCODE
-          $sinkProbe | ForEach-Object { Write-Host $_ }
-          if ($sinkCode -ne 6 -or $sinkProbe -notcontains 'AVCAM_VIRTUAL_SINK_PRESENT=0 sink_interfaces=0') {
-            throw "Fresh Windows runner unexpectedly has a private AvCam sink: $sinkCode"
-          }
-          $virtualCameraReport = @(& $feederBinary --check-virtual-camera)
-          $virtualCameraCode = $LASTEXITCODE
-          $virtualCameraReport | ForEach-Object { Write-Host $_ }
-          if ($virtualCameraCode -ne 6 -or
-              $virtualCameraReport -notcontains 'AVCAM_VIRTUAL_CAMERA_READINESS=ABSENT ks_sinks=0 mf_name_matches=0') {
-            throw "Fresh Windows runner unexpectedly enumerates a separate AvCam virtual camera: $virtualCameraCode"
-          }
-          Write-Host 'AVCAM_VIRTUAL_CAMERA_MF_READONLY_PREFLIGHT_PASS'
-          $transportReport = @(& $feederBinary --check-transport)
-          $transportCode = $LASTEXITCODE
-          $transportReport | ForEach-Object { Write-Host $_ }
-          if ($transportCode -ne 6 -or
-              $transportReport -notcontains 'AVCAM_TRANSPORT_READINESS=ABSENT ks_sinks=0') {
-            throw "Private AvCam KS transport check did not fail closed without a driver: $transportCode"
-          }
-          & $feederBinary --check-virtual-camera --check-transport
-          if ($LASTEXITCODE -ne 2) { throw 'Conflicting feeder diagnostic modes were accepted' }
-          Write-Host 'AVCAM_VIRTUAL_TRANSPORT_READONLY_PREFLIGHT_PASS'
-          $fakeObs = $null
-          try {
-            $fakeObs = Start-Process -FilePath $fakeWriterBinary -ArgumentList @('--writer','obs','155') -PassThru -NoNewWindow
-            Start-Sleep -Milliseconds 650
-            $fakeObs.Refresh()
-            if ($fakeObs.HasExited) { throw "Synthetic OBS publisher exited: $($fakeObs.ExitCode)" }
-            $actualFeederProbe = @(& $feederBinary --source avcam-ipc-obs --check-source --seconds 3)
-            $actualFeederCode = $LASTEXITCODE
-            $actualFeederProbe | ForEach-Object { Write-Host $_ }
-            if ($actualFeederCode -ne 0) { throw "Real feeder IPC check failed: $actualFeederCode" }
-            $metrics = @($actualFeederProbe | Where-Object { $_ -match '^AVCAM_IPC_CHECK frames=([0-9]+)' })
-            if ($metrics.Count -ne 1) { throw 'Real feeder emitted no IPC metrics' }
-            if ($metrics[0] -match '^AVCAM_IPC_CHECK frames=([0-9]+)') {
-              $realFrameCount = [int]$Matches[1]
-            } else {
-              throw 'Real feeder returned a malformed IPC frame count'
-            }
-            if ($realFrameCount -lt 15) {
-              throw "Real feeder received only $realFrameCount frames in 3 seconds"
-            }
-            Write-Host 'AVCAM_FEEDER_REAL_EXE_IPC_PROCESS_PASS'
-          } finally {
-            if ($fakeObs) {
-              $fakeObs.Refresh()
-              if (-not $fakeObs.HasExited) { Stop-Process -Id $fakeObs.Id -Force -ErrorAction SilentlyContinue }
-              $fakeObs.Dispose()
-            }
-          }
-          # Spawn separate synthetic Windows publishers, kill one and restart
-          # it while the consumer retains its read-only mapped view.
-          $ipcProcessOutput = @(& ./build/mock-fanout/Release/AvCamRouterIpcProcessTest.exe --self-test)
-          $ipcProcessExit = $LASTEXITCODE
-          $ipcProcessOutput | ForEach-Object { Write-Host $_ }
-          if ($ipcProcessExit -ne 0) {
-            throw "Cross-process IPC crash/restart regression failed: $ipcProcessExit"
-          }
-          foreach ($marker in @(
-            'AVCAM_IPC_PROCESS_CONCURRENT_OWNER_REJECTED=1',
-            'AVCAM_IPC_PROCESS_CRASH_RESTART_PASS',
-            'AVCAM_IPC_PROCESS_LIVE_READER_REATTACHED=1',
-            'AVCAM_IPC_PROCESS_RAW_SURVIVES_OBS_CRASH=1'
-          )) {
-            if ($ipcProcessOutput -notcontains $marker) {
-              throw "Cross-process IPC regression marker missing: $marker"
-            }
-          }
-          & ./build/mock-fanout/Release/AvCamPreviewSelectionTest.exe
-          if ($LASTEXITCODE -ne 0) { throw 'Preview source selection and freshness policy failed' }
-          & ./build/mock-fanout/Release/AvCamAsyncObsWorkerTest.exe
-          if ($LASTEXITCODE -ne 0) { throw 'OBS capture thread does not preserve RAW independence' }
-          & ./build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe --independent-obs
-          if ($LASTEXITCODE -ne 9) { throw 'Independent OBS must require continuous mode' }
-          & ./build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe --continuous --raw-only --independent-obs
-          if ($LASTEXITCODE -ne 9) { throw 'Independent OBS cannot accompany raw-only mode' }
-          # GUI subsystem executables can return control to PowerShell before
-          # process exit. Wait explicitly and validate the real exit code.
-          $previewTest = Start-Process -FilePath (Resolve-Path ./build/mock-fanout/Release/AvCamRouterPreview.exe).Path -ArgumentList '--self-test' -Wait -PassThru
-          if ($previewTest.ExitCode -ne 0) { throw "Native Windows preview selftest failed: $($previewTest.ExitCode)" }
-          & ./build/mock-fanout/Release/AvCamDualChannelRouterTest.exe
-          if ($LASTEXITCODE -ne 0) { throw 'AvCam dual-channel RAW/OBS routing failed' }
-          & ./build/mock-fanout/Release/AvCamMockFanout.exe
-          if ($LASTEXITCODE -ne 0) { throw 'Mock fanout runtime selftest failed' }
-          & ./build/mock-fanout/Release/AvCamMockIpcFanout.exe
-          if ($LASTEXITCODE -ne 0) { throw 'Mock IPC fanout selftest failed' }
-          & ./build/mock-fanout/Release/AvCamMockFrameIpc.exe
-          if ($LASTEXITCODE -ne 0) { throw 'Full-frame BGRA IPC selftest failed' }
-          # CI has no running OBS. The live-source mode must fail explicitly rather than silently generating synthetic frames.
-          $obsProbe = Start-Process -FilePath (Resolve-Path ./build/mock-fanout/Release/AvCamMockFrameIpc.exe).Path -ArgumentList '--obs' -Wait -PassThru -NoNewWindow
-          if ($obsProbe.ExitCode -ne 8) { throw "OBS missing-source contract failed (expected 8, got $($obsProbe.ExitCode))" }
-      - name: Compile user-mode OBS bridge and device MFT COM DLL
-        shell: pwsh
-        run: |
-          $s = ((Resolve-Path upstream/avstream/sampledevicemft).Path -replace '\\', '/')
-          $wil = ((Resolve-Path upstream/packages/Microsoft.Windows.ImplementationLibrary.1.0.210204.1/include).Path -replace '\\', '/')
-          cmake -S research/physical-c270 -B build/physical-c270 -A x64 -DMICROSOFT_DMFT_DIR="$s" -DMICROSOFT_WIL_INCLUDE="$wil"
-          if ($LASTEXITCODE -ne 0) { throw 'Physical C270 CMake configure failed' }
-          cmake --build build/physical-c270 --config Release --parallel 4
-          if ($LASTEXITCODE -ne 0) { throw 'Physical C270 compile failed' }
-
-      - name: Windows bridge retained-mapping restart selftest
-        shell: powershell
-        run: |
-          & ./build/physical-c270/Release/AvCamPhysicalBridge.exe --self-test
-          if ($LASTEXITCODE -ne 0) { throw "Bridge mapping restart selftest failed with $LASTEXITCODE" }
-          Write-Host 'AVCAM_C270_BRIDGE_RESTART_SELFTEST_CI_PASSED'
-      - name: Validate scripts and prepare owner-only opt-in package
-        shell: pwsh
-        run: |
-          $out = 'artifacts/AvCam-Physical-C270-RC3'
-          New-Item -ItemType Directory -Force -Path $out | Out-Null
-          $files = @(
-            'build/physical-c270/Release/AvCamPhysicalBridge.exe',
-            'build/mock-fanout/Release/AvCamMockFrameIpc.exe',
-            'build/mock-fanout/Release/AvCamRouterObsSmoke.exe',
-            'build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe',
-            'build/mock-fanout/Release/AvCamRouterIpcProbe.exe',
-            'build/mock-fanout/Release/AvCamRouterPreview.exe',
-            'build/mock-fanout/Release/AvCamSoftwareCameraControl.exe',
-            'build/mock-fanout/avcam-feeder/Release/AvCamFeeder.exe',
-            'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
-            'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
-            'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
-            'research/physical-c270/AvCamC270EventCorrelation.ps1',
-            'research/physical-c270/AvCamC270CapturePhase.ps1',
-            'build/physical-c270/Release/AvCamPhysicalDeviceMft.dll',
-            'research/physical-c270/AvCamPhysicalInstall.ps1',
-            'research/physical-c270/AvCamPhysicalControl.ps1',
-            'research/physical-c270/AvCamPhysicalTaskIdentity.ps1',
-            'research/physical-c270/TaskIdentityTest.ps1',
-            'research/physical-c270/AvCamSetup.ps1',
-            'research/physical-c270/AvCamSetup.cmd',
-            'research/physical-c270/AvCamStatus.cmd',
-            'research/physical-c270/AvCamUninstall.cmd',
-            'research/physical-c270/AvCamPhysicalDiagnostics.ps1',
-            'research/physical-c270/AvCamPhysicalDiagnostic.ps1',
-            'research/physical-c270/AvCamPhysicalCaptureEtw.ps1',
-            'research/physical-c270/AvCamDeepLiveTrace.cmd',
-            'research/physical-c270/Decode-AvCamPhysicalEtw.ps1',
-            'research/physical-c270/AvCamCaptureSharingBaseline.ps1',
-            'research/physical-c270/AvCamDshowBridgeTrial.ps1',
-            'research/physical-c270/README_PHYSICAL_C270.txt'
-          )
-          foreach ($file in $files) {
-            if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing package file: $file" }
-            Copy-Item -LiteralPath $file -Destination $out
-          }
-          $tokens=$null; $errors=$null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'research/physical-c270/AvCamPhysicalInstall.ps1').Path,
-            [ref]$tokens,[ref]$errors) | Out-Null
-          if ($errors.Count) { throw "Install script syntax errors: $($errors.Count)" }
-          $phaseTokens=$null; $phaseErrors=$null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'research/physical-c270/AvCamC270CapturePhase.ps1').Path,
-            [ref]$phaseTokens,[ref]$phaseErrors) | Out-Null
-          if ($phaseErrors.Count) { throw "Capture phase script syntax errors: $($phaseErrors.Count)" }
-          $eventTokens=$null; $eventErrors=$null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'research/physical-c270/AvCamC270EventCorrelation.ps1').Path,
-            [ref]$eventTokens,[ref]$eventErrors) | Out-Null
-          if ($eventErrors.Count) { throw "Event correlation script syntax errors: $($eventErrors.Count)" }
-          Write-Host 'AVCAM_EVENT_CORRELATION_SYNTAX_PASSED'
-          $smokeTokens=$null; $smokeErrors=$null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'research/physical-c270/Run-AvCamObsIpcSmoke.ps1').Path,
-            [ref]$smokeTokens,[ref]$smokeErrors) | Out-Null
-          if ($smokeErrors.Count) { throw "OBS IPC smoke script syntax errors: $($smokeErrors.Count)" }
-          Write-Host 'AVCAM_OBS_IPC_SMOKE_SCRIPT_SYNTAX_PASSED'
-          $trialTokens=$null; $trialErrors=$null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Resolve-Path 'research/physical-c270/AvCamDshowBridgeTrial.ps1').Path,
-            [ref]$trialTokens,[ref]$trialErrors) | Out-Null
-          if ($trialErrors.Count) { throw "DShow trial syntax errors: $($trialErrors.Count)" }
-          Write-Host 'AVCAM_DSHOW_TRIAL_POWERSHELL_SYNTAX_PASSED'
-          powershell.exe -NoProfile -ExecutionPolicy Bypass -File research/physical-c270/DshowBridgeTrialSafetyTest.ps1
-          if ($LASTEXITCODE -ne 0) { throw 'DShow Bridge rollback safety regression failed' }
-          Get-ChildItem $out -File | Get-FileHash -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash)  $(Split-Path $_.Path -Leaf)" } |
-            Set-Content (Join-Path $out 'SHA256SUMS.txt')
-          Write-Host 'AVCAM_PHYSICAL_C270_RELEASE_CANDIDATE_BUILT_AND_SELFTESTED'
-      - uses: actions/upload-artifact@v4
-        with:
-          name: AvCam-Physical-C270-RC3
-          path: artifacts/AvCam-Physical-C270-RC3/
-          if-no-files-found: error
-
-      - name: Package no-install OBS live diagnostic (no camera modifications)
-        shell: pwsh
-        run: |
-          $out = 'artifacts/AvCam-OBS-Live-Diagnostic'
-          New-Item -ItemType Directory -Force -Path $out | Out-Null
-          foreach ($f in @(
-            'build/mock-fanout/Release/AvCamMockFrameIpc.exe',
-            'build/mock-fanout/Release/AvCamRouterObsSmoke.exe',
-            'build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe',
-            'build/mock-fanout/Release/AvCamRouterIpcProbe.exe',
-            'build/mock-fanout/Release/AvCamRouterPreview.exe',
-            'build/mock-fanout/Release/AvCamSoftwareCameraControl.exe',
-            'build/mock-fanout/avcam-feeder/Release/AvCamFeeder.exe',
-            'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
-            'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
-            'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
-            'research/physical-c270/Start-AvCamPreview.ps1',
-            'research/physical-c270/AvCam-Start.cmd'
-          )) {
-            if (!(Test-Path -LiteralPath $f -PathType Leaf)) { throw "Missing diagnostic input: $f" }
-            Copy-Item -LiteralPath $f -Destination $out
-          }
-          $launcherTokens=$null; $launcherErrors=$null
-          [System.Management.Automation.Language.Parser]::ParseFile(
-            (Join-Path $out 'Start-AvCamPreview.ps1'),
-            [ref]$launcherTokens,[ref]$launcherErrors) | Out-Null
-          if ($launcherErrors.Count) { throw 'One-click AvCam launcher syntax invalid' }
-          $launcherValidation = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $out 'Start-AvCamPreview.ps1') -ValidateOnly)
-          if ($LASTEXITCODE -ne 0 -or $launcherValidation -notcontains 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS') {
-            throw 'One-click AvCam launcher package validation failed'
-          }
-          $optinValidation = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $out 'Start-AvCamPreview.ps1') -VirtualOutput -ValidateOnly)
-          if ($LASTEXITCODE -ne 0 -or $optinValidation -notcontains 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS') {
-            throw 'Virtual output opt-in packaging verification failed'
-          }
-          Write-Host 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS'
-          @'
-          AvCam OBS Live Diagnostic — safe, no-install Windows x64 package.
-          1. Run OBS Studio and start OBS Virtual Camera.
-             AvCamSoftwareCameraControl.exe --preflight checks the Windows 11
-             Media Foundation virtual-camera API and custom-source registration.
-             EXPERIMENTAL: The AvCam Media Foundation source DLL does NOT
-             exist yet. This tool by itself cannot produce webcam frames.
-             Do not use --session as a completed video device.
-             For one-click RAW + OBS preview, double-click AvCam-Start.cmd.
-             Its window opens the video preview; closing the preview stops
-             ONLY the AvCam Router process created by this launcher.
-             Optional: AvCam-Start.cmd -Mode output (or raw, obs, compare).
-             If a separate compatible AvCam AVStream test camera is ALREADY
-             installed, AvCam-Start.cmd -VirtualOutput also runs AvCamFeeder
-             with strict OBS-only input. First it verifies KS+MF enumeration
-             and queries private GET_STATS transport, WITHOUT sending a frame.
-             If either check fails, no Logitech source is opened and no
-             driver is installed or modified.
-             Deep Live Cam remains connected to the unchanged physical Logitech.
-          2. In an ordinary PowerShell window:
-             .\AvCamMockFrameIpc.exe --obs
-          3. Expected: AVCAM_IPC_FULL_FRAME_PASS and exit code 0.
-          4. For isolated RAW + OBS router (real physical C270, read-only):
-             .\AvCamRouterPhysicalRawObs.exe
-             Or with only physical C270:
-             .\AvCamRouterPhysicalRawObs.exe --raw-only
-          5. To publish both feeds to independent named BGRA mappings:
-             .\\AvCamRouterPhysicalRawObs.exe --continuous --frames 300 --publish-ipc
-             In a second PowerShell window (while the router runs):
-             .\\AvCamRouterIpcProbe.exe --channel obs --frames 30
-             Or use --channel raw for the original C270 frames.
-             To see actual video, open AvCamRouterPreview.exe
-             or run .\\AvCamRouterPreview.exe --mode compare (side by side).
-             --mode output prefers OBS with RAW fallback when unavailable.
-             Use matching router/preview binaries from THIS artifact (IPC V2).
-             These mappings are Local\\AvCamRouterRawV2 and Local\\AvCamRouterObsV2.
-             --independent-obs with --continuous keeps RAW independent of OBS waits.
-             If upgrading from V1, close the old router before opening this one.
-          6. With a separately installed compatible AvCam AVStream test camera,
-             the SAME IPC V2 OBS stream can feed that separate virtual endpoint:
-             .\\AvCamFeeder.exe --source avcam-ipc-obs
-             OR --source avcam-ipc-output for OBS with RAW fallback.
-             WITHOUT an installed AvCam sink this feeder only waits; it does
-             NOT install a driver, replace Logitech, or alter Chrome's camera.
-          7. Expected: AVCAM_PHYSICAL_C270_ROUTER_PASS.
-             C270 RAW acquisition may fail if a camera app or negotiated
-             capture format prevents simultaneous access. No driver changes.
-          This confirms OBS -> AvCam IPC or router isolation only. It does NOT inject video into
-          the existing physical Logitech C270 or change Chrome's video.
-          No Device MFT, install scripts, registration, or driver modifications
-          are included. Do not confuse this diagnostic with OBS substitution.
-          '@ | Set-Content -Path (Join-Path $out 'README.txt') -Encoding utf8
-          Get-ChildItem $out -File | Get-FileHash -Algorithm SHA256 |
-            ForEach-Object { "$($_.Hash)  $(Split-Path $_.Path -Leaf)" } |
-            Set-Content (Join-Path $out 'SHA256SUMS.txt')
-      - uses: actions/upload-artifact@v4
-        with:
-          name: AvCam-OBS-Live-Diagnostic
-          path: artifacts/AvCam-OBS-Live-Diagnostic/
-          if-no-files-found: error
-) {
-            throw "MF software virtual camera controller did not fail closed"
+              $softwarePreflight -notmatch '^AVCAM_MF_VIRTUAL_CAMERA_API=[01] media_source_registered=0 current_user_only=1$') {
+            throw "Win11 software camera preflight must fail closed without registered COM source"
           }
           & $softwareCamera --session
           if ($LASTEXITCODE -ne 6) { throw 'Software camera session created without registered COM source' }
           & $softwareCamera --invalid
-          if ($LASTEXITCODE -ne 2) { throw 'Software camera accepted invalid CLI arguments' }
+          if ($LASTEXITCODE -ne 2) { throw 'Software camera CLI accepted invalid arguments' }
           Write-Host 'AVCAM_WIN11_SOFTWARE_CAMERA_CONTROLLER_PREFLIGHT_PASS'
           # Exercise the ACTUAL packaged feeder, not only its source class,
           # against a different Windows process publishing synthetic OBS.
@@ -592,16 +300,6 @@ jobs:
             throw "Fresh Windows runner unexpectedly enumerates a separate AvCam virtual camera: $virtualCameraCode"
           }
           Write-Host 'AVCAM_VIRTUAL_CAMERA_MF_READONLY_PREFLIGHT_PASS'
-          $transportReport = @(& $feederBinary --check-transport)
-          $transportCode = $LASTEXITCODE
-          $transportReport | ForEach-Object { Write-Host $_ }
-          if ($transportCode -ne 6 -or
-              $transportReport -notcontains 'AVCAM_TRANSPORT_READINESS=ABSENT ks_sinks=0') {
-            throw "Private AvCam KS transport check did not fail closed without a driver: $transportCode"
-          }
-          & $feederBinary --check-virtual-camera --check-transport
-          if ($LASTEXITCODE -ne 2) { throw 'Conflicting feeder diagnostic modes were accepted' }
-          Write-Host 'AVCAM_VIRTUAL_TRANSPORT_READONLY_PREFLIGHT_PASS'
           $fakeObs = $null
           try {
             $fakeObs = Start-Process -FilePath $fakeWriterBinary -ArgumentList @('--writer','obs','155') -PassThru -NoNewWindow
@@ -807,16 +505,18 @@ jobs:
           @'
           AvCam OBS Live Diagnostic — safe, no-install Windows x64 package.
           1. Run OBS Studio and start OBS Virtual Camera.
+             Experimental: AvCamSoftwareCameraControl.exe --preflight checks
+             Windows 11 API and reserved Media Foundation source registration.
+             The matching AvCam COM media source is NOT implemented in this
+             version, so --session does not yet provide a usable camera.
              For one-click RAW + OBS preview, double-click AvCam-Start.cmd.
              Its window opens the video preview; closing the preview stops
              ONLY the AvCam Router process created by this launcher.
              Optional: AvCam-Start.cmd -Mode output (or raw, obs, compare).
              If a separate compatible AvCam AVStream test camera is ALREADY
              installed, AvCam-Start.cmd -VirtualOutput also runs AvCamFeeder
-             with strict OBS-only input. First it verifies KS+MF enumeration
-             and queries private GET_STATS transport, WITHOUT sending a frame.
-             If either check fails, no Logitech source is opened and no
-             driver is installed or modified.
+             with strict OBS-only input. It checks for AvCam's private sink
+             first and fails without modifying drivers when absent.
              Deep Live Cam remains connected to the unchanged physical Logitech.
           2. In an ordinary PowerShell window:
              .\AvCamMockFrameIpc.exe --obs
