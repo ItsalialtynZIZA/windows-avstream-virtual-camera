@@ -514,6 +514,10 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $optinValidation -notcontains 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS') {
             throw 'Virtual output opt-in packaging verification failed'
           }
+          $mfPipeLauncherValidation = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $out 'Start-AvCamPreview.ps1') -MfPipe -ValidateOnly)
+          if ($LASTEXITCODE -ne 0 -or $mfPipeLauncherValidation -notcontains 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS') {
+            throw 'OBS-only named-pipe launcher package validation failed'
+          }
           Write-Host 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS'
           @'
           AvCam OBS Live Diagnostic — safe, no-install Windows x64 package.
@@ -526,9 +530,12 @@ jobs:
              Local user, LocalService and SYSTEM are explicitly permitted
              by the server DACL; remote pipe clients are rejected.
              AvCamMfSource.dll is an UNREGISTERED experimental COM media source.
-             It reads only AvCam OBS IPC V2 and converts to NV12, but the DLL
-             is not installed and its service-session IPC reachability is not
-             yet validated. Do not register/activate it on a primary PC yet.
+             It reads the OBS-only NV12 named pipe in the Frame Server process.
+             The DLL is not installed and Windows session-0 LocalService
+             reachability is not validated. Do not manually register it yet.
+             Optional AvCam-Start.cmd -MfPipe starts the owned OBS-only pipe
+             broker and cleans it up when Preview closes. Normal preview does
+             not start the service-readable pipe or register any camera.
              For one-click RAW + OBS preview, double-click AvCam-Start.cmd.
              Its window opens the video preview; closing the preview stops
              ONLY the AvCam Router process created by this launcher.
