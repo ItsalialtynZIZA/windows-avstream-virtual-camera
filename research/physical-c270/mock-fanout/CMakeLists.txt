@@ -20,6 +20,10 @@ set_target_properties(AvCamMfSource PROPERTIES PREFIX "")
 add_executable(AvCamMfColorTest ../mf-source/AvCamMfColorTest.cpp)
 target_compile_features(AvCamMfColorTest PRIVATE cxx_std_17)
 
+add_executable(AvCamMfSourceSmoke ../mf-source/AvCamMfSourceSmoke.cpp)
+target_compile_features(AvCamMfSourceSmoke PRIVATE cxx_std_17)
+target_link_libraries(AvCamMfSourceSmoke PRIVATE mfplat mfuuid ole32)
+
 add_executable(AvCamSoftwareCameraControl ../AvCamSoftwareCameraControl.cpp)
 target_compile_features(AvCamSoftwareCameraControl PRIVATE cxx_std_17)
 target_compile_definitions(AvCamSoftwareCameraControl PRIVATE WINVER=0x0A00 _WIN32_WINNT=0x0A00)
