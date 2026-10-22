@@ -9,6 +9,17 @@ target_compile_features(AvCamRouterDiagnosticsTest PRIVATE cxx_std_17)
 
 # This is the separate Win11 software-camera API controller.
 # Never auto-register a camera or a COM source in CI.
+# Unregistered, camera-independent native Media Foundation COM server.
+# The first streaming source is IPC V2 OBS ONLY. Never auto-install or
+# use a third-party/physical Logitech CLSID on the Windows runner.
+add_library(AvCamMfSource SHARED ../mf-source/AvCamMfSource.cpp)
+target_compile_features(AvCamMfSource PRIVATE cxx_std_17)
+target_link_libraries(AvCamMfSource PRIVATE mfplat mfuuid ole32)
+set_target_properties(AvCamMfSource PROPERTIES PREFIX "")
+
+add_executable(AvCamMfColorTest ../mf-source/AvCamMfColorTest.cpp)
+target_compile_features(AvCamMfColorTest PRIVATE cxx_std_17)
+
 add_executable(AvCamSoftwareCameraControl ../AvCamSoftwareCameraControl.cpp)
 target_compile_features(AvCamSoftwareCameraControl PRIVATE cxx_std_17)
 target_compile_definitions(AvCamSoftwareCameraControl PRIVATE WINVER=0x0A00 _WIN32_WINNT=0x0A00)
