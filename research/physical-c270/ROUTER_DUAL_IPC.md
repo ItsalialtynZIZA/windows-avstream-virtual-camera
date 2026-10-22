@@ -243,6 +243,29 @@ The second command **only enumerates** AvCam's separate, private KS sink
 interface; it reports `AVCAM_VIRTUAL_SINK_PRESENT=0/1` and returns 6 when
 the interface is absent. It never probes the physical Logitech C270.
 
+The new **read-only dual-enumeration readiness** check is:
+
+```powershell
+.\AvCamFeeder.exe --check-virtual-camera
+```
+
+This checks two independent Windows API views: the private KS producer
+interface and Media Foundation's video source list for the exact
+`AvCam Virtual Camera` friendly name. The result is
+`AVCAM_VIRTUAL_CAMERA_READINESS=ENUMERATED_NOT_ACTIVATED` (exit 0),
+`ABSENT` (exit 6) or `AMBIGUOUS` (exit 7). It also prints the
+enumerated interface/name counts. The command **does not activate a
+camera, submit frames, modify PnP, or guarantee that Chrome accepts
+the virtual camera**; the friendly name is not a proof of device
+identity. If an endpoint does not appear consistently through both
+enumerations, an optional virtual-output launcher fails closed.
+
+For `--source avcam-ipc-obs --check-source` the CLI now polls new
+IPC frames at higher frequency instead of sleeping 100 ms after
+every ordinary inter-frame gap. This makes reported received-frame
+counts more representative of the actual OBS producer cadence.
+
+
 For an independently installed compatible *separate* AvCam test camera,
 the no-install launcher supports an explicit opt-in:
 
@@ -251,8 +274,10 @@ the no-install launcher supports an explicit opt-in:
 ```
 
 Without `-VirtualOutput` the launcher only opens the RAW/OBS preview.
-With the flag it first checks `--check-sink`; if the private interface
-is absent, it stops with an error **before opening Logitech**. When
+With the flag it first runs the stricter `--check-virtual-camera`
+read-only enumeration; if either the private KS interface or the
+Media Foundation camera entry is missing or ambiguous, it stops with
+an error **before opening Logitech**. When
 present, it starts the real `AvCamFeeder.exe --source avcam-ipc-obs`
 alongside the router and viewer. Closing the viewer terminates only
 the child processes this launcher started. This option **does not**
