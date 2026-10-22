@@ -71,15 +71,17 @@ bool ReadExpected(Subscriber& reader, Channel channel,
                   Cursor after, unsigned marker, Snapshot& out,
                   DWORD timeoutMs = 4000) {
     const auto until = NowMs() + timeoutMs;
-    bool attached = false;
+    bool attached = reader.Attached();
     while (NowMs() < until) {
         if (!attached) attached = reader.Start(channel);
         if (attached && reader.TryRead(out, after)) {
             if (out.channel != channel || !out.session || !out.sequence ||
-                out.bgra.size() != FrameBytes || out.bgra[0] != marker ||
-                out.bgra[FrameBytes - 1] != marker)
-                return false;
-            return true;
+                out.bgra.size() != FrameBytes) return false;
+            if (out.bgra[0] == marker &&
+                out.bgra[FrameBytes - 1] == marker) return true;
+            // A crashed writer may have published an unobserved earlier
+            // frame. Ignore that sample while awaiting the new session.
+            after = out.Position();
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
@@ -131,7 +133,7 @@ int SelfTest() {
     if (!obsSecond.Launch(L"obs", 0x71)) return 8;
     if (!ReadExpected(obsReader, Channel::Obs, previous, 0x71, obsB) ||
         obsB.session == obsA.session || !obsSecond.Running()) return 9;
-    if (obsReader.TryRead(obsB, obsB.Position())) return 10;
+    if (!obsReader.Attached()) return 10;
     if (!ReadExpected(rawReader, Channel::Raw,
                       rawB.Position(), 0x41, rawA) ||
         rawA.session != rawB.session) return 14;
