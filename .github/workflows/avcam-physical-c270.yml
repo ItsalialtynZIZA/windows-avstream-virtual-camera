@@ -253,6 +253,12 @@ jobs:
           if ($LASTEXITCODE -ne 9) { throw 'IPC consumer invalid argument rejection failed' }
           & ./build/mock-fanout/Release/AvCamPreviewSelectionTest.exe
           if ($LASTEXITCODE -ne 0) { throw 'Preview source selection and freshness policy failed' }
+          & ./build/mock-fanout/Release/AvCamAsyncObsWorkerTest.exe
+          if ($LASTEXITCODE -ne 0) { throw 'OBS capture thread does not preserve RAW independence' }
+          & ./build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe --independent-obs
+          if ($LASTEXITCODE -ne 9) { throw 'Independent OBS must require continuous mode' }
+          & ./build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe --continuous --raw-only --independent-obs
+          if ($LASTEXITCODE -ne 9) { throw 'Independent OBS cannot accompany raw-only mode' }
           # GUI subsystem executables can return control to PowerShell before
           # process exit. Wait explicitly and validate the real exit code.
           $previewTest = Start-Process -FilePath (Resolve-Path ./build/mock-fanout/Release/AvCamRouterPreview.exe).Path -ArgumentList '--self-test' -Wait -PassThru
