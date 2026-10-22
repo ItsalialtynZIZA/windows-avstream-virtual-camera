@@ -236,15 +236,15 @@ public:
         hr = type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
         if (FAILED(hr)) return hr;
         hr = MFSetAttributeSize(type.Get(), MF_MT_FRAME_SIZE,
-                                static_cast<UINT32>(avcam::mfcolor::Width),
-                                static_cast<UINT32>(avcam::mfcolor::Height));
+                                static_cast<UINT32>(avcam::mfpipe::Width),
+                                static_cast<UINT32>(avcam::mfpipe::Height));
         if (FAILED(hr)) return hr;
         hr = MFSetAttributeRatio(type.Get(), MF_MT_FRAME_RATE, 30, 1);
         if (FAILED(hr)) return hr;
         hr = MFSetAttributeRatio(type.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
         if (FAILED(hr)) return hr;
         hr = type->SetUINT32(MF_MT_SAMPLE_SIZE,
-                              static_cast<UINT32>(avcam::mfcolor::Nv12Bytes));
+                              static_cast<UINT32>(avcam::mfpipe::PayloadBytes));
         if (FAILED(hr)) return hr;
         hr = type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
         if (FAILED(hr)) return hr;
