@@ -1,9 +1,9 @@
 // Experimental Windows 11 software-camera controller.
 // Uses the documented MFCreateVirtualCamera user-mode API.
 // No kernel driver, Device MFT, physical-device PnP or Chrome changes.
-// IMPORTANT: The AvCam media-source COM DLL is experimental and currently
-// unregistered. This executable refuses session creation until a reviewed,
-// user-approved source installation exists and its streaming path is verified.
+// IMPORTANT: The experimental AvCam COM media source must be installed
+// separately via an explicit user-approved script; a registered CLSID alone
+// does not establish that the Camera Frame Server can activate it.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -107,13 +107,21 @@ int RunSession() {
         SourceClsid,
         nullptr, 0,
         camera.GetAddressOf());
-    if (SUCCEEDED(hr))
-        hr = camera->Start(nullptr);
-
+    if (FAILED(hr)) {
+        std::wcerr << L"AVCAM_SOFTWARE_CAMERA_CREATE_FAILED hr=0x"
+                   << std::hex << static_cast<unsigned long>(hr) << L"\n";
+        MFShutdown();
+        return 9;
+    }
+    std::wcout << L"AVCAM_SOFTWARE_CAMERA_CREATE_PASS" << std::endl;
+    hr = camera->Start(nullptr);
     if (FAILED(hr)) {
         std::wcerr << L"AVCAM_SOFTWARE_CAMERA_START_FAILED hr=0x"
                    << std::hex << static_cast<unsigned long>(hr) << L"\n";
-        if (camera) camera->Shutdown();
+        const HRESULT shutdown = camera->Shutdown();
+        std::wcerr << L"AVCAM_SOFTWARE_CAMERA_FAILED_SESSION_CLEANUP hr=0x"
+                   << std::hex << static_cast<unsigned long>(shutdown) << L"\n";
+        camera.Reset();
         MFShutdown();
         return 9;
     }
