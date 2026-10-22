@@ -13,6 +13,7 @@
 #include <vector>
 #include "AvCamDualChannelRouter.h"
 #include "AvCamRouterRunPolicy.h"
+#include "AvCamRouterDiagnostics.h"
 #include "AvCamRouterIpc.h"
 #include "AvCamAsyncObsWorker.h"
 #include "../../feeder/src/MediaFoundationFrameSource.h"
@@ -115,6 +116,9 @@ int wmain(int argc, wchar_t** argv) {
     std::uint64_t rawFrames = 0, obsFrames = 0, reconnects = 0;
     std::uint64_t lastReconnectAttemptMs = 0;
     std::uint64_t lastStatusMs = nowMs();
+    std::uint64_t lastStatusRawFrames = 0;
+    std::uint64_t lastStatusObsFrames = 0;
+    std::uint64_t lastObsFrameMs = 0;
     std::uint64_t obsSequence = 0;
     std::cout << "AVCAM_ROUTER_MODE=" << (continuous ? "CONTINUOUS" : "SMOKE") << "\n";
     for (std::uint64_t i = 1; avcam::run::ShouldRead(i, continuous, maxFrames); ++i) {
@@ -141,7 +145,8 @@ int wmain(int argc, wchar_t** argv) {
         }
         if (!independentObs && obsConnected) {
             if (obs.ReadFrame(processed.data(), processed.size(), timestamp)) {
-                router.PushObs({processed, ++obsSequence, nowMs()});
+                lastObsFrameMs = nowMs();
+                router.PushObs({processed, ++obsSequence, lastObsFrameMs});
                 ++obsFrames;
                 if (publishIpc && !obsPublisher.Publish(processed.data(), processed.size(),
                                                         obsFrames, nowMs())) {
@@ -150,6 +155,7 @@ int wmain(int argc, wchar_t** argv) {
                 }
             } else {
                 obsConnected = false;
+                lastObsFrameMs = 0;
                 obs.Stop();
                 router.DisconnectObs();
                 if (publishIpc) obsPublisher.Invalidate();
@@ -176,11 +182,33 @@ int wmain(int argc, wchar_t** argv) {
         }
         ++rawFrames;
         if (continuous && nowMs() - lastStatusMs >= 5000) {
-            lastStatusMs = nowMs();
+            const auto statusMs = nowMs();
+            const auto elapsedMs = statusMs - lastStatusMs;
+            const auto currentObsFrames = obsWorker ? obsWorker->Frames() : obsFrames;
+            const auto currentObsConnected = obsWorker ? obsWorker->Connected() : obsConnected;
+            const auto mostRecentObsMs = obsWorker ? obsWorker->LastFrameMs() : lastObsFrameMs;
+            const auto obsAgeMs = avcam::diagnostics::AgeMs(statusMs, mostRecentObsMs);
+            const auto rawRate = avcam::diagnostics::RateTenths(
+                rawFrames - lastStatusRawFrames, elapsedMs);
+            const auto obsRate = avcam::diagnostics::RateTenths(
+                currentObsFrames - lastStatusObsFrames, elapsedMs);
             std::cout << "AVCAM_ROUTER_STATUS raw=" << rawFrames
-                      << " obs=" << (obsWorker ? obsWorker->Frames() : obsFrames)
-                      << " obs_connected=" << (obsWorker ? obsWorker->Connected() : obsConnected)
-                      << " reconnects=" << (obsWorker ? obsWorker->Reconnects() : reconnects) << "\n";
+                      << " obs=" << currentObsFrames
+                      << " obs_connected=" << (currentObsConnected ? 1 : 0)
+                      << " reconnects=" << (obsWorker ? obsWorker->Reconnects() : reconnects)
+                      << " raw_fps=" << rawRate / 10 << '.' << rawRate % 10
+                      << " obs_fps=" << obsRate / 10 << '.' << obsRate % 10
+                      << " obs_fresh=" << (currentObsConnected &&
+                          avcam::diagnostics::IsFresh(statusMs, mostRecentObsMs) ? 1 : 0)
+                      << " obs_age_ms=";
+            if (obsAgeMs == (std::numeric_limits<std::uint64_t>::max)())
+                std::cout << -1;
+            else
+                std::cout << obsAgeMs;
+            std::cout << "\n";
+            lastStatusMs = statusMs;
+            lastStatusRawFrames = rawFrames;
+            lastStatusObsFrames = currentObsFrames;
         }
     }
     if (obsWorker) {
