@@ -206,6 +206,7 @@ public:
         return true;
     }
 
+    bool Attached() const noexcept { return region_ != nullptr; }
     bool IsActive() const noexcept {
         return region_ && region_->header.active != 0;
     }
