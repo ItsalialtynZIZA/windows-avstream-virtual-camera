@@ -42,7 +42,8 @@ int main() {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(4);
     while (worker.Frames() == 0 && std::chrono::steady_clock::now() < deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    if (worker.Frames() == 0 || !worker.Connected()) return 3;
+    if (worker.Frames() == 0 || !worker.Connected() ||
+        worker.LastFrameMs() == 0) return 3;
     if (router.ReadForProducer().frame.bytes !=
         avcam::dual::Bytes({0x11, 0x22, 0x33})) return 4;
 
@@ -54,7 +55,8 @@ int main() {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     if (worker.Reconnects() == 0) return 5;
     worker.Stop();
-    if (worker.Connected() || worker.PublishFailures() ||
+    if (worker.Connected() || worker.LastFrameMs() != 0 ||
+        worker.PublishFailures() ||
         router.ReadForOutput(0).source != avcam::dual::Source::PhysicalRaw ||
         router.ReadForProducer().frame.bytes !=
             avcam::dual::Bytes({0x11, 0x22, 0x33})) return 6;
