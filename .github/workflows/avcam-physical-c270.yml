@@ -274,6 +274,21 @@ jobs:
           $pipeBridge = (Resolve-Path './build/mock-fanout/Release/AvCamMfObsPipeBridge.exe').Path
           & ./build/mock-fanout/Release/AvCamMfPipeSmoke.exe $pipeBridge
           if ($LASTEXITCODE -ne 0) { throw "OBS-only cross-session pipe process test failed: $LASTEXITCODE" }
+          # Probe is not allowed to install a temporary SCM service
+          # without an explicit command-line consent flag.
+          $serviceProbe = (Resolve-Path './build/mock-fanout/Release/AvCamMfLocalServiceProbe.exe').Path
+          $serviceStatus = @(& $serviceProbe --status)
+          $serviceCode = $LASTEXITCODE
+          $serviceStatus | ForEach-Object { Write-Host $_ }
+          if ($serviceCode -ne 0 -or
+              $serviceStatus -notcontains 'AVCAM_LOCALSERVICE_PROBE=AVAILABLE_NOT_EXECUTED') {
+            throw 'Windows LocalService probe status did not run safely'
+          }
+          & $serviceProbe --probe
+          if ($LASTEXITCODE -ne 2) {
+            throw 'LocalService diagnostic accepted a service creation attempt without consent'
+          }
+          Write-Host 'AVCAM_LOCALSERVICE_DIAGNOSTIC_FAIL_CLOSED_PASS'
           Write-Host 'AVCAM_MF_PIPE_BROKER_WINDOWS_ACCEPTANCE_PASS'
           # Full unregistered COM integration: actual MEMediaSample payloads
           # must contain correctly converted OBS pixels, never physical RAW.
@@ -414,6 +429,7 @@ jobs:
             'build/mock-fanout/Release/AvCamSoftwareCameraControl.exe',
             'build/mock-fanout/Release/AvCamMfSource.dll',
             'build/mock-fanout/Release/AvCamMfObsPipeBridge.exe',
+            'build/mock-fanout/Release/AvCamMfLocalServiceProbe.exe',
             'build/mock-fanout/avcam-feeder/Release/AvCamFeeder.exe',
             'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
@@ -496,6 +512,7 @@ jobs:
             'build/mock-fanout/Release/AvCamSoftwareCameraControl.exe',
             'build/mock-fanout/Release/AvCamMfSource.dll',
             'build/mock-fanout/Release/AvCamMfObsPipeBridge.exe',
+            'build/mock-fanout/Release/AvCamMfLocalServiceProbe.exe',
             'build/mock-fanout/avcam-feeder/Release/AvCamFeeder.exe',
             'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
@@ -553,6 +570,13 @@ jobs:
           1. Run OBS Studio and start OBS Virtual Camera.
              Experimental: AvCamSoftwareCameraControl.exe --preflight checks
              Windows 11 API and reserved Media Foundation source registration.
+             AvCamMfLocalServiceProbe.exe --status is read-only.
+             EXPLICIT on-device test (admin) when MF pipe is already active:
+             .\\AvCamMfLocalServiceProbe.exe --probe --accept-temporary-service
+             It copies itself under protected Program Files, creates a
+             one-shot LocalService diagnostic service and removes the service
+             afterward. NEVER started automatically; not run on CI because
+             Windows hosted runners cannot validate the owner's real PC.
              AvCamMfObsPipeBridge.exe --continuous streams ONLY processed
              OBS frames as NV12 over a Windows named pipe to LocalService.
              This is opt-in and is NOT started by the standard preview.
