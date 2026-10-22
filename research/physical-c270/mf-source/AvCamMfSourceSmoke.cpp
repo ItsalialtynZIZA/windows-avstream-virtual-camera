@@ -6,6 +6,8 @@
 #include <mfapi.h>
 #include <mfidl.h>
 #include <mferror.h>
+#include <ks.h>
+#include <ksmedia.h>
 #include <wrl/client.h>
 #include <iostream>
 using Microsoft::WRL::ComPtr;
@@ -53,6 +55,16 @@ int wmain(int argc, wchar_t** argv) {
                         ComPtr<IMFMediaSourceEx> extended;
                         hr = source.As(&extended);
                         if (FAILED(hr)) result = 10;
+                        ComPtr<IMFGetService> service;
+                        ComPtr<IKsControl> controls;
+                        if (result == 0 && FAILED(source.As(&service))) result = 18;
+                        if (result == 0 && FAILED(source.As(&controls))) result = 19;
+                        if (result == 0) {
+                            ComPtr<IUnknown> noService;
+                            if (service->GetService(
+                                    GUID_NULL, IID_PPV_ARGS(noService.GetAddressOf()))
+                                != MF_E_UNSUPPORTED_SERVICE) result = 20;
+                        }
                         ComPtr<IMFPresentationDescriptor> pd;
                         if (result == 0) hr = source->CreatePresentationDescriptor(
                             pd.GetAddressOf());
@@ -83,6 +95,31 @@ int wmain(int argc, wchar_t** argv) {
                         start.vt = VT_EMPTY;
                         if (result == 0) hr = source->Start(pd.Get(), nullptr, &start);
                         if (result == 0 && FAILED(hr)) result = 15;
+                        if (result == 0) {
+                            ComPtr<IMFMediaEvent> event;
+                            hr = source->GetEvent(
+                                MF_EVENT_FLAG_NO_WAIT, event.GetAddressOf());
+                            MediaEventType type = MEUnknown;
+                            if (SUCCEEDED(hr) && event) hr = event->GetType(&type);
+                            if (FAILED(hr) || type != MENewStream) {
+                                result = 21;
+                            } else {
+                                PROPVARIANT value{};
+                                PropVariantInit(&value);
+                                hr = event->GetValue(&value);
+                                ComPtr<IMFMediaStream2> stream2;
+                                if (SUCCEEDED(hr) && value.vt == VT_UNKNOWN &&
+                                    value.punkVal)
+                                    hr = value.punkVal->QueryInterface(
+                                        IID_PPV_ARGS(stream2.GetAddressOf()));
+                                else hr = E_NOINTERFACE;
+                                PropVariantClear(&value);
+                                MF_STREAM_STATE streamState{};
+                                if (SUCCEEDED(hr))
+                                    hr = stream2->GetStreamState(&streamState);
+                                if (FAILED(hr)) result = 22;
+                            }
+                        }
                         if (result == 0 && FAILED(source->Stop())) result = 16;
                         if (FAILED(source->Shutdown()) && result == 0)
                             result = 17;
