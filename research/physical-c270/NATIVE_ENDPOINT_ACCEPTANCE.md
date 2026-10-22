@@ -80,3 +80,43 @@ Do not install a global Device MFT on the physical C270 or claim that
 per-client differentiation is achieved by inspecting app process PIDs:
 in shared capture the service process may be the only visible
 underlying device consumer.
+
+## Actual physical-host read-only probe: PASS (2026-10-22)
+
+User executed Inspect-AvCamPhysicalEndpoint.ps1 on the main Windows host;
+results received directly from its console:
+
+- Physical Logitech C270 `USB\\VID_046D&PID_0825&MI_00` video interface:
+  `Class=Camera`, `Service=usbvideo`, `Status=OK`.
+- Parent USB composite Logitech C270: `Class=USB`,
+  `Service=usbccgp`, `Status=OK`.
+- `MI_02` audio interface: `Class=MEDIA`, `Service=usbaudio`,
+  `Status=OK`.
+- Both functions share one Windows PnP container. Full device instance
+  identifier and unique serial are intentionally omitted from this public
+  repository document.
+- Windows Camera Frame Server service: `Stopped` at probe time. This
+  is normal when idle and does not establish failure or non-use when apps
+  subsequently start camera capture.
+- Previously unstable experimental AvCam COM source: **ABSENT**;
+  installed AvCamMF DLL: **ABSENT**. Its earlier system registration
+  was successfully rolled back.
+- Strict different-frames-per-client under this exact physical endpoint:
+  **NOT PROVEN**. The PnP enumeration does not measure or enable it.
+
+**Engineering consequence:** Do not repeat Logitech/IPC availability smoke
+checks. The blocker is authenticated per-application frame routing after
+shared capture, not USB enumeration or health. Device MFTs are documented
+as per-stream/per-device, not a standard per-unchanged-application frame
+replacement interface:
+https://learn.microsoft.com/en-us/windows-hardware/drivers/devapps/creating-a-camera-driver-mft
+https://learn.microsoft.com/en-us/windows-hardware/drivers/stream/dmft-design
+
+Windows Camera Profile V2 supports per-client selection/filtering of
+streams and media types using distinct MediaCapture client contexts, but
+that does not document injecting arbitrary OBS pixel samples into only an
+unchanged Chrome consumer:
+https://learn.microsoft.com/en-us/windows-hardware/drivers/stream/camera-profile-v2-detailed-design-for-isvs
+
+Do not install/activate a device-wide MFT, USB emulator, FrameServer DLL, or
+other risky components on the user's primary laptop to pursue this claim.
