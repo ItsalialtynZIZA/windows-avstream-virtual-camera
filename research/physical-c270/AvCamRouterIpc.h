@@ -1,32 +1,38 @@
 #pragma once
-// Optional, per-session BGRA frame IPC for the application-space AvCam router.
-// Does not install a camera, modify its identity, or intercept any application.
+// AvCam application-space BGRA transport V2. A reader may keep a mapping
+// open while its writer restarts. This is not a camera driver or endpoint.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <vector>
 #include <utility>
+#include <vector>
 
 namespace avcam::ipc {
 constexpr std::uint32_t Width = 1280;
 constexpr std::uint32_t Height = 720;
 constexpr std::uint32_t Stride = Width * 4;
 constexpr std::size_t FrameBytes = static_cast<std::size_t>(Stride) * Height;
-constexpr std::uint32_t Magic = 0x31435641u; // "AVC1"
-constexpr std::uint32_t Version = 1;
+constexpr std::uint32_t Magic = 0x32435641u; // "AVC2"
+constexpr std::uint32_t Version = 2;
 enum class Channel : std::uint32_t { Raw = 1, Obs = 2 };
 
 inline const wchar_t* MappingName(Channel channel) noexcept {
-    return channel == Channel::Raw ? L"Local\\AvCamRouterRawV1"
-                                   : L"Local\\AvCamRouterObsV1";
+    return channel == Channel::Raw ? L"Local\AvCamRouterRawV2"
+                                   : L"Local\AvCamRouterObsV2";
 }
+inline const wchar_t* WriterName(Channel channel) noexcept {
+    return channel == Channel::Raw ? L"Local\AvCamRouterRawOwnerV2"
+                                   : L"Local\AvCamRouterObsOwnerV2";
+}
+
 struct Header {
-    volatile LONG epoch;   // odd = writer busy; even = consistent snapshot
-    volatile LONG active;  // cleared on OBS disconnect
+    volatile LONG epoch;  // odd = writer mutating; even = complete snapshot
+    volatile LONG active; // cleared on disconnect or normal publisher exit
     std::uint32_t magic;
     std::uint32_t version;
     std::uint32_t channel;
@@ -34,22 +40,38 @@ struct Header {
     std::uint32_t height;
     std::uint32_t stride;
     std::uint32_t bytes;
-    std::uint64_t sequence;
-    std::uint64_t capturedMs; // steady_clock milliseconds; not wall time
+    std::uint64_t session;    // changes when a new publisher acquires channel
+    std::uint64_t sequence;   // restarts from 1 in each publisher session
+    std::uint64_t capturedMs; // steady_clock milliseconds, not wall clock
 };
-struct Region {
-    Header header;
-    unsigned char bgra[FrameBytes];
+struct Region { Header header; unsigned char bgra[FrameBytes]; };
+struct Cursor {
+    std::uint64_t session = 0;
+    std::uint64_t sequence = 0;
 };
 struct Snapshot {
     std::vector<unsigned char> bgra;
+    std::uint64_t session = 0;
     std::uint64_t sequence = 0;
     std::uint64_t capturedMs = 0;
     Channel channel = Channel::Raw;
+    Cursor Position() const noexcept { return {session, sequence}; }
 };
 
-// Each channel has exactly one publisher. Never attach to another writer's
-// mapping: concurrent writers would break the snapshot consistency contract.
+inline std::uint64_t NewSession() noexcept {
+    // Time + process ID + per-process counter; distinct among normal
+    // publisher restarts even when the frame sequence restarts at one.
+    FILETIME stamp{};
+    GetSystemTimePreciseAsFileTime(&stamp);
+    static std::atomic<std::uint64_t> counter{0};
+    const auto number = counter.fetch_add(1, std::memory_order_relaxed) + 1;
+    const auto time = (static_cast<std::uint64_t>(stamp.dwHighDateTime) << 32)
+                    | stamp.dwLowDateTime;
+    const auto value = time ^ (static_cast<std::uint64_t>(GetCurrentProcessId()) << 32)
+                      ^ number;
+    return value ? value : number;
+}
+
 class Publisher final {
 public:
     Publisher() = default;
@@ -59,66 +81,97 @@ public:
 
     bool Start(Channel channel) noexcept {
         Stop();
-        const HANDLE mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr,
-            PAGE_READWRITE, 0, static_cast<DWORD>(sizeof(Region)), MappingName(channel));
-        if (!mapping) return false;
+        // This named mutex is a *lifetime lease*, not a held mutex lock:
+        // only publishers create/retain it. A second writer, including one
+        // on the same thread, fails while its name already exists. Reader
+        // handles keep the mapping alive but NEVER retain the owner lease.
+        HANDLE owner = CreateMutexW(nullptr, FALSE, WriterName(channel));
+        if (!owner) return false;
         if (GetLastError() == ERROR_ALREADY_EXISTS) {
-            CloseHandle(mapping);
+            CloseHandle(owner);
             SetLastError(ERROR_ALREADY_EXISTS);
             return false;
         }
-        auto* region = static_cast<Region*>(MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS,
-                                                           0, 0, sizeof(Region)));
-        if (!region) {
+        const HANDLE mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr,
+            PAGE_READWRITE, 0, static_cast<DWORD>(sizeof(Region)), MappingName(channel));
+        if (!mapping) {
             const DWORD error = GetLastError();
-            CloseHandle(mapping);
+            CloseHandle(owner);
             SetLastError(error);
             return false;
         }
+        // A prior viewer may retain the old mapping. Reuse it only while
+        // holding the new exclusive writer lease. The requested MapView size
+        // also rejects an existing, incompatible (too small) mapping.
+        auto* region = static_cast<Region*>(MapViewOfFile(
+            mapping, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(Region)));
+        if (!region) {
+            const DWORD error = GetLastError();
+            CloseHandle(mapping);
+            CloseHandle(owner);
+            SetLastError(error);
+            return false;
+        }
+        owner_ = owner;
         mapping_ = mapping;
         region_ = region;
-        // New pagefile-backed mappings start zeroed. Set metadata before
-        // readers can see an active snapshot.
-        region_->header.magic = Magic;
-        region_->header.version = Version;
-        region_->header.channel = static_cast<std::uint32_t>(channel);
-        region_->header.width = Width;
-        region_->header.height = Height;
-        region_->header.stride = Stride;
-        region_->header.bytes = static_cast<std::uint32_t>(FrameBytes);
+        Header& h = region_->header;
+        const LONG prior = InterlockedCompareExchange(&h.epoch, 0, 0);
+        const LONG busy = static_cast<LONG>(
+            (static_cast<std::uint32_t>(prior) & ~1u) | 1u);
+        InterlockedExchange(&h.epoch, busy);
+        InterlockedExchange(&h.active, 0);
+        MemoryBarrier();
+        h.magic = Magic;
+        h.version = Version;
+        h.channel = static_cast<std::uint32_t>(channel);
+        h.width = Width;
+        h.height = Height;
+        h.stride = Stride;
+        h.bytes = static_cast<std::uint32_t>(FrameBytes);
+        h.session = NewSession();
+        h.sequence = 0;
+        h.capturedMs = 0;
+        MemoryBarrier();
+        InterlockedExchange(&h.epoch,
+            static_cast<LONG>(static_cast<std::uint32_t>(busy) + 1u));
         return true;
     }
+
     bool Publish(const unsigned char* bgra, std::size_t size,
                  std::uint64_t sequence, std::uint64_t capturedMs) noexcept {
-        if (!region_ || !bgra || size != FrameBytes || sequence == 0) return false;
-        InterlockedIncrement(&region_->header.epoch);
+        if (!region_ || !bgra || size != FrameBytes || !sequence) return false;
+        Header& h = region_->header;
+        InterlockedIncrement(&h.epoch);
         std::memcpy(region_->bgra, bgra, FrameBytes);
-        region_->header.sequence = sequence;
-        region_->header.capturedMs = capturedMs;
-        InterlockedExchange(&region_->header.active, 1);
+        h.sequence = sequence;
+        h.capturedMs = capturedMs;
+        InterlockedExchange(&h.active, 1);
         MemoryBarrier();
-        InterlockedIncrement(&region_->header.epoch);
+        InterlockedIncrement(&h.epoch);
         return true;
     }
+
     void Invalidate() noexcept {
         if (!region_) return;
-        InterlockedIncrement(&region_->header.epoch);
-        InterlockedExchange(&region_->header.active, 0);
+        Header& h = region_->header;
+        InterlockedIncrement(&h.epoch);
+        InterlockedExchange(&h.active, 0);
         MemoryBarrier();
-        InterlockedIncrement(&region_->header.epoch);
+        InterlockedIncrement(&h.epoch);
     }
+
     void Stop() noexcept {
         if (region_) {
             Invalidate();
             UnmapViewOfFile(region_);
             region_ = nullptr;
         }
-        if (mapping_) {
-            CloseHandle(mapping_);
-            mapping_ = nullptr;
-        }
+        if (mapping_) { CloseHandle(mapping_); mapping_ = nullptr; }
+        if (owner_) { CloseHandle(owner_); owner_ = nullptr; }
     }
 private:
+    HANDLE owner_ = nullptr;
     HANDLE mapping_ = nullptr;
     Region* region_ = nullptr;
 };
@@ -134,8 +187,8 @@ public:
         Stop();
         const HANDLE mapping = OpenFileMappingW(FILE_MAP_READ, FALSE, MappingName(channel));
         if (!mapping) return false;
-        auto* region = static_cast<const Region*>(MapViewOfFile(mapping, FILE_MAP_READ,
-                                                                 0, 0, sizeof(Region)));
+        auto* region = static_cast<const Region*>(MapViewOfFile(
+            mapping, FILE_MAP_READ, 0, 0, sizeof(Region)));
         if (!region) {
             const DWORD error = GetLastError();
             CloseHandle(mapping);
@@ -147,13 +200,12 @@ public:
         channel_ = channel;
         return true;
     }
-    // Readers immediately observe an explicit OBS disconnect. The caller
-    // still checks capturedMs so a crashed writer cannot leave stale video.
+
     bool IsActive() const noexcept {
         return region_ && region_->header.active != 0;
     }
-    // A consumer can pass its last sequence to avoid copying stale 3.5 MiB frames.
-    bool TryRead(Snapshot& output, std::uint64_t afterSequence = 0) const {
+
+    bool TryRead(Snapshot& output, Cursor after = {}) const {
         if (!region_) return false;
         const Header& h = region_->header;
         const LONG before = h.epoch;
@@ -162,23 +214,28 @@ public:
         if (h.magic != Magic || h.version != Version ||
             h.channel != static_cast<std::uint32_t>(channel_) ||
             h.width != Width || h.height != Height ||
-            h.stride != Stride || h.bytes != FrameBytes || !h.sequence)
+            h.stride != Stride || h.bytes != FrameBytes)
             return false;
-        const std::uint64_t seq = h.sequence;
-        if (seq <= afterSequence) return false;
-        const std::uint64_t time = h.capturedMs;
-        // Do not copy to the caller until a complete, stable frame is verified.
+        const auto session = h.session;
+        const auto sequence = h.sequence;
+        if (!session || !sequence ||
+            (session == after.session && sequence <= after.sequence))
+            return false;
+        const auto capturedMs = h.capturedMs;
         std::vector<unsigned char> bytes(FrameBytes);
         std::memcpy(bytes.data(), region_->bgra, FrameBytes);
         MemoryBarrier();
-        const LONG after = h.epoch;
-        if (before != after || (after & 1) || !h.active) return false;
+        const LONG afterEpoch = h.epoch;
+        if (before != afterEpoch || (afterEpoch & 1) || !h.active ||
+            session != h.session) return false;
         output.bgra = std::move(bytes);
-        output.sequence = seq;
-        output.capturedMs = time;
+        output.session = session;
+        output.sequence = sequence;
+        output.capturedMs = capturedMs;
         output.channel = channel_;
         return true;
     }
+
     void Stop() noexcept {
         if (region_) { UnmapViewOfFile(region_); region_ = nullptr; }
         if (mapping_) { CloseHandle(mapping_); mapping_ = nullptr; }
