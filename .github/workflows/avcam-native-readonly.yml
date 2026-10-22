@@ -47,3 +47,24 @@ jobs:
               $output -notcontains 'AVCAM_STRICT_PER_CLIENT_PHYSICAL_ROUTE=NOT_PROVEN') {
               throw 'Native read-only physical-route inspection contract failed'
           }
+
+  strict-two-client-simulation:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile native C++ strict isolation policy without Windows drivers
+        shell: bash
+        run: |
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -pedantic -pthread \
+            research/physical-c270/native-routing/AvCamPerClientIsolationTest.cpp \
+            -o /tmp/avcam-native-isolation-test
+      - name: Verify RAW stays original and OBS never falls back under client races
+        shell: bash
+        run: |
+          /tmp/avcam-native-isolation-test | tee /tmp/avcam-native-isolation.log
+          grep -Fx 'AVCAM_STRICT_PER_CLIENT_SIMULATION_PASS' /tmp/avcam-native-isolation.log
+          grep -Fx 'AVCAM_RAW_OBS_CROSS_CLIENT_LEAK=0' /tmp/avcam-native-isolation.log
+          grep -Fx 'AVCAM_OBS_RAW_FALLBACK=0' /tmp/avcam-native-isolation.log
+          grep -Fx 'AVCAM_PHYSICAL_ENDPOINT_NATIVE_ADAPTER=NOT_IMPLEMENTED' /tmp/avcam-native-isolation.log
+          grep -Fx 'AVCAM_CHROME_SAME_PHYSICAL_ENDPOINT=NOT_PROVEN' /tmp/avcam-native-isolation.log
