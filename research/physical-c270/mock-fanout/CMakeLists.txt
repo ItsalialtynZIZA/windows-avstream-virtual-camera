@@ -33,6 +33,12 @@ add_executable(AvCamMfSourceSmoke ../mf-source/AvCamMfSourceSmoke.cpp)
 target_compile_features(AvCamMfSourceSmoke PRIVATE cxx_std_17)
 target_link_libraries(AvCamMfSourceSmoke PRIVATE mfplat mfuuid ole32)
 
+# Full synthetic OBS IPC -> separate broker -> MF COM source -> MEMediaSample.
+# No COM registration, camera, installed driver or service required in CI.
+add_executable(AvCamMfEndToEndSmoke ../mf-source/AvCamMfEndToEndSmoke.cpp)
+target_compile_features(AvCamMfEndToEndSmoke PRIVATE cxx_std_17)
+target_link_libraries(AvCamMfEndToEndSmoke PRIVATE mfplat mfuuid ole32)
+
 add_executable(AvCamSoftwareCameraControl ../AvCamSoftwareCameraControl.cpp)
 target_compile_features(AvCamSoftwareCameraControl PRIVATE cxx_std_17)
 target_compile_definitions(AvCamSoftwareCameraControl PRIVATE WINVER=0x0A00 _WIN32_WINNT=0x0A00)
