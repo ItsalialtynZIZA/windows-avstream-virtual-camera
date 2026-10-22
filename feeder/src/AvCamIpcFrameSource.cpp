@@ -37,6 +37,7 @@ void AvCamIpcFrameSource::Stop() noexcept {
     obs_.Stop();
     rawCursor_ = {};
     obsCursor_ = {};
+    lastObsFrameMs_ = 0;
 }
 
 bool AvCamIpcFrameSource::ReadChannel(avcam::ipc::Channel channel,
@@ -52,6 +53,8 @@ bool AvCamIpcFrameSource::ReadChannel(avcam::ipc::Channel channel,
     const auto now = NowMs();
     if (frame.bgra.size() != avcam::ipc::FrameBytes ||
         !avcam::preview::Fresh(now, frame.capturedMs)) return false;
+    if (channel == avcam::ipc::Channel::Obs)
+        lastObsFrameMs_ = frame.capturedMs;
     std::memcpy(dst, frame.bgra.data(), avcam::ipc::FrameBytes);
     // AvCam KS feeder expects a 100-nanosecond timestamp.
     timestamp100ns = frame.capturedMs * 10000ull;
@@ -62,9 +65,16 @@ bool AvCamIpcFrameSource::ReadFrame(unsigned char* dst, std::size_t bytes,
                                    std::uint64_t& timestamp100ns) {
     timestamp100ns = 0;
     if (!dst || bytes < avcam::ipc::FrameBytes) return false;
-    if (mode_ != Mode::RawOnly &&
-        ReadChannel(avcam::ipc::Channel::Obs, dst, timestamp100ns))
-        return true;
-    if (mode_ == Mode::ObsOnly) return false;
+    if (mode_ != Mode::RawOnly) {
+        if (ReadChannel(avcam::ipc::Channel::Obs, dst, timestamp100ns))
+            return true;
+        if (mode_ == Mode::ObsOnly) return false;
+        // OBS often runs at 30 fps, while the feeder polls more frequently.
+        // No *new* OBS frame does NOT mean OBS is disconnected. Never
+        // alternate RAW/OBS pixels during ordinary inter-frame intervals.
+        if (obs_.IsActive() &&
+            avcam::preview::Fresh(NowMs(), lastObsFrameMs_))
+            return false;
+    }
     return ReadChannel(avcam::ipc::Channel::Raw, dst, timestamp100ns);
 }
