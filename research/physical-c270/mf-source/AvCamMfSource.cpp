@@ -49,7 +49,8 @@ bool Fresh(std::uint64_t now, std::uint64_t captured) noexcept {
 class AvCamMfSource;
 
 class AvCamMfStream final :
-    public RuntimeClass<RuntimeClassFlags<ClassicCom>, IMFMediaStream> {
+    public RuntimeClass<RuntimeClassFlags<ClassicCom>,
+        Microsoft::WRL::ChainInterfaces<IMFMediaStream, IMFMediaEventGenerator>> {
 public:
     AvCamMfStream() { ++g_objects; }
     ~AvCamMfStream() override { Shutdown(); --g_objects; }
@@ -214,7 +215,9 @@ private:
 };
 
 class AvCamMfSource final :
-    public RuntimeClass<RuntimeClassFlags<ClassicCom>, IMFMediaSourceEx> {
+    public RuntimeClass<RuntimeClassFlags<ClassicCom>,
+        Microsoft::WRL::ChainInterfaces<
+            IMFMediaSourceEx, IMFMediaSource, IMFMediaEventGenerator>> {
 public:
     AvCamMfSource() { ++g_objects; }
     ~AvCamMfSource() override { Shutdown(); --g_objects; }
@@ -383,7 +386,8 @@ HRESULT AvCamMfStream::GetMediaSource(IMFMediaSource** source) {
 // MFCreateVirtualCamera activates the registered CLSID as IMFActivate,
 // which must in turn instantiate IMFMediaSource.
 class AvCamMfActivation final :
-    public RuntimeClass<RuntimeClassFlags<ClassicCom>, IMFActivate> {
+    public RuntimeClass<RuntimeClassFlags<ClassicCom>,
+        Microsoft::WRL::ChainInterfaces<IMFActivate, IMFAttributes>> {
 public:
     AvCamMfActivation() { ++g_objects; }
     ~AvCamMfActivation() override { ShutdownObject(); --g_objects; }
