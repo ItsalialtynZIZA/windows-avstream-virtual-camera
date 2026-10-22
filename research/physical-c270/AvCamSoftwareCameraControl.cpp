@@ -26,7 +26,10 @@ Mode Parse(int argc, wchar_t** argv) noexcept {
         return Mode::Help;
     if (argc == 2 && std::wstring(argv[1]) == L"--preflight")
         return Mode::Preflight;
-    if (argc == 2 && std::wstring(argv[1]) == L"--session")
+    // After a real Windows 11 Frame Server hang, never run this path by
+    // default. An explicit risk flag is required for further debugging.
+    if (argc == 3 && std::wstring(argv[1]) == L"--session" &&
+        std::wstring(argv[2]) == L"--accept-unstable-frame-server")
         return Mode::Session;
     return Mode::Invalid;
 }
@@ -71,7 +74,8 @@ bool ApiExists() noexcept {
 void PrintUsage() {
     std::wcout << L"AvCam Windows 11 user-mode software camera controller\n"
                   L"  --preflight   Read-only check for Win11 API and source registration\n"
-                  L"  --session     Explicit temporary CurrentUser camera session\n"
+                  L"  --session --accept-unstable-frame-server\n"
+                  L"                UNSAFE live test after observed Windows Frame Server hang.\n"
                   L"  --help        This help\n"
                   L"The experimental AvCam MF COM DLL is not installed or validated in Camera.\n"
                   L"No driver, Logitech or browser settings are modified.\n";
@@ -157,6 +161,10 @@ int wmain(int argc, wchar_t** argv) {
     case Mode::Session:
         return RunSession();
     case Mode::Invalid:
+        if (argc == 2 && std::wstring(argv[1]) == L"--session") {
+            std::wcerr << L"AVCAM_SOFTWARE_CAMERA_FRAMESERVER_HANG_QUARANTINED\n"
+                          L"Real Windows 11 Frame Server hang observed on 2026-10-22.\n";
+        }
         PrintUsage();
         return 2;
     }
