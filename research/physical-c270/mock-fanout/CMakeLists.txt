@@ -13,6 +13,11 @@ target_compile_features(AvCamRouterIpcProbe PRIVATE cxx_std_17)
 add_executable(AvCamRouterIpcProcessTest ../AvCamRouterIpcProcessTest.cpp)
 target_compile_features(AvCamRouterIpcProcessTest PRIVATE cxx_std_17)
 
+add_executable(AvCamFeederIpcSourceTest
+  ../AvCamFeederIpcSourceTest.cpp
+  ../../../feeder/src/AvCamIpcFrameSource.cpp)
+target_compile_features(AvCamFeederIpcSourceTest PRIVATE cxx_std_17)
+
 add_executable(AvCamAsyncObsWorkerTest ../AvCamAsyncObsWorkerTest.cpp)
 target_compile_features(AvCamAsyncObsWorkerTest PRIVATE cxx_std_17)
 
