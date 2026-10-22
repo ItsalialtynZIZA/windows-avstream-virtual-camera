@@ -544,6 +544,9 @@ jobs:
             throw 'AvCam experimental COM registration proceeded without explicit approval'
           }
           Write-Host 'AVCAM_MF_COM_REGISTRATION_FAIL_CLOSED_PASS'
+          # The last native command intentionally returned nonzero. Reset the
+          # PowerShell step status after the refusal was explicitly asserted.
+          $global:LASTEXITCODE = 0
           Write-Host 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS'
           @'
           AvCam OBS Live Diagnostic — safe, no-install Windows x64 package.
