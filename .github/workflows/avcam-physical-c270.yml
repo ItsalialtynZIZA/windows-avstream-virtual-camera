@@ -411,14 +411,31 @@ jobs:
             'build/mock-fanout/Release/AvCamRouterPreview.exe',
             'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
-            'research/physical-c270/OBS_IPC_LIVE_SMOKE.md'
+            'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
+            'research/physical-c270/Start-AvCamPreview.ps1',
+            'research/physical-c270/AvCam-Start.cmd'
           )) {
             if (!(Test-Path -LiteralPath $f -PathType Leaf)) { throw "Missing diagnostic input: $f" }
             Copy-Item -LiteralPath $f -Destination $out
           }
+          $launcherTokens=$null; $launcherErrors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            (Join-Path $out 'Start-AvCamPreview.ps1'),
+            [ref]$launcherTokens,[ref]$launcherErrors) | Out-Null
+          if ($launcherErrors.Count) { throw 'One-click AvCam launcher syntax invalid' }
+          $launcherValidation = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $out 'Start-AvCamPreview.ps1') -ValidateOnly)
+          if ($LASTEXITCODE -ne 0 -or $launcherValidation -notcontains 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS') {
+            throw 'One-click AvCam launcher package validation failed'
+          }
+          Write-Host 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS'
           @'
           AvCam OBS Live Diagnostic — safe, no-install Windows x64 package.
           1. Run OBS Studio and start OBS Virtual Camera.
+             For one-click RAW + OBS preview, double-click AvCam-Start.cmd.
+             Its window opens the video preview; closing the preview stops
+             ONLY the AvCam Router process created by this launcher.
+             Optional: AvCam-Start.cmd -Mode output (or raw, obs, compare).
+             Deep Live Cam remains connected to the unchanged physical Logitech.
           2. In an ordinary PowerShell window:
              .\AvCamMockFrameIpc.exe --obs
           3. Expected: AVCAM_IPC_FULL_FRAME_PASS and exit code 0.
