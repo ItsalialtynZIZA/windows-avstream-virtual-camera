@@ -8,6 +8,7 @@
 #include <mferror.h>
 #include <ks.h>
 #include <ksmedia.h>
+#include <ksproxy.h>
 #include <wrl/client.h>
 #include <iostream>
 using Microsoft::WRL::ComPtr;
