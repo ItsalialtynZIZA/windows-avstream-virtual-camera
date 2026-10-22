@@ -242,6 +242,30 @@ The test `AvCamMfPipeSmoke.exe` starts a separate broker process,
 verifies no RAW leaks without OBS, then validates the received NV12
 pixels and eight frames after OBS becomes available.
 
+**Actual IMFMediaStream sample acceptance (2026-10-22):**
+`AvCamMfEndToEndSmoke.exe` additionally loads the real unregistered
+`AvCamMfSource.dll`, starts its `IMFMediaSource`, extracts its
+`IMFMediaStream` from the `MENewStream` event, calls
+`RequestSample` repeatedly and validates each returned
+`MEMediaSample` buffer's NV12 luma/chroma and timing. A different
+synthetic RAW frame is concurrently published to prove OBS-only
+isolation. This is a full **application-user-session** pipeline check
+from synthetic OBS to Media Foundation samples, **not a session-0
+LocalService or browser validation**.
+
+**Experimental COM registration preparation:** the diagnostic archive
+includes `Manage-AvCamMfSource.ps1` with read-only `-Action Status`.
+`-Action Register` or `-Action Unregister` additionally require
+explicit `-AcceptExperimental` and elevated 64-bit PowerShell.
+Registration refuses pre-existing CLSIDs/folders, installs the source
+only under Program Files, marks the exact AvCam-owned class and writes
+a SHA-256 manifest. Unregistration checks ownership and matching DLL
+path before removing only the dedicated class. No camera device is
+created by registration alone and no existing Logitech device is edited.
+**Do not run Register on the owner's primary PC yet**: actual Windows
+Camera Frame Server activation and rollback need acceptance before
+user-facing installation.
+
 Optional preview-only developer invocation, from the diagnostic archive:
 
 ~~~powershell
@@ -257,8 +281,8 @@ this bridge alone does not create a virtual camera visible to Chrome.
 **Remaining release gates:** verify LocalService / Camera Frame Server
 access from the actual session-0 Windows service (CI only proves a
 cross-process exchange within one user session), audit pipe-server
-identity and installation ACLs against pipe squatting, introduce a
-reviewed and reversible Windows COM installation path, and confirm
+identity and installation ACLs against pipe squatting, validate the
+experimental reversible COM registration workflow, and confirm
 real samples in Windows Camera and Chrome on the user's Windows 11.
 The original physical Logitech endpoint remains unchanged. Selecting
 that exact endpoint in Chrome while showing per-app video remains
