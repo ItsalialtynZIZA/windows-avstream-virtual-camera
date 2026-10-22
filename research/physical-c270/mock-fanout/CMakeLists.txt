@@ -7,6 +7,13 @@ target_compile_features(AvCamRouterRunPolicyTest PRIVATE cxx_std_17)
 add_executable(AvCamRouterDiagnosticsTest ../AvCamRouterDiagnosticsTest.cpp)
 target_compile_features(AvCamRouterDiagnosticsTest PRIVATE cxx_std_17)
 
+# This is the separate Win11 software-camera API controller.
+# Never auto-register a camera or a COM source in CI.
+add_executable(AvCamSoftwareCameraControl ../AvCamSoftwareCameraControl.cpp)
+target_compile_features(AvCamSoftwareCameraControl PRIVATE cxx_std_17)
+target_compile_definitions(AvCamSoftwareCameraControl PRIVATE WINVER=0x0A00 _WIN32_WINNT=0x0A00)
+target_link_libraries(AvCamSoftwareCameraControl PRIVATE mfsensorgroup mfplat ole32 advapi32)
+
 add_executable(AvCamRouterIpcProbe ../AvCamRouterIpcProbe.cpp)
 target_compile_features(AvCamRouterIpcProbe PRIVATE cxx_std_17)
 
