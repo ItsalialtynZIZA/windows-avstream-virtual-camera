@@ -18,23 +18,38 @@ read-only, same-session named-memory feeds to other AvCam processes:
 
 | Channel | Memory mapping | Format | Disconnect |
 | --- | --- | --- | --- |
-| RAW | `Local\AvCamRouterRawV1` | 1280x720 BGRA, stride 5120 | Producer exits if physical read fails |
-| OBS | `Local\AvCamRouterObsV1` | 1280x720 BGRA, stride 5120 | Mark invalid immediately; RAW stays available |
+| RAW | `Local\AvCamRouterRawV2` | 1280x720 BGRA, stride 5120 | Producer exits if physical read fails |
+| OBS | `Local\AvCamRouterObsV2` | 1280x720 BGRA, stride 5120 | Mark invalid immediately; RAW stays available |
 
 Each mapping contains a fixed header (magic, version, source, shape, frame
-sequence, steady-clock milliseconds) and one complete 3,686,400-byte BGRA
-frame. The **single writer** publishes with an odd/even epoch. Readers first
-copy into private memory, then recheck the epoch and channel metadata. They
-reject in-progress, incompatible and invalidated snapshots. Consumers may
-skip intermediate frames; this is a latest-frame transport, not a lossless
-queue. Mapping names are scoped to the Windows login session. The application
-refuses to overwrite an existing writer's mapping.
+session ID, sequence, steady-clock milliseconds) and one complete
+3,686,400-byte BGRA frame. The **single writer** publishes with an odd/even
+epoch. Readers first copy into private memory, then recheck the epoch,
+session and channel metadata. They reject in-progress, incompatible and
+invalidated snapshots. Consumers may skip intermediate frames; this is a
+latest-frame transport, not a lossless queue. Mapping names are scoped to the
+Windows login session.
+
+**IPC protocol V2 and crash/restart recovery:** Only a publisher retains
+`Local\AvCamRouterRawOwnerV2` or `Local\AvCamRouterObsOwnerV2`, respectively.
+The owner object is a single-writer lifetime lease (never created or held
+by readers). A concurrent publisher fails even if launched on the same thread.
+After the writer exits or crashes, readers may still hold the named mapping;
+the replacement publisher safely reinitializes that mapping and assigns a
+new session ID. The reader's cursor includes **both session ID and sequence**,
+so frame sequence 1 in the new session is accepted even after sequence 3000
+in an earlier session. RAW and OBS use separate owners and memory objects.
+The prior **V1 names remain untouched**; V1 and V2 executables must be used
+as matching pairs. Do not run two versions of the router against the same
+physical C270 simultaneously.
 
 ## Running (no administrator, no installation)
 
 Run OBS Studio Virtual Camera and make sure the physical C270 can be
-opened concurrently on this computer. In a PowerShell console, from the
-extracted no-install CI artifact folder:
+opened concurrently on this computer. Use the **matching router, probe
+and preview binaries from the same artifact**; V2 consumers cannot subscribe
+to an older V1 publisher. Keep the previous validated package as a rollback
+copy. In a PowerShell console, from the extracted no-install CI artifact folder:
 
 ```powershell
 .\AvCamRouterPhysicalRawObs.exe --continuous --publish-ipc
