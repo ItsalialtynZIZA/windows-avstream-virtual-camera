@@ -266,6 +266,11 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "IPC V2 feeder frame integration failed: $LASTEXITCODE" }
           & ./build/mock-fanout/Release/AvCamVirtualReadinessTest.exe
           if ($LASTEXITCODE -ne 0) { throw "Virtual camera readiness classification failed: $LASTEXITCODE" }
+          & ./build/mock-fanout/Release/AvCamMfColorTest.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Media Foundation BGRA/NV12 conversion regression failed' }
+          $mfSourceDll = (Resolve-Path './build/mock-fanout/Release/AvCamMfSource.dll').Path
+          & ./build/mock-fanout/Release/AvCamMfSourceSmoke.exe $mfSourceDll
+          if ($LASTEXITCODE -ne 0) { throw "Unregistered camera COM DLL activation and lifecycle failed: $LASTEXITCODE" }
           # No AvCam COM media-source is registered on a clean Windows runner.
           # MFCreateVirtualCamera availability is read-only; no device created.
           $softwareCamera = (Resolve-Path './build/mock-fanout/Release/AvCamSoftwareCameraControl.exe').Path
@@ -398,6 +403,7 @@ jobs:
             'build/mock-fanout/Release/AvCamRouterIpcProbe.exe',
             'build/mock-fanout/Release/AvCamRouterPreview.exe',
             'build/mock-fanout/Release/AvCamSoftwareCameraControl.exe',
+            'build/mock-fanout/Release/AvCamMfSource.dll',
             'build/mock-fanout/avcam-feeder/Release/AvCamFeeder.exe',
             'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
@@ -478,6 +484,7 @@ jobs:
             'build/mock-fanout/Release/AvCamRouterIpcProbe.exe',
             'build/mock-fanout/Release/AvCamRouterPreview.exe',
             'build/mock-fanout/Release/AvCamSoftwareCameraControl.exe',
+            'build/mock-fanout/Release/AvCamMfSource.dll',
             'build/mock-fanout/avcam-feeder/Release/AvCamFeeder.exe',
             'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
@@ -507,8 +514,10 @@ jobs:
           1. Run OBS Studio and start OBS Virtual Camera.
              Experimental: AvCamSoftwareCameraControl.exe --preflight checks
              Windows 11 API and reserved Media Foundation source registration.
-             The matching AvCam COM media source is NOT implemented in this
-             version, so --session does not yet provide a usable camera.
+             AvCamMfSource.dll is an UNREGISTERED experimental COM media source.
+             It reads only AvCam OBS IPC V2 and converts to NV12, but the DLL
+             is not installed and its service-session IPC reachability is not
+             yet validated. Do not register/activate it on a primary PC yet.
              For one-click RAW + OBS preview, double-click AvCam-Start.cmd.
              Its window opens the video preview; closing the preview stops
              ONLY the AvCam Router process created by this launcher.
