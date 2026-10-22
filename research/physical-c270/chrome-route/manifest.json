@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "AvCam Chrome Route (Experimental)",
+  "version": "0.1.0",
+  "description": "Explicit per-site OBS Virtual Camera routing for Chrome without changing the Logitech driver.",
+  "minimum_chrome_version": "102",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "optional_host_permissions": [
+    "http://*/*",
+    "https://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "AvCam Chrome Route",
+    "default_popup": "popup.html"
+  }
+}
