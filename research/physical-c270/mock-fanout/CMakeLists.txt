@@ -4,6 +4,9 @@ project(AvCamMockFanout LANGUAGES CXX)
 add_executable(AvCamRouterRunPolicyTest ../AvCamRouterRunPolicyTest.cpp)
 target_compile_features(AvCamRouterRunPolicyTest PRIVATE cxx_std_17)
 
+add_executable(AvCamRouterDiagnosticsTest ../AvCamRouterDiagnosticsTest.cpp)
+target_compile_features(AvCamRouterDiagnosticsTest PRIVATE cxx_std_17)
+
 add_executable(AvCamRouterIpcProbe ../AvCamRouterIpcProbe.cpp)
 target_compile_features(AvCamRouterIpcProbe PRIVATE cxx_std_17)
 
