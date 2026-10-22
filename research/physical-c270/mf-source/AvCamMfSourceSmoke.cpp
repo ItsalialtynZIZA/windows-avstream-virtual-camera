@@ -120,6 +120,28 @@ int wmain(int argc, wchar_t** argv) {
                                     hr = stream2->GetStreamState(&streamState);
                                 if (FAILED(hr) || streamState != MF_STREAM_STATE_RUNNING)
                                     result = 22;
+                                if (result == 0) {
+                                    // IMFMediaStream2::SetStreamState must not
+                                    // emit extra MEStreamStarted events.
+                                    ComPtr<IMFMediaEvent> first;
+                                    hr = stream2->GetEvent(
+                                        MF_EVENT_FLAG_NO_WAIT, first.GetAddressOf());
+                                    MediaEventType streamEvent = MEUnknown;
+                                    if (SUCCEEDED(hr) && first)
+                                        hr = first->GetType(&streamEvent);
+                                    if (FAILED(hr) || streamEvent != MEStreamStarted)
+                                        result = 23;
+                                }
+                                if (result == 0) {
+                                    hr = stream2->SetStreamState(MF_STREAM_STATE_RUNNING);
+                                    if (FAILED(hr)) result = 24;
+                                }
+                                if (result == 0) {
+                                    ComPtr<IMFMediaEvent> extra;
+                                    hr = stream2->GetEvent(
+                                        MF_EVENT_FLAG_NO_WAIT, extra.GetAddressOf());
+                                    if (hr != MF_E_NO_EVENTS_AVAILABLE) result = 25;
+                                }
                             }
                         }
                         if (result == 0 && FAILED(source->Stop())) result = 16;
