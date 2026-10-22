@@ -5,6 +5,7 @@
 #include <objbase.h>
 #include <chrono>
 #include <limits>
+#include <memory>
 #include <cstdint>
 #include <iostream>
 #include <string>
@@ -13,6 +14,7 @@
 #include "AvCamDualChannelRouter.h"
 #include "AvCamRouterRunPolicy.h"
 #include "AvCamRouterIpc.h"
+#include "AvCamAsyncObsWorker.h"
 #include "../../feeder/src/MediaFoundationFrameSource.h"
 #include "../../feeder/src/ObsSharedMemorySource.h"
 
@@ -20,6 +22,7 @@ int wmain(int argc, wchar_t** argv) {
     bool rawOnly = false;
     bool continuous = false;
     bool publishIpc = false;
+    bool independentObs = false;
     std::uint64_t maxFrames = 0;
     bool framesSpecified = false;
     for (int a = 1; a < argc; ++a) {
@@ -27,6 +30,7 @@ int wmain(int argc, wchar_t** argv) {
         if (arg == L"--raw-only" && !rawOnly) rawOnly = true;
         else if (arg == L"--continuous" && !continuous) continuous = true;
         else if (arg == L"--publish-ipc" && !publishIpc) publishIpc = true;
+        else if (arg == L"--independent-obs" && !independentObs) independentObs = true;
         else if (arg == L"--frames" && a + 1 < argc && !framesSpecified) {
             framesSpecified = true;
             const std::wstring value(argv[++a]);
@@ -45,12 +49,16 @@ int wmain(int argc, wchar_t** argv) {
             }
         }
         else {
-            std::wcerr << L"USAGE: AvCamRouterPhysicalRawObs.exe [--raw-only] [--continuous] [--frames N] [--publish-ipc]\n";
+            std::wcerr << L"USAGE: AvCamRouterPhysicalRawObs.exe [--raw-only] [--continuous] [--frames N] [--publish-ipc] [--independent-obs]\n";
             return 9;
         }
     }
     if (maxFrames && !continuous) {
         std::wcerr << L"AVCAM_FRAMES_REQUIRES_CONTINUOUS\n";
+        return 9;
+    }
+    if (independentObs && (!continuous || rawOnly)) {
+        std::wcerr << L"AVCAM_INDEPENDENT_OBS_REQUIRES_CONTINUOUS_DUAL_CHANNEL\\n";
         return 9;
     }
     constexpr std::size_t frameBytes = 1280u * 720u * 4u;
@@ -72,7 +80,7 @@ int wmain(int argc, wchar_t** argv) {
     }
     ObsSharedMemorySource obs;
     bool obsConnected = false;
-    if (!rawOnly) {
+    if (!rawOnly && !independentObs) {
         obsConnected = obs.Start();
         if (!obsConnected) {
             std::cout << "AVCAM_OBS_SOURCE_FAILED code="
@@ -96,6 +104,13 @@ int wmain(int argc, wchar_t** argv) {
                   << (rawOnly ? "" : ",OBS") << "\n";
     }
     avcam::dual::Router router(2000);
+    std::unique_ptr<avcam::async_obs::ObsWorker> obsWorker;
+    if (independentObs) {
+        obsWorker = std::make_unique<avcam::async_obs::ObsWorker>(
+            router, publishIpc ? &obsPublisher : nullptr);
+        obsWorker->Start();
+        std::cout << "AVCAM_OBS_INDEPENDENT_WORKER=1\n";
+    }
     std::vector<unsigned char> raw(frameBytes), processed(frameBytes);
     std::uint64_t rawFrames = 0, obsFrames = 0, reconnects = 0;
     std::uint64_t lastReconnectAttemptMs = 0;
@@ -103,7 +118,7 @@ int wmain(int argc, wchar_t** argv) {
     std::uint64_t obsSequence = 0;
     std::cout << "AVCAM_ROUTER_MODE=" << (continuous ? "CONTINUOUS" : "SMOKE") << "\n";
     for (std::uint64_t i = 1; avcam::run::ShouldRead(i, continuous, maxFrames); ++i) {
-        if (continuous && !rawOnly && !obsConnected &&
+        if (continuous && !rawOnly && !independentObs && !obsConnected &&
             (nowMs() - lastReconnectAttemptMs >= 2000)) {
             lastReconnectAttemptMs = nowMs();
             if (obs.Start()) {
@@ -124,7 +139,7 @@ int wmain(int argc, wchar_t** argv) {
             std::cout << "AVCAM_IPC_RAW_PUBLISH_FAILED frame=" << i << "\n";
             return 12;
         }
-        if (obsConnected) {
+        if (!independentObs && obsConnected) {
             if (obs.ReadFrame(processed.data(), processed.size(), timestamp)) {
                 router.PushObs({processed, ++obsSequence, nowMs()});
                 ++obsFrames;
@@ -142,14 +157,18 @@ int wmain(int argc, wchar_t** argv) {
                           << i << " code=" << obs.LastErrorCode() << "\n";
             }
         }
+        if (obsWorker && obsWorker->PublishFailures() != 0) {
+            std::cout << "AVCAM_IPC_OBS_PUBLISH_FAILED_ASYNC\\n";
+            return 12;
+        }
         const auto producer = router.ReadForProducer();
         const auto output = router.ReadForOutput(nowMs());
         if (producer.source != avcam::dual::Source::PhysicalRaw ||
             producer.frame.bytes != raw ||
-            (obsConnected &&
+            (!independentObs && obsConnected &&
                 (output.source != avcam::dual::Source::ObsProcessed ||
                  output.frame.bytes != processed)) ||
-            (!obsConnected &&
+            (!independentObs && !obsConnected &&
                 (output.source != avcam::dual::Source::PhysicalRaw ||
                  output.frame.bytes != raw))) {
             std::cout << "AVCAM_ROUTER_ISOLATION_FAILED\n";
@@ -159,10 +178,15 @@ int wmain(int argc, wchar_t** argv) {
         if (continuous && nowMs() - lastStatusMs >= 5000) {
             lastStatusMs = nowMs();
             std::cout << "AVCAM_ROUTER_STATUS raw=" << rawFrames
-                      << " obs=" << obsFrames
-                      << " obs_connected=" << (obsConnected ? 1 : 0)
-                      << " reconnects=" << reconnects << "\n";
+                      << " obs=" << (obsWorker ? obsWorker->Frames() : obsFrames)
+                      << " obs_connected=" << (obsWorker ? obsWorker->Connected() : obsConnected)
+                      << " reconnects=" << (obsWorker ? obsWorker->Reconnects() : reconnects) << "\n";
         }
+    }
+    if (obsWorker) {
+        obsWorker->Stop();
+        obsFrames = obsWorker->Frames();
+        reconnects = obsWorker->Reconnects();
     }
     router.DisconnectObs();
     if (publishIpc && !rawOnly) obsPublisher.Invalidate();
