@@ -34,8 +34,18 @@ bool RunningAsLocalService() {
     DWORD sidSize = sizeof sidBuffer;
     if (!CreateWellKnownSid(WinLocalServiceSid, nullptr, sidBuffer, &sidSize))
         return false;
-    BOOL matches = FALSE;
-    return CheckTokenMembership(nullptr, sidBuffer, &matches) && matches;
+    HANDLE token = nullptr;
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
+        return false;
+    DWORD bytes = 0;
+    GetTokenInformation(token, TokenUser, nullptr, 0, &bytes);
+    std::vector<BYTE> data(bytes);
+    const BOOL ok = bytes > 0 &&
+        GetTokenInformation(token, TokenUser, data.data(), bytes, &bytes);
+    CloseHandle(token);
+    if (!ok) return false;
+    const auto* owner = reinterpret_cast<const TOKEN_USER*>(data.data());
+    return EqualSid(owner->User.Sid, sidBuffer) != FALSE;
 }
 
 void SetStatus(DWORD state, DWORD error = NO_ERROR) {
