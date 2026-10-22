@@ -36,6 +36,16 @@ if ($VirtualOutput) {
         throw 'A unique AvCam Virtual Camera was not enumerated by both KS and Media Foundation. No drivers were changed. Use preview-only mode.'
     }
     $sinkReport | ForEach-Object { Write-Host $_ }
+    # Enumeration alone can succeed for a broken or incompatible device.
+    # Ask only for the existing private driver's GET_STATS method; do not
+    # submit synthetic frames or open physical/OBS capture sources.
+    $transportReport = @(& $feederPath --check-transport)
+    if ($LASTEXITCODE -ne 0 -or
+        $transportReport -notmatch '^AVCAM_TRANSPORT_READINESS=RESPONSIVE ') {
+        $transportReport | ForEach-Object { Write-Host $_ }
+        throw 'AvCam private driver transport failed read-only handshake. No frames were submitted and no drivers were changed.'
+    }
+    $transportReport | ForEach-Object { Write-Host $_ }
 }
 
 $router = $null
