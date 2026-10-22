@@ -25,4 +25,5 @@ private:
     avcam::ipc::Subscriber obs_;
     avcam::ipc::Cursor rawCursor_{};
     avcam::ipc::Cursor obsCursor_{};
+    std::uint64_t lastObsFrameMs_ = 0;
 };
