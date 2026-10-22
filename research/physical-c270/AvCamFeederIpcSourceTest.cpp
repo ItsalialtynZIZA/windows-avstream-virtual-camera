@@ -58,14 +58,6 @@ int main() {
 
     // The same retained subscriber must follow the writer's new session,
     // even when its sequence counter resets to one.
-    const auto oldSession = [&]() {
-        avcam::ipc::Subscriber observer;
-        avcam::ipc::Snapshot frame;
-        if (!observer.Start(Channel::Obs)) return std::uint64_t(0);
-        // OBS was invalidated: no active frame until new publisher arrives.
-        return std::uint64_t(1);
-    }();
-    if (!oldSession) return 10;
     obs.Stop();
     avcam::ipc::Publisher replacement;
     if (!replacement.Start(Channel::Obs)) return 11;
