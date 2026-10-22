@@ -404,6 +404,8 @@ jobs:
           if ($previewTest.ExitCode -ne 0) { throw "Native Windows preview selftest failed: $($previewTest.ExitCode)" }
           & ./build/mock-fanout/Release/AvCamDualChannelRouterTest.exe
           if ($LASTEXITCODE -ne 0) { throw 'AvCam dual-channel RAW/OBS routing failed' }
+          & ./build/mock-fanout/Release/AvCamPerClientIsolationTest.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Strict native per-consumer RAW/OBS isolation simulation failed' }
           & ./build/mock-fanout/Release/AvCamMockFanout.exe
           if ($LASTEXITCODE -ne 0) { throw 'Mock fanout runtime selftest failed' }
           & ./build/mock-fanout/Release/AvCamMockIpcFanout.exe
