@@ -249,8 +249,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'AvCam bounded run policy test failed' }
           & ./build/mock-fanout/Release/AvCamRouterDiagnosticsTest.exe
           if ($LASTEXITCODE -ne 0) { throw 'RAW/OBS fps and sample freshness regression failed' }
-          & ./build/mock-fanout/Release/AvCamRouterIpcProbe.exe --self-test
-          if ($LASTEXITCODE -ne 0) { throw 'Independent RAW/OBS IPC contract failed' }
+          $ipcOutput = @(& ./build/mock-fanout/Release/AvCamRouterIpcProbe.exe --self-test)
+          $ipcExitCode = $LASTEXITCODE
+          $ipcOutput | ForEach-Object { Write-Host $_ }
+          if ($ipcExitCode -ne 0) { throw "Independent RAW/OBS IPC contract failed: $ipcExitCode" }
+          foreach ($marker in @(
+            'AVCAM_ROUTER_IPC_SELFTEST_PASS',
+            'AVCAM_ROUTER_IPC_RESTART_WITH_LIVE_READER_PASS',
+            'AVCAM_ROUTER_IPC_CONCURRENT_WRITER_REJECTED=1'
+          )) {
+            if ($ipcOutput -notcontains $marker) { throw "IPC restart regression marker missing: $marker" }
+          }
           & ./build/mock-fanout/Release/AvCamRouterIpcProbe.exe --invalid
           if ($LASTEXITCODE -ne 9) { throw 'IPC consumer invalid argument rejection failed' }
           & ./build/mock-fanout/Release/AvCamPreviewSelectionTest.exe
