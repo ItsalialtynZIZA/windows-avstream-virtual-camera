@@ -58,7 +58,7 @@ int wmain(int argc, wchar_t** argv) {
         return 9;
     }
     if (independentObs && (!continuous || rawOnly)) {
-        std::wcerr << L"AVCAM_INDEPENDENT_OBS_REQUIRES_CONTINUOUS_DUAL_CHANNEL\\n";
+        std::wcerr << L"AVCAM_INDEPENDENT_OBS_REQUIRES_CONTINUOUS_DUAL_CHANNEL\n";
         return 9;
     }
     constexpr std::size_t frameBytes = 1280u * 720u * 4u;
@@ -158,7 +158,7 @@ int wmain(int argc, wchar_t** argv) {
             }
         }
         if (obsWorker && obsWorker->PublishFailures() != 0) {
-            std::cout << "AVCAM_IPC_OBS_PUBLISH_FAILED_ASYNC\\n";
+            std::cout << "AVCAM_IPC_OBS_PUBLISH_FAILED_ASYNC\n";
             return 12;
         }
         const auto producer = router.ReadForProducer();
