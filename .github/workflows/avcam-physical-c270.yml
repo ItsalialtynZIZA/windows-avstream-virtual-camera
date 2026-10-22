@@ -264,6 +264,8 @@ jobs:
           if ($LASTEXITCODE -ne 9) { throw 'IPC consumer invalid argument rejection failed' }
           & ./build/mock-fanout/Release/AvCamFeederIpcSourceTest.exe
           if ($LASTEXITCODE -ne 0) { throw "IPC V2 feeder frame integration failed: $LASTEXITCODE" }
+          & ./build/mock-fanout/Release/AvCamVirtualReadinessTest.exe
+          if ($LASTEXITCODE -ne 0) { throw "Virtual camera readiness classification failed: $LASTEXITCODE" }
           # Exercise the ACTUAL packaged feeder, not only its source class,
           # against a different Windows process publishing synthetic OBS.
           # No AVStream driver, Logitech camera, or OBS Studio is needed.
@@ -275,6 +277,14 @@ jobs:
           if ($sinkCode -ne 6 -or $sinkProbe -notcontains 'AVCAM_VIRTUAL_SINK_PRESENT=0 sink_interfaces=0') {
             throw "Fresh Windows runner unexpectedly has a private AvCam sink: $sinkCode"
           }
+          $virtualCameraReport = @(& $feederBinary --check-virtual-camera)
+          $virtualCameraCode = $LASTEXITCODE
+          $virtualCameraReport | ForEach-Object { Write-Host $_ }
+          if ($virtualCameraCode -ne 6 -or
+              $virtualCameraReport -notcontains 'AVCAM_VIRTUAL_CAMERA_READINESS=ABSENT ks_sinks=0 mf_name_matches=0') {
+            throw "Fresh Windows runner unexpectedly enumerates a separate AvCam virtual camera: $virtualCameraCode"
+          }
+          Write-Host 'AVCAM_VIRTUAL_CAMERA_MF_READONLY_PREFLIGHT_PASS'
           $fakeObs = $null
           try {
             $fakeObs = Start-Process -FilePath $fakeWriterBinary -ArgumentList @('--writer','obs','155') -PassThru -NoNewWindow
