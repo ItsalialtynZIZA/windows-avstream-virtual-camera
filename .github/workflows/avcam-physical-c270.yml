@@ -313,7 +313,7 @@ jobs:
           # A real Windows 11 Frame Server hang was reported by WER.
           # Refuse live session without a distinct risk-acknowledgement flag,
           # regardless of whether COM registration exists.
-          $quarantined = @(& $softwareCamera --session 2>&1)
+          $quarantined = @(& $softwareCamera --session)
           $quarantined | ForEach-Object { Write-Host $_ }
           if ($LASTEXITCODE -ne 2 -or
               $quarantined -notmatch 'AVCAM_SOFTWARE_CAMERA_FRAMESERVER_HANG_QUARANTINED') {
