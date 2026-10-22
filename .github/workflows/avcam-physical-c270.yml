@@ -333,6 +333,7 @@ jobs:
             'build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe',
             'build/mock-fanout/Release/AvCamRouterIpcProbe.exe',
             'build/mock-fanout/Release/AvCamRouterPreview.exe',
+            'build/mock-fanout/avcam-feeder/Release/AvCamFeeder.exe',
             'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
@@ -411,6 +412,7 @@ jobs:
             'build/mock-fanout/Release/AvCamRouterPhysicalRawObs.exe',
             'build/mock-fanout/Release/AvCamRouterIpcProbe.exe',
             'build/mock-fanout/Release/AvCamRouterPreview.exe',
+            'build/mock-fanout/avcam-feeder/Release/AvCamFeeder.exe',
             'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
@@ -457,7 +459,13 @@ jobs:
              These mappings are Local\\AvCamRouterRawV2 and Local\\AvCamRouterObsV2.
              --independent-obs with --continuous keeps RAW independent of OBS waits.
              If upgrading from V1, close the old router before opening this one.
-          6. Expected: AVCAM_PHYSICAL_C270_ROUTER_PASS.
+          6. With a separately installed compatible AvCam AVStream test camera,
+             the SAME IPC V2 OBS stream can feed that separate virtual endpoint:
+             .\\AvCamFeeder.exe --source avcam-ipc-obs
+             OR --source avcam-ipc-output for OBS with RAW fallback.
+             WITHOUT an installed AvCam sink this feeder only waits; it does
+             NOT install a driver, replace Logitech, or alter Chrome's camera.
+          7. Expected: AVCAM_PHYSICAL_C270_ROUTER_PASS.
              C270 RAW acquisition may fail if a camera app or negotiated
              capture format prevents simultaneous access. No driver changes.
           This confirms OBS -> AvCam IPC or router isolation only. It does NOT inject video into
