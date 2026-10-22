@@ -1,0 +1,4 @@
+LIBRARY AvCamMfSource
+EXPORTS
+    DllGetClassObject PRIVATE
+    DllCanUnloadNow PRIVATE
