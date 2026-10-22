@@ -49,7 +49,7 @@ bool ApiExists() noexcept {
     HMODULE module = LoadLibraryExW(L"mfsensorgroup.dll", nullptr,
                                    LOAD_LIBRARY_SEARCH_SYSTEM32);
     if (!module) return false;
-    const auto* entry = GetProcAddress(module, "MFCreateVirtualCamera");
+    const auto entry = GetProcAddress(module, "MFCreateVirtualCamera");
     FreeLibrary(module);
     return entry != nullptr;
 }
