@@ -216,16 +216,26 @@ COM registration. It does not create a device or open any video input.
 Missing registration returns 6 and reports `media_source_registered=0`.
 
 `--session` is an explicit developer-only session controller that requires
-the project's matching custom COM media source DLL to be registered.
-That DLL is NOT implemented in this version; the controller alone
-cannot produce frames. Do not register a third-party source with the
-reserved AvCam CLSID. The session uses CurrentUser/Session scope and
-calls Shutdown before exit, but is not a complete product.
+the matching custom COM media source DLL to be registered. The experimental
+`AvCamMfSource.dll` has now been written: it implements an IMFActivate
+COM factory, an IMFMediaSourceEx and an IMFMediaStream that read ONLY
+the processed OBS IPC V2 channel and emit NV12 1280x720 samples at
+the advertised 30 FPS. It also carries a deterministic BGRA-to-NV12
+converter. The new native smoke test exercises factory activation,
+stream descriptors, startup, stop, shutdown and COM lifetime without
+registering the DLL. **This is NOT an installed or verified camera**.
+Never register a third-party source with the reserved AvCam CLSID.
+The controller uses CurrentUser/Session scope and calls Shutdown on exit.
 
-**Remaining release gate:** implement and validate a Windows 11 custom
-IMFMediaSource and IMFMediaStream server that reads only processed
-AvCam IPC V2 OBS frames; review a reversible COM installation path;
-then verify its activation and live frames in Windows Camera and Chrome.
+**Remaining release gate:** finish validating the new experimental
+IMFMediaSource/IMFMediaStream COM DLL, and address a critical transport
+boundary: the existing `Local\\AvCamRouterObsV2` shared mapping is
+scoped to the publisher's Windows login session. Windows Camera Frame
+Server may host the Media Foundation source in a different session
+and therefore cannot be assumed to open it. A securely scoped,
+cross-session processed-frame IPC bridge (or a verified equivalent)
+is required before installation. Then review a reversible COM installer
+and verify actual live samples in Windows Camera and Chrome.
 Only after this, with RAW still intact for Deep Live Cam, is a separate
 AvCam virtual camera eligible for a first functional release.
 The original-physical-C270-in-Chrome requirement remains unresolved.
