@@ -275,6 +275,11 @@ jobs:
           & ./build/mock-fanout/Release/AvCamMfPipeSmoke.exe $pipeBridge
           if ($LASTEXITCODE -ne 0) { throw "OBS-only cross-session pipe process test failed: $LASTEXITCODE" }
           Write-Host 'AVCAM_MF_PIPE_BROKER_WINDOWS_ACCEPTANCE_PASS'
+          # Full unregistered COM integration: actual MEMediaSample payloads
+          # must contain correctly converted OBS pixels, never physical RAW.
+          & ./build/mock-fanout/Release/AvCamMfEndToEndSmoke.exe $mfSourceDll $pipeBridge
+          if ($LASTEXITCODE -ne 0) { throw "MF end-to-end OBS-only sample verification failed: $LASTEXITCODE" }
+          Write-Host 'AVCAM_MF_END_TO_END_WINDOWS_ACCEPTANCE_PASS'
           # No AvCam COM media-source is registered on a clean Windows runner.
           # MFCreateVirtualCamera availability is read-only; no device created.
           $softwareCamera = (Resolve-Path './build/mock-fanout/Release/AvCamSoftwareCameraControl.exe').Path
