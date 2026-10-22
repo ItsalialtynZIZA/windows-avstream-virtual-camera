@@ -522,7 +522,7 @@ public:
 };
 } // namespace
 
-extern "C" __declspec(dllexport) HRESULT __stdcall DllGetClassObject(
+HRESULT __stdcall DllGetClassObject(
     REFCLSID clsid, REFIID iid, void** result) {
     if (!result) return E_POINTER;
     *result = nullptr;
@@ -531,7 +531,7 @@ extern "C" __declspec(dllexport) HRESULT __stdcall DllGetClassObject(
     if (!factory) return E_OUTOFMEMORY;
     return factory->QueryInterface(iid, result);
 }
-extern "C" __declspec(dllexport) HRESULT __stdcall DllCanUnloadNow() {
+HRESULT __stdcall DllCanUnloadNow() {
     return g_objects.load() == 0 ? S_OK : S_FALSE;
 }
 BOOL APIENTRY DllMain(HMODULE, DWORD, LPVOID) { return TRUE; }
