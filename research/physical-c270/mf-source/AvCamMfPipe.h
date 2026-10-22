@@ -11,6 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <utility>
 
 namespace avcam::mfpipe {
 constexpr wchar_t Name[] =
