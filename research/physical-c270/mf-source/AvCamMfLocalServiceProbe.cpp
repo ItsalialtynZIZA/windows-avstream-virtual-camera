@@ -21,6 +21,7 @@ constexpr DWORD ServiceWaitMs = 18000;
 constexpr DWORD SampleWaitMs = 11000;
 constexpr DWORD MinimumFrames = 3;
 SERVICE_STATUS_HANDLE statusHandle = nullptr;
+void WINAPI IgnoreServiceControl(DWORD) noexcept {}
 
 std::uint64_t NowMs() noexcept {
     return static_cast<std::uint64_t>(
@@ -49,9 +50,6 @@ void SetStatus(DWORD state, DWORD error = NO_ERROR) {
 
 DWORD CheckPipe() {
     if (!RunningAsLocalService()) return 120;
-    if (ProcessIdToSessionId(GetCurrentProcessId(), nullptr)) {
-        // Do not dereference a null session pointer. Query below.
-    }
     DWORD sessionId = static_cast<DWORD>(-1);
     if (!ProcessIdToSessionId(GetCurrentProcessId(), &sessionId) ||
         sessionId != 0) return 121;
@@ -80,15 +78,9 @@ DWORD CheckPipe() {
     return count >= MinimumFrames ? NO_ERROR : 124;
 }
 
-void WINAPI ServiceMain(DWORD, LPWSTR*) {
-    statusHandle = RegisterServiceCtrlHandlerW(ServicePrefix, nullptr);
-    // Actual registered name includes PID, so RegisterServiceCtrlHandlerW
-    // needs the name Windows supplied in the SCM startup args. See below.
-}
-
 void WINAPI ActualServiceMain(DWORD argc, LPWSTR* argv) {
     if (argc == 0 || !argv || !argv[0]) return;
-    statusHandle = RegisterServiceCtrlHandlerW(argv[0], nullptr);
+    statusHandle = RegisterServiceCtrlHandlerW(argv[0], IgnoreServiceControl);
     if (!statusHandle) return;
     SetStatus(SERVICE_RUNNING);
     const DWORD result = CheckPipe();
@@ -128,7 +120,7 @@ public:
         if (original.empty()) return 103;
         wchar_t programData[32768]{};
         const DWORD n = GetEnvironmentVariableW(
-            L"ProgramData", programData, static_cast<DWORD>(std::size(programData)));
+            L"ProgramFiles", programData, static_cast<DWORD>(std::size(programData)));
         if (!n || n >= std::size(programData)) return 104;
 
         const DWORD pid = GetCurrentProcessId();
@@ -138,6 +130,9 @@ public:
             exeCopy_.clear();  // Do not delete someone else's file.
             return 105;
         }
+        // Protected Program Files directory, not user-writeable ProgramData.
+        // Remove owned copy on any failure before service starts.
+        canDeleteExecutable_ = true;
         manager_ = OpenSCManagerW(nullptr, nullptr, SC_MANAGER_CREATE_SERVICE);
         if (!manager_) return 106;
 
@@ -154,6 +149,9 @@ public:
         // The binary belongs to our unique temporary service and can
         // only be removed after SCM confirms it stopped.
         if (!StartServiceW(service_, 0, nullptr)) return 108;
+        // Never delete a binary while a live LocalService process could
+        // still be executing it.
+        canDeleteExecutable_ = false;
         const auto deadline = NowMs() + ServiceWaitMs;
         while (NowMs() < deadline) {
             SERVICE_STATUS_PROCESS status{};
