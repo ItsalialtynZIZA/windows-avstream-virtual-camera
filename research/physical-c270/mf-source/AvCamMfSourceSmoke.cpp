@@ -43,7 +43,12 @@ int wmain(int argc, wchar_t** argv) {
                     ComPtr<IMFMediaSource> source;
                     hr = activation->ActivateObject(
                         IID_PPV_ARGS(source.GetAddressOf()));
-                    if (FAILED(hr)) result = 9;
+                    if (FAILED(hr)) {
+                        std::cerr << "AVCAM_MF_ACTIVATION_FAILED hr=0x"
+                                  << std::hex << static_cast<unsigned long>(hr)
+                                  << std::dec << "\n";
+                        result = 9;
+                    }
                     else {
                         ComPtr<IMFMediaSourceEx> extended;
                         hr = source.As(&extended);
