@@ -7,6 +7,7 @@
 #include <chrono>
 #include <thread>
 #include <cstddef>
+#include <cwchar>
 #include <cstdint>
 #include <iostream>
 #include <memory>
@@ -16,6 +17,7 @@
 #include "FrameSource.h"
 #include "MediaFoundationFrameSource.h"
 #include "AvCamIpcFrameSource.h"
+#include "AvCamVirtualReadiness.h"
 #include "DirectShowFrameSource.h"
 #include "TestPatternFrameSource.h"
 #include "VirtualCameraProtocol.h"
@@ -116,6 +118,7 @@ struct Options
     bool showHelp = false;
     bool checkSource = false;
     bool checkSink = false;
+    bool checkVirtualCamera = false;
     unsigned checkSeconds = 10;
 };
 
@@ -132,7 +135,8 @@ void PrintUsage()
         << L"  AvCamFeeder.exe --list-sources\n"
         << L"  AvCamFeeder.exe --source obs-dshow --check-source [--seconds 10]\n"
         << L"  AvCamFeeder.exe --source avcam-ipc-obs --check-source --seconds 3\n"
-        << L"  AvCamFeeder.exe --check-sink (enumeration only; no frame submission)\n";
+        << L"  AvCamFeeder.exe --check-sink (KS-only enumeration)\n"
+        << L"  AvCamFeeder.exe --check-virtual-camera (KS + Media Foundation enumeration)\n";
 }
 
 bool ParseOptions(int argc, wchar_t* argv[], Options& options)
@@ -155,6 +159,11 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
         if (argument == L"--check-sink")
         {
             options.checkSink = true;
+            continue;
+        }
+        if (argument == L"--check-virtual-camera")
+        {
+            options.checkVirtualCamera = true;
             continue;
         }
         if (argument == L"--seconds" && index + 1 < argc)
@@ -191,7 +200,8 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
         return false;
     }
 
-    if (options.checkSink && (options.checkSource || options.listSources)) return false;
+    if ((options.checkSink && (options.checkSource || options.listSources || options.checkVirtualCamera)) ||
+        (options.checkVirtualCamera && (options.checkSource || options.listSources))) return false;
 
     if (options.source != L"test" && options.source != L"obs" &&
         options.source != L"obs-dshow" &&
@@ -487,6 +497,26 @@ int wmain(int argc, wchar_t* argv[])
         std::wcout << L"AVCAM_VIRTUAL_SINK_PRESENT=" << (!sinks.empty() ? 1 : 0)
                    << L" sink_interfaces=" << sinks.size() << L"\n";
         return sinks.empty() ? 6 : 0;
+    }
+
+    if (options.checkVirtualCamera)
+    {
+        const auto sinkInterfaces = FindDevicePaths(GUID_DEVINTERFACE_AVCAM_FRAME_SINK);
+        const auto cameraNames = EnumerateMediaFoundationVideoSources();
+        std::size_t mfNameMatches = 0;
+        for (const auto& name : cameraNames)
+        {
+            if (_wcsicmp(name.c_str(), L"AvCam Virtual Camera") == 0)
+                ++mfNameMatches;
+        }
+        const auto ready = avcam::readiness::Evaluate(
+            sinkInterfaces.size(), mfNameMatches);
+        std::wcout << L"AVCAM_VIRTUAL_CAMERA_READINESS="
+                   << avcam::readiness::Label(ready)
+                   << L" ks_sinks=" << sinkInterfaces.size()
+                   << L" mf_name_matches=" << mfNameMatches << L"\n";
+        // Enumeration does NOT activate or validate a camera output stream.
+        return avcam::readiness::ExitCode(ready);
     }
 
     if (options.listSources)
