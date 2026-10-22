@@ -465,6 +465,10 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $launcherValidation -notcontains 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS') {
             throw 'One-click AvCam launcher package validation failed'
           }
+          $optinValidation = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $out 'Start-AvCamPreview.ps1') -VirtualOutput -ValidateOnly)
+          if ($LASTEXITCODE -ne 0 -or $optinValidation -notcontains 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS') {
+            throw 'Virtual output opt-in packaging verification failed'
+          }
           Write-Host 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS'
           @'
           AvCam OBS Live Diagnostic — safe, no-install Windows x64 package.
@@ -473,6 +477,10 @@ jobs:
              Its window opens the video preview; closing the preview stops
              ONLY the AvCam Router process created by this launcher.
              Optional: AvCam-Start.cmd -Mode output (or raw, obs, compare).
+             If a separate compatible AvCam AVStream test camera is ALREADY
+             installed, AvCam-Start.cmd -VirtualOutput also runs AvCamFeeder
+             with strict OBS-only input. It checks for AvCam's private sink
+             first and fails without modifying drivers when absent.
              Deep Live Cam remains connected to the unchanged physical Logitech.
           2. In an ordinary PowerShell window:
              .\AvCamMockFrameIpc.exe --obs
