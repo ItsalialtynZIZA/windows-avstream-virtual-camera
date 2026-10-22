@@ -43,6 +43,16 @@ The prior **V1 names remain untouched**; V1 and V2 executables must be used
 as matching pairs. Do not run two versions of the router against the same
 physical C270 simultaneously.
 
+**Cross-process Windows regression:** `AvCamRouterIpcProcessTest.exe --self-test`
+now starts two camera-free publishers (independent RAW/OBS), verifies a
+competing OBS publisher is rejected, forcibly terminates the first OBS writer,
+checks that RAW continues advancing, then starts another OBS writer while the
+original OBS reader still holds its shared-memory mapping open. The test
+requires the replacement publisher to deliver a new session and frame data
+to the retained reader. It runs automatically on Windows CI without opening
+Logitech or OBS. This specifically covers abnormal writer exit, which the
+earlier in-process `AvCamRouterIpcProbe.exe --self-test` could not simulate.
+
 ## Running (no administrator, no installation)
 
 Run OBS Studio Virtual Camera and make sure the physical C270 can be
