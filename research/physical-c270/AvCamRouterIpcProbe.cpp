@@ -31,7 +31,7 @@ int SelfTest() {
     // A caller can change its copy without contaminating published storage.
     a.bgra[0] = 0xff;
     if (!rawReader.TryRead(a) || a.bgra[0] != 0x11 ||
-        rawReader.TryRead(a, 1)) return 6;
+        rawReader.TryRead(a, a.Position())) return 6;
     // OBS disconnection invalidates only the OBS channel.
     obs.Invalidate();
     if (obsReader.TryRead(b) || !rawReader.TryRead(a) || a.bgra != original)
@@ -45,9 +45,29 @@ int SelfTest() {
     if (obs.Publish(nullptr, FrameBytes, 3, 300) ||
         obs.Publish(processed.data(), FrameBytes - 1, 3, 300))
         return 9;
+
+    // Reader keeps the old mapping open. A second concurrent writer must
+    // fail, but a NEW writer must attach immediately after the old one exits.
+    const Cursor oldPosition = b.Position();
+    Publisher concurrent;
+    if (concurrent.Start(Channel::Obs) ||
+        GetLastError() != ERROR_ALREADY_EXISTS) return 10;
+    obs.Stop();
+    if (obsReader.IsActive() || obsReader.TryRead(b, oldPosition)) return 11;
+    Publisher restarted;
+    if (!restarted.Start(Channel::Obs)) return 12;
+    std::fill(processed.begin(), processed.end(), 0x42);
+    if (!restarted.Publish(processed.data(), processed.size(), 1, 500)) return 13;
+    if (!obsReader.TryRead(b, oldPosition) ||
+        b.session == oldPosition.session || b.sequence != 1 ||
+        b.bgra != processed || b.channel != Channel::Obs) return 14;
+    if (obsReader.TryRead(b, b.Position())) return 15;
+    if (!rawReader.TryRead(a) || a.bgra != original) return 16;
     std::cout << "AVCAM_ROUTER_IPC_SELFTEST_PASS\n"
               << "AVCAM_ROUTER_IPC_INDEPENDENT_CHANNELS=1\n"
-              << "AVCAM_ROUTER_IPC_OBS_DISCONNECT_INVALIDATED=1\n";
+              << "AVCAM_ROUTER_IPC_OBS_DISCONNECT_INVALIDATED=1\n"
+              << "AVCAM_ROUTER_IPC_RESTART_WITH_LIVE_READER_PASS\n"
+              << "AVCAM_ROUTER_IPC_CONCURRENT_WRITER_REJECTED=1\n";
     return 0;
 }
 
@@ -83,7 +103,7 @@ int main(int argc, char** argv) {
     }
     Subscriber consumer;
     const auto started = std::chrono::steady_clock::now();
-    std::uint64_t lastSequence = 0;
+    Cursor last{};
     unsigned seen = 0;
     while (std::chrono::duration_cast<std::chrono::milliseconds>(
            std::chrono::steady_clock::now() - started).count() < timeoutMs) {
@@ -96,13 +116,14 @@ int main(int argc, char** argv) {
         Snapshot frame;
         while (std::chrono::duration_cast<std::chrono::milliseconds>(
                std::chrono::steady_clock::now() - started).count() < timeoutMs) {
-            if (consumer.TryRead(frame, lastSequence)) {
-                lastSequence = frame.sequence;
+            if (consumer.TryRead(frame, last)) {
+                last = frame.Position();
                 ++seen;
                 if (seen == 1 || seen % 30 == 0)
                     std::cout << "AVCAM_IPC_FRAME channel="
                               << (channel == Channel::Raw ? "RAW" : "OBS")
-                              << " seq=" << lastSequence
+                              << " session=" << last.session
+                              << " seq=" << last.sequence
                               << " captured_ms=" << frame.capturedMs
                               << " bytes=" << frame.bgra.size() << "\n";
                 if (seen >= wanted) {
