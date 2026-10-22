@@ -271,6 +271,10 @@ jobs:
           $mfSourceDll = (Resolve-Path './build/mock-fanout/Release/AvCamMfSource.dll').Path
           & ./build/mock-fanout/Release/AvCamMfSourceSmoke.exe $mfSourceDll
           if ($LASTEXITCODE -ne 0) { throw "Unregistered camera COM DLL activation and lifecycle failed: $LASTEXITCODE" }
+          $pipeBridge = (Resolve-Path './build/mock-fanout/Release/AvCamMfObsPipeBridge.exe').Path
+          & ./build/mock-fanout/Release/AvCamMfPipeSmoke.exe $pipeBridge
+          if ($LASTEXITCODE -ne 0) { throw "OBS-only cross-session pipe process test failed: $LASTEXITCODE" }
+          Write-Host 'AVCAM_MF_PIPE_BROKER_WINDOWS_ACCEPTANCE_PASS'
           # No AvCam COM media-source is registered on a clean Windows runner.
           # MFCreateVirtualCamera availability is read-only; no device created.
           $softwareCamera = (Resolve-Path './build/mock-fanout/Release/AvCamSoftwareCameraControl.exe').Path
@@ -404,6 +408,7 @@ jobs:
             'build/mock-fanout/Release/AvCamRouterPreview.exe',
             'build/mock-fanout/Release/AvCamSoftwareCameraControl.exe',
             'build/mock-fanout/Release/AvCamMfSource.dll',
+            'build/mock-fanout/Release/AvCamMfObsPipeBridge.exe',
             'build/mock-fanout/avcam-feeder/Release/AvCamFeeder.exe',
             'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
@@ -485,6 +490,7 @@ jobs:
             'build/mock-fanout/Release/AvCamRouterPreview.exe',
             'build/mock-fanout/Release/AvCamSoftwareCameraControl.exe',
             'build/mock-fanout/Release/AvCamMfSource.dll',
+            'build/mock-fanout/Release/AvCamMfObsPipeBridge.exe',
             'build/mock-fanout/avcam-feeder/Release/AvCamFeeder.exe',
             'build/mock-fanout/Release/AvCamEnumeratePhysicalC270.exe',
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
@@ -514,6 +520,11 @@ jobs:
           1. Run OBS Studio and start OBS Virtual Camera.
              Experimental: AvCamSoftwareCameraControl.exe --preflight checks
              Windows 11 API and reserved Media Foundation source registration.
+             AvCamMfObsPipeBridge.exe --continuous streams ONLY processed
+             OBS frames as NV12 over a Windows named pipe to LocalService.
+             This is opt-in and is NOT started by the standard preview.
+             Local user, LocalService and SYSTEM are explicitly permitted
+             by the server DACL; remote pipe clients are rejected.
              AvCamMfSource.dll is an UNREGISTERED experimental COM media source.
              It reads only AvCam OBS IPC V2 and converts to NV12, but the DLL
              is not installed and its service-session IPC reachability is not
