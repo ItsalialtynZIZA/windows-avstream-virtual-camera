@@ -225,6 +225,47 @@ With the router already running, use one of:
   live OBS frames.
 - `avcam-ipc-raw` reads the original physical RAW channel only.
 
+### Safe CLI acceptance and optional virtual output
+
+The shipping `AvCamFeeder.exe` now supports two standalone diagnostics:
+
+```powershell
+.\AvCamFeeder.exe --source avcam-ipc-obs --check-source --seconds 3
+.\AvCamFeeder.exe --check-sink
+```
+
+The first command connects to an existing RAW/OBS Router V2 mapping,
+accepts fresh processed OBS frames for three seconds, counts successful
+samples and pixel-content changes and exits without sending frames to any
+driver. It can return exit code 4 if the source is missing or 5 if no
+fresh frames arrive. A successful run reports `AVCAM_IPC_CHECK frames=N`.
+The second command **only enumerates** AvCam's separate, private KS sink
+interface; it reports `AVCAM_VIRTUAL_SINK_PRESENT=0/1` and returns 6 when
+the interface is absent. It never probes the physical Logitech C270.
+
+For an independently installed compatible *separate* AvCam test camera,
+the no-install launcher supports an explicit opt-in:
+
+```powershell
+.\AvCam-Start.cmd -VirtualOutput
+```
+
+Without `-VirtualOutput` the launcher only opens the RAW/OBS preview.
+With the flag it first checks `--check-sink`; if the private interface
+is absent, it stops with an error **before opening Logitech**. When
+present, it starts the real `AvCamFeeder.exe --source avcam-ipc-obs`
+alongside the router and viewer. Closing the viewer terminates only
+the child processes this launcher started. This option **does not**
+install, sign, register, enable or replace any device driver. It is not
+a path to impersonating the physical Logitech endpoint.
+
+Windows CI executes the shipped feeder binary against a synthetic OBS
+publisher running in a different Windows process with no installed
+AvCam sink; this validates the actual executable's IPC data path,
+not the kernel capture output. The remaining end-to-end separate
+AVStream virtual-device test would need an explicitly prepared Windows
+system with a properly installed compatible driver.
+
 The feeder takes the latest complete BGRA frame from shared memory, converts
 the captured monotonic timestamp from milliseconds to 100-nanosecond units
 for its existing KS transport, then submits it through the pre-existing
