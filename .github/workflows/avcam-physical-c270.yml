@@ -501,6 +501,7 @@ jobs:
             'research/physical-c270/Run-AvCamObsIpcSmoke.ps1',
             'research/physical-c270/OBS_IPC_LIVE_SMOKE.md',
             'research/physical-c270/Start-AvCamPreview.ps1',
+            'research/physical-c270/mf-source/Manage-AvCamMfSource.ps1',
             'research/physical-c270/AvCam-Start.cmd'
           )) {
             if (!(Test-Path -LiteralPath $f -PathType Leaf)) { throw "Missing diagnostic input: $f" }
@@ -523,6 +524,26 @@ jobs:
           if ($LASTEXITCODE -ne 0 -or $mfPipeLauncherValidation -notcontains 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS') {
             throw 'OBS-only named-pipe launcher package validation failed'
           }
+          # A reversible experimental COM registration script ships in
+          # read-only Status mode. CI NEVER registers any COM class or camera.
+          $registrationScript = Join-Path $out 'Manage-AvCamMfSource.ps1'
+          $comTokens = $null; $comErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            $registrationScript, [ref]$comTokens, [ref]$comErrors) | Out-Null
+          if ($comErrors.Count) { throw "AvCam COM registration script parse failure: $comErrors" }
+          $comStatus = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $registrationScript -Action Status)
+          $comExit = $LASTEXITCODE
+          $comStatus | ForEach-Object { Write-Host $_ }
+          if ($comExit -ne 0 -or $comStatus -notcontains 'AVCAM_MF_REGISTRATION_STATUS_PASS' -or
+              $comStatus -notcontains 'AVCAM_MF_REGISTRATION=ABSENT') {
+            throw "Read-only AvCam COM status failed on clean Windows: $comExit"
+          }
+          # The opt-in flag is mandatory even on an elevated Windows runner.
+          $consentRefusal = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $registrationScript -Action Register 2>&1)
+          if ($LASTEXITCODE -eq 0) {
+            throw 'AvCam experimental COM registration proceeded without explicit approval'
+          }
+          Write-Host 'AVCAM_MF_COM_REGISTRATION_FAIL_CLOSED_PASS'
           Write-Host 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS'
           @'
           AvCam OBS Live Diagnostic — safe, no-install Windows x64 package.
@@ -534,6 +555,13 @@ jobs:
              This is opt-in and is NOT started by the standard preview.
              Local user, LocalService and SYSTEM are explicitly permitted
              by the server DACL; remote pipe clients are rejected.
+             Manage-AvCamMfSource.ps1 -Action Status is read-only.
+             Experimental registration exists only as an EXPLICIT admin
+             option with -Action Register -AcceptExperimental; unregistration
+             similarly requires -Action Unregister -AcceptExperimental.
+             It registers only AvCam's dedicated CLSID from Program Files.
+             This changes Windows registry and remains UNTESTED with the
+             real Camera Frame Server; do NOT run it on your main PC yet.
              AvCamMfSource.dll is an UNREGISTERED experimental COM media source.
              It reads the OBS-only NV12 named pipe in the Frame Server process.
              The DLL is not installed and Windows session-0 LocalService
