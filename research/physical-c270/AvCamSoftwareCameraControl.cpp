@@ -45,13 +45,27 @@ bool IsRegistered() noexcept {
     return true;
 }
 
+// Use explicit late binding: GitHub Windows Server images need not contain
+// mfsensorgroup.dll, but the diagnostic EXE must still run and fail closed.
+struct VirtualCameraApi {
+    HMODULE module = nullptr;
+    decltype(&MFCreateVirtualCamera) create = nullptr;
+    VirtualCameraApi() noexcept {
+        module = LoadLibraryExW(L"mfsensorgroup.dll", nullptr,
+                                LOAD_LIBRARY_SEARCH_SYSTEM32);
+        if (module)
+            create = reinterpret_cast<decltype(&MFCreateVirtualCamera)>(
+                GetProcAddress(module, "MFCreateVirtualCamera"));
+    }
+    VirtualCameraApi(const VirtualCameraApi&) = delete;
+    VirtualCameraApi& operator=(const VirtualCameraApi&) = delete;
+    ~VirtualCameraApi() { if (module) FreeLibrary(module); }
+    bool Ready() const noexcept { return create != nullptr; }
+};
+
 bool ApiExists() noexcept {
-    HMODULE module = LoadLibraryExW(L"mfsensorgroup.dll", nullptr,
-                                   LOAD_LIBRARY_SEARCH_SYSTEM32);
-    if (!module) return false;
-    const auto entry = GetProcAddress(module, "MFCreateVirtualCamera");
-    FreeLibrary(module);
-    return entry != nullptr;
+    VirtualCameraApi api;
+    return api.Ready();
 }
 
 void PrintUsage() {
@@ -73,9 +87,10 @@ private:
 };
 
 int RunSession() {
-    if (!ApiExists() || !IsRegistered()) {
+    VirtualCameraApi api;
+    if (!api.Ready() || !IsRegistered()) {
         std::wcerr << L"AVCAM_SOFTWARE_CAMERA_NOT_READY "
-                      L"source COM registration is missing\n";
+                      L"MFCreateVirtualCamera API or AvCam COM source is missing\n";
         return 6;
     }
     Apartment apartment;
@@ -84,7 +99,7 @@ int RunSession() {
     if (FAILED(hr)) return 8;
 
     Microsoft::WRL::ComPtr<IMFVirtualCamera> camera;
-    hr = MFCreateVirtualCamera(
+    hr = api.create(
         MFVirtualCameraType_SoftwareCameraSource,
         MFVirtualCameraLifetime_Session,
         MFVirtualCameraAccess_CurrentUser,
