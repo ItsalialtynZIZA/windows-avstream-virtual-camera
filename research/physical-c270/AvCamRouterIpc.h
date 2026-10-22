@@ -22,12 +22,12 @@ constexpr std::uint32_t Version = 2;
 enum class Channel : std::uint32_t { Raw = 1, Obs = 2 };
 
 inline const wchar_t* MappingName(Channel channel) noexcept {
-    return channel == Channel::Raw ? L"Local\AvCamRouterRawV2"
-                                   : L"Local\AvCamRouterObsV2";
+    return channel == Channel::Raw ? L"Local\\AvCamRouterRawV2"
+                                   : L"Local\\AvCamRouterObsV2";
 }
 inline const wchar_t* WriterName(Channel channel) noexcept {
-    return channel == Channel::Raw ? L"Local\AvCamRouterRawOwnerV2"
-                                   : L"Local\AvCamRouterObsOwnerV2";
+    return channel == Channel::Raw ? L"Local\\AvCamRouterRawOwnerV2"
+                                   : L"Local\\AvCamRouterObsOwnerV2";
 }
 
 struct Header {
