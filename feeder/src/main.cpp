@@ -529,7 +529,10 @@ int wmain(int argc, wchar_t* argv[])
             {
                 ++failures;
                 ++totalFailures;
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                // The IPC source is a non-blocking latest-frame reader.
+                // Poll it promptly: 100 ms sleeps mask a 25-30 FPS producer.
+                std::this_thread::sleep_for(std::chrono::milliseconds(
+                    ipcSource ? 4 : 100));
                 continue;
             }
             failures = 0;
@@ -545,7 +548,8 @@ int wmain(int argc, wchar_t* argv[])
             previous = hash;
             havePrevious = true;
             ++frames;
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            std::this_thread::sleep_for(std::chrono::milliseconds(
+                ipcSource ? 2 : 20));
         }
         source->Stop();
         std::wcout << (ipcSource ? L"AVCAM_IPC_CHECK frames=" : L"OBS_CHECK frames=")
