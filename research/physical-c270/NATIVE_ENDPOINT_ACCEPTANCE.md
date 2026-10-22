@@ -53,3 +53,30 @@ https://learn.microsoft.com/en-us/windows-hardware/drivers/usbcon/writing-a-ude-
 ## Native done criteria
 
 Physical device instance/path unchanged; Deep Live Cam RAW unaffected, Chrome processed OBS under that exact physical instance in unchanged client; repeated start/stop and rollback without any FrameServer hang; demonstrated on actual host, not only CI.
+
+## Read-only physical-endpoint feasibility probe (2026-10-22)
+
+A read-only inspection script is available at:
+research/physical-c270/native-routing/Inspect-AvCamPhysicalEndpoint.ps1
+
+It prints the present Logitech VID_046D&PID_0825 PnP instance(s), USB
+parent/container metadata, Camera Frame Server service state and whether
+the unsafe experimental AvCam COM CLSID remains registered. It never
+opens the camera, does not modify registry/driver state and **cannot**
+demonstrate which sample reaches each client. Its output intentionally
+ends with `AVCAM_STRICT_PER_CLIENT_PHYSICAL_ROUTE=NOT_PROVEN`.
+
+Windows CI .github/workflows/avcam-native-readonly.yml validates the
+script's syntax and runs it camera-free; that is NOT an end-to-end Chrome
+acceptance test.
+
+Microsoft's Camera Profile V2 documentation confirms Frame Server's
+Client Context is decoupled from the device source; this can support
+per-client pin/media-type filtering, but it does not document arbitrary
+per-app pixel replacement under unchanged client apps:
+https://learn.microsoft.com/en-us/windows-hardware/drivers/stream/camera-profile-v2-detailed-design-for-isvs
+
+Do not install a global Device MFT on the physical C270 or claim that
+per-client differentiation is achieved by inspecting app process PIDs:
+in shared capture the service process may be the only visible
+underlying device consumer.
