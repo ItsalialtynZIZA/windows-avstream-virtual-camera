@@ -5,6 +5,7 @@ param(
     [ValidateSet('compare','output','raw','obs')]
     [string]$Mode = 'compare',
     [switch]$VirtualOutput,
+    [switch]$MfPipe,
     [switch]$ValidateOnly
 )
 $ErrorActionPreference = 'Stop'
@@ -12,6 +13,7 @@ $folder = Split-Path -Parent $MyInvocation.MyCommand.Path
 $routerPath = Join-Path $folder 'AvCamRouterPhysicalRawObs.exe'
 $viewerPath = Join-Path $folder 'AvCamRouterPreview.exe'
 $feederPath = Join-Path $folder 'AvCamFeeder.exe'
+$mfPipePath = Join-Path $folder 'AvCamMfObsPipeBridge.exe'
 
 foreach ($binary in @($routerPath, $viewerPath)) {
     if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) {
@@ -22,6 +24,9 @@ if ($VirtualOutput) {
     if (-not (Test-Path -LiteralPath $feederPath -PathType Leaf)) {
         throw 'AvCamFeeder.exe is missing from the diagnostic package.'
     }
+}
+if ($MfPipe -and -not (Test-Path -LiteralPath $mfPipePath -PathType Leaf)) {
+    throw 'AvCamMfObsPipeBridge.exe is missing from the diagnostic package.'
 }
 if ($ValidateOnly) {
     Write-Output 'AVCAM_ONE_CLICK_PACKAGE_VALIDATION_PASS'
@@ -51,6 +56,7 @@ if ($VirtualOutput) {
 $router = $null
 $viewer = $null
 $feeder = $null
+$mfBroker = $null
 try {
     Write-Host 'AvCam: starting independent Logitech RAW + OBS IPC router...'
     $router = Start-Process -FilePath $routerPath -ArgumentList @('--continuous', '--independent-obs', '--publish-ipc') -WorkingDirectory $folder -PassThru -NoNewWindow
@@ -58,6 +64,16 @@ try {
     $router.Refresh()
     if ($router.HasExited) {
         throw "AvCam Router exited with code $($router.ExitCode). Close other AvCam Router instances and check OBS/Logitech availability."
+    }
+
+    if ($MfPipe) {
+        Write-Host 'AvCam: opening experimental OBS-only cross-session pipe (no COM registration).'
+        $mfBroker = Start-Process -FilePath $mfPipePath -ArgumentList @('--continuous') -WorkingDirectory $folder -PassThru -NoNewWindow
+        Start-Sleep -Milliseconds 350
+        $mfBroker.Refresh()
+        if ($mfBroker.HasExited) {
+            throw "AvCam MF pipe broker exited with code $($mfBroker.ExitCode). Another pipe broker may already own the name."
+        }
     }
 
     if ($VirtualOutput) {
@@ -88,6 +104,15 @@ finally {
             }
         } catch {}
         $viewer.Dispose()
+    }
+    if ($mfBroker) {
+        try {
+            $mfBroker.Refresh()
+            if (-not $mfBroker.HasExited) {
+                Stop-Process -Id $mfBroker.Id -Force -ErrorAction SilentlyContinue
+            }
+        } catch {}
+        $mfBroker.Dispose()
     }
     if ($feeder) {
         try {
