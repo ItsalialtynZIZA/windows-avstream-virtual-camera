@@ -260,6 +260,23 @@ the virtual camera**; the friendly name is not a proof of device
 identity. If an endpoint does not appear consistently through both
 enumerations, an optional virtual-output launcher fails closed.
 
+A separate read-only transport handshake is now available:
+```powershell
+.\AvCamFeeder.exe --check-transport
+```
+This opens **only** the dedicated `GUID_DEVINTERFACE_AVCAM_FRAME_SINK`
+interface and calls the repository's existing
+`AVCAM_METHOD_GET_STATS` KS method. It checks whether the compatible
+AvCam virtual driver's private producer interface actually responds;
+it never calls `AVCAM_METHOD_SUBMIT_FRAME`. It does not open RAW/OBS
+or a capture pin. Results are `RESPONSIVE` (0),
+`ABSENT` (6), `AMBIGUOUS` (7),
+`OPEN_FAILED` or `PROTOCOL_MISMATCH` (8).
+The launcher `-VirtualOutput` now requires both this transport
+handshake and the earlier two-way registration check before launching
+any video input. Transport responsiveness is **not** proof of a live
+video stream or successful capture from Windows Camera/Chrome.
+
 For `--source avcam-ipc-obs --check-source` the CLI now polls new
 IPC frames at higher frequency instead of sleeping 100 ms after
 every ordinary inter-frame gap. This makes reported received-frame
