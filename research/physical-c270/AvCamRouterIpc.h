@@ -59,17 +59,22 @@ struct Snapshot {
 };
 
 inline std::uint64_t NewSession() noexcept {
-    // Time + process ID + per-process counter; distinct among normal
-    // publisher restarts even when the frame sequence restarts at one.
-    FILETIME stamp{};
-    GetSystemTimePreciseAsFileTime(&stamp);
-    static std::atomic<std::uint64_t> counter{0};
+    // Use a per-process high-half nonce and a monotonic per-process
+    // low-half counter. Session IDs cannot repeat within one process until
+    // billions of restarts, even if two restarts share the same clock tick.
+    static const std::uint64_t processNonce = [] {
+        FILETIME stamp{};
+        GetSystemTimePreciseAsFileTime(&stamp);
+        const auto time = (static_cast<std::uint64_t>(stamp.dwHighDateTime) << 32)
+                        | stamp.dwLowDateTime;
+        const auto pid = static_cast<std::uint64_t>(GetCurrentProcessId());
+        const auto seed = time ^ (time >> 32)
+                        ^ (pid * 0x9e3779b97f4a7c15ull);
+        return (seed & 0xffffffffull) << 32;
+    }();
+    static std::atomic<std::uint32_t> counter{0};
     const auto number = counter.fetch_add(1, std::memory_order_relaxed) + 1;
-    const auto time = (static_cast<std::uint64_t>(stamp.dwHighDateTime) << 32)
-                    | stamp.dwLowDateTime;
-    const auto value = time ^ (static_cast<std::uint64_t>(GetCurrentProcessId()) << 32)
-                      ^ number;
-    return value ? value : number;
+    return processNonce | number;
 }
 
 class Publisher final {
