@@ -15,6 +15,7 @@
 
 #include "FrameSource.h"
 #include "MediaFoundationFrameSource.h"
+#include "AvCamIpcFrameSource.h"
 #include "DirectShowFrameSource.h"
 #include "TestPatternFrameSource.h"
 #include "VirtualCameraProtocol.h"
@@ -124,6 +125,9 @@ void PrintUsage()
         << L"  AvCamFeeder.exe --source test\n"
         << L"  AvCamFeeder.exe --source obs [--device-name \"OBS Virtual Camera\"]\n"
         << L"  AvCamFeeder.exe --source obs-dshow [--device-name \"OBS Virtual Camera\"]\n"
+        << L"  AvCamFeeder.exe --source avcam-ipc-obs\n"
+        << L"  AvCamFeeder.exe --source avcam-ipc-output\n"
+        << L"  AvCamFeeder.exe --source avcam-ipc-raw\n"
         << L"  AvCamFeeder.exe --list-sources\n"
         << L"  AvCamFeeder.exe --source obs-dshow --check-source [--seconds 10]\n";
 }
@@ -180,7 +184,10 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
     }
 
     if (options.source != L"test" && options.source != L"obs" &&
-        options.source != L"obs-dshow")
+        options.source != L"obs-dshow" &&
+        options.source != L"avcam-ipc-obs" &&
+        options.source != L"avcam-ipc-output" &&
+        options.source != L"avcam-ipc-raw")
     {
         std::wcerr << L"Unsupported source: " << options.source << L"\n";
         PrintUsage();
@@ -192,6 +199,15 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
 
 std::unique_ptr<IFrameSource> CreateFrameSource(const Options& options)
 {
+    if (options.source == L"avcam-ipc-obs")
+        return std::make_unique<AvCamIpcFrameSource>(
+            AvCamIpcFrameSource::Mode::ObsOnly);
+    if (options.source == L"avcam-ipc-output")
+        return std::make_unique<AvCamIpcFrameSource>(
+            AvCamIpcFrameSource::Mode::OutputWithRawFallback);
+    if (options.source == L"avcam-ipc-raw")
+        return std::make_unique<AvCamIpcFrameSource>(
+            AvCamIpcFrameSource::Mode::RawOnly);
     if (options.source == L"obs-dshow")
     {
         return std::make_unique<DirectShowFrameSource>(options.deviceName);
