@@ -9,6 +9,7 @@ add_executable(AvCamFeeder
     src/TestPatternFrameSource.cpp
     src/MediaFoundationFrameSource.cpp
     src/DirectShowFrameSource.cpp
+    src/AvCamIpcFrameSource.cpp
 )
 
 target_include_directories(AvCamFeeder PRIVATE
