@@ -87,6 +87,12 @@ public:
             return false;
 
         Frame& previous = channel == Channel::Raw ? raw_ : obs_;
+        // A new OBS publisher may start only after the previous epoch was
+        // explicitly disconnected. Never allow a stale parallel writer to
+        // replace the current source simply by choosing another epoch.
+        if (previous.publisherEpoch &&
+            previous.publisherEpoch != frame.publisherEpoch)
+            return false;
         if (previous.publisherEpoch == frame.publisherEpoch &&
             frame.sequence <= previous.sequence)
             return false;
