@@ -119,6 +119,7 @@ struct Options
     bool checkSource = false;
     bool checkSink = false;
     bool checkVirtualCamera = false;
+    bool checkTransport = false;
     unsigned checkSeconds = 10;
 };
 
@@ -136,7 +137,8 @@ void PrintUsage()
         << L"  AvCamFeeder.exe --source obs-dshow --check-source [--seconds 10]\n"
         << L"  AvCamFeeder.exe --source avcam-ipc-obs --check-source --seconds 3\n"
         << L"  AvCamFeeder.exe --check-sink (KS-only enumeration)\n"
-        << L"  AvCamFeeder.exe --check-virtual-camera (KS + Media Foundation enumeration)\n";
+        << L"  AvCamFeeder.exe --check-virtual-camera (KS + Media Foundation enumeration)\n"
+        << L"  AvCamFeeder.exe --check-transport (read-only private KS driver protocol)\n";
 }
 
 bool ParseOptions(int argc, wchar_t* argv[], Options& options)
@@ -164,6 +166,11 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
         if (argument == L"--check-virtual-camera")
         {
             options.checkVirtualCamera = true;
+            continue;
+        }
+        if (argument == L"--check-transport")
+        {
+            options.checkTransport = true;
             continue;
         }
         if (argument == L"--seconds" && index + 1 < argc)
@@ -200,8 +207,12 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
         return false;
     }
 
-    if ((options.checkSink && (options.checkSource || options.listSources || options.checkVirtualCamera)) ||
-        (options.checkVirtualCamera && (options.checkSource || options.listSources))) return false;
+    const unsigned diagnosticModes = static_cast<unsigned>(options.checkSink) +
+        static_cast<unsigned>(options.checkVirtualCamera) +
+        static_cast<unsigned>(options.checkTransport) +
+        static_cast<unsigned>(options.checkSource) +
+        static_cast<unsigned>(options.listSources);
+    if (diagnosticModes > 1) return false;
 
     if (options.source != L"test" && options.source != L"obs" &&
         options.source != L"obs-dshow" &&
@@ -517,6 +528,53 @@ int wmain(int argc, wchar_t* argv[])
                    << L" mf_name_matches=" << mfNameMatches << L"\n";
         // Enumeration does NOT activate or validate a camera output stream.
         return avcam::readiness::ExitCode(ready);
+    }
+
+    if (options.checkTransport)
+    {
+        // This is a read-only KS statistics request to AvCam's *private*
+        // producer interface. No SUBMIT_FRAME call, camera capture, driver
+        // install or modification of physical Logitech settings occurs.
+        const auto paths = FindDevicePaths(GUID_DEVINTERFACE_AVCAM_FRAME_SINK);
+        if (paths.empty())
+        {
+            std::wcout << L"AVCAM_TRANSPORT_READINESS=ABSENT ks_sinks=0\n";
+            return 6;
+        }
+        if (paths.size() != 1)
+        {
+            std::wcout << L"AVCAM_TRANSPORT_READINESS=AMBIGUOUS ks_sinks="
+                       << paths.size() << L"\n";
+            return 7;
+        }
+
+        WinHandle probe;
+        probe.value = CreateFileW(paths.front().c_str(),
+            GENERIC_READ | GENERIC_WRITE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
+            OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+        if (probe.value == INVALID_HANDLE_VALUE)
+        {
+            const DWORD error = GetLastError();
+            std::wcout << L"AVCAM_TRANSPORT_READINESS=OPEN_FAILED win32="
+                       << error << L"\n";
+            return 8;
+        }
+
+        AvCamTransportStats stats{};
+        if (!QueryStats(probe.value, stats))
+        {
+            const DWORD error = GetLastError();
+            std::wcout << L"AVCAM_TRANSPORT_READINESS=PROTOCOL_MISMATCH win32="
+                       << error << L"\n";
+            return 8;
+        }
+
+        std::wcout << L"AVCAM_TRANSPORT_READINESS=RESPONSIVE protocol="
+                   << stats.Version << L" submitted="
+                   << stats.SubmittedFrames << L" capture_reads="
+                   << stats.CaptureReads << L"\n";
+        return 0;
     }
 
     if (options.listSources)
