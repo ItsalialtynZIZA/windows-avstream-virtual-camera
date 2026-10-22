@@ -115,6 +115,7 @@ struct Options
     bool listSources = false;
     bool showHelp = false;
     bool checkSource = false;
+    bool checkSink = false;
     unsigned checkSeconds = 10;
 };
 
@@ -129,7 +130,9 @@ void PrintUsage()
         << L"  AvCamFeeder.exe --source avcam-ipc-output\n"
         << L"  AvCamFeeder.exe --source avcam-ipc-raw\n"
         << L"  AvCamFeeder.exe --list-sources\n"
-        << L"  AvCamFeeder.exe --source obs-dshow --check-source [--seconds 10]\n";
+        << L"  AvCamFeeder.exe --source obs-dshow --check-source [--seconds 10]\n"
+        << L"  AvCamFeeder.exe --source avcam-ipc-obs --check-source --seconds 3\n"
+        << L"  AvCamFeeder.exe --check-sink (enumeration only; no frame submission)\n";
 }
 
 bool ParseOptions(int argc, wchar_t* argv[], Options& options)
@@ -147,6 +150,11 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
         if (argument == L"--check-source")
         {
             options.checkSource = true;
+            continue;
+        }
+        if (argument == L"--check-sink")
+        {
+            options.checkSink = true;
             continue;
         }
         if (argument == L"--seconds" && index + 1 < argc)
@@ -182,6 +190,8 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
         PrintUsage();
         return false;
     }
+
+    if (options.checkSink && (options.checkSource || options.listSources)) return false;
 
     if (options.source != L"test" && options.source != L"obs" &&
         options.source != L"obs-dshow" &&
@@ -469,6 +479,16 @@ int wmain(int argc, wchar_t* argv[])
         return 3;
     }
 
+    if (options.checkSink)
+    {
+        // Enumeration only. Do not send a probe frame to any KS filter and
+        // do not create or install a virtual device.
+        const auto sinks = FindDevicePaths(GUID_DEVINTERFACE_AVCAM_FRAME_SINK);
+        std::wcout << L"AVCAM_VIRTUAL_SINK_PRESENT=" << (!sinks.empty() ? 1 : 0)
+                   << L" sink_interfaces=" << sinks.size() << L"\n";
+        return sinks.empty() ? 6 : 0;
+    }
+
     if (options.listSources)
     {
         const auto sources = EnumerateMediaFoundationVideoSources();
@@ -495,6 +515,9 @@ int wmain(int argc, wchar_t* argv[])
             std::wcerr << L"OBS_CHECK source_open=failed\n";
             return 4;
         }
+        const bool ipcSource = options.source == L"avcam-ipc-obs" ||
+                               options.source == L"avcam-ipc-output" ||
+                               options.source == L"avcam-ipc-raw";
         std::uint64_t frames = 0, changed = 0, failures = 0, totalFailures = 0;
         std::uint64_t previous = 0;
         bool havePrevious = false;
@@ -525,7 +548,8 @@ int wmain(int argc, wchar_t* argv[])
             std::this_thread::sleep_for(std::chrono::milliseconds(20));
         }
         source->Stop();
-        std::wcout << L"OBS_CHECK frames=" << frames
+        std::wcout << (ipcSource ? L"AVCAM_IPC_CHECK frames=" : L"OBS_CHECK frames=")
+                   << frames
                    << L" changed=" << changed
                    << L" consecutive_failures=" << failures
                    << L" total_failures=" << totalFailures
