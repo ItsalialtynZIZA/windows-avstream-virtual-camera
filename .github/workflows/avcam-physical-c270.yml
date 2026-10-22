@@ -316,7 +316,7 @@ jobs:
           $quarantined = @(& $softwareCamera --session)
           $quarantined | ForEach-Object { Write-Host $_ }
           if ($LASTEXITCODE -ne 2 -or
-              $quarantined -notmatch 'AVCAM_SOFTWARE_CAMERA_FRAMESERVER_HANG_QUARANTINED') {
+              $quarantined -notcontains 'AVCAM_SOFTWARE_CAMERA_FRAMESERVER_HANG_QUARANTINED') {
             throw 'Windows camera live session must be quarantined after the Frame Server hang'
           }
           & $softwareCamera --session --accept-unstable-frame-server
