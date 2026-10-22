@@ -287,8 +287,13 @@ jobs:
             if ($actualFeederCode -ne 0) { throw "Real feeder IPC check failed: $actualFeederCode" }
             $metrics = @($actualFeederProbe | Where-Object { $_ -match '^AVCAM_IPC_CHECK frames=([0-9]+)' })
             if ($metrics.Count -ne 1) { throw 'Real feeder emitted no IPC metrics' }
-            if ($metrics[0] -notmatch '^AVCAM_IPC_CHECK frames=([0-9]+)' -or [int]$Matches[1] -lt 15) {
-              throw 'Real feeder received fewer than 15 distinct frames in 3 seconds'
+            if ($metrics[0] -match '^AVCAM_IPC_CHECK frames=([0-9]+)') {
+              $realFrameCount = [int]$Matches[1]
+            } else {
+              throw 'Real feeder returned a malformed IPC frame count'
+            }
+            if ($realFrameCount -lt 15) {
+              throw "Real feeder received only $realFrameCount frames in 3 seconds"
             }
             Write-Host 'AVCAM_FEEDER_REAL_EXE_IPC_PROCESS_PASS'
           } finally {
