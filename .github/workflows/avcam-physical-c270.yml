@@ -285,6 +285,16 @@ jobs:
             throw "Fresh Windows runner unexpectedly enumerates a separate AvCam virtual camera: $virtualCameraCode"
           }
           Write-Host 'AVCAM_VIRTUAL_CAMERA_MF_READONLY_PREFLIGHT_PASS'
+          $transportReport = @(& $feederBinary --check-transport)
+          $transportCode = $LASTEXITCODE
+          $transportReport | ForEach-Object { Write-Host $_ }
+          if ($transportCode -ne 6 -or
+              $transportReport -notcontains 'AVCAM_TRANSPORT_READINESS=ABSENT ks_sinks=0') {
+            throw "Private AvCam KS transport check did not fail closed without a driver: $transportCode"
+          }
+          & $feederBinary --check-virtual-camera --check-transport
+          if ($LASTEXITCODE -ne 2) { throw 'Conflicting feeder diagnostic modes were accepted' }
+          Write-Host 'AVCAM_VIRTUAL_TRANSPORT_READONLY_PREFLIGHT_PASS'
           $fakeObs = $null
           try {
             $fakeObs = Start-Process -FilePath $fakeWriterBinary -ArgumentList @('--writer','obs','155') -PassThru -NoNewWindow
@@ -494,8 +504,10 @@ jobs:
              Optional: AvCam-Start.cmd -Mode output (or raw, obs, compare).
              If a separate compatible AvCam AVStream test camera is ALREADY
              installed, AvCam-Start.cmd -VirtualOutput also runs AvCamFeeder
-             with strict OBS-only input. It checks for AvCam's private sink
-             first and fails without modifying drivers when absent.
+             with strict OBS-only input. First it verifies KS+MF enumeration
+             and queries private GET_STATS transport, WITHOUT sending a frame.
+             If either check fails, no Logitech source is opened and no
+             driver is installed or modified.
              Deep Live Cam remains connected to the unchanged physical Logitech.
           2. In an ordinary PowerShell window:
              .\AvCamMockFrameIpc.exe --obs
