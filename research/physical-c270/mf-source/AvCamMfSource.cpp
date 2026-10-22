@@ -55,7 +55,7 @@ public:
     AvCamMfStream() { ++g_objects; }
     ~AvCamMfStream() override { Shutdown(); --g_objects; }
 
-    HRESULT Initialize(AvCamMfSource* owner, IMFMediaType* type) {
+    HRESULT Initialize(IMFMediaSource* owner, IMFMediaType* type) {
         owner_ = owner;
         HRESULT hr = MFCreateEventQueue(queue_.GetAddressOf());
         if (FAILED(hr)) return hr;
@@ -98,13 +98,12 @@ public:
 
     // IMFMediaStream2 allows Frame Server to control stream state.
     STDMETHOD(SetStreamState)(MF_STREAM_STATE state) override {
-        if (shutdown_) return MF_E_SHUTDOWN;
-        // Frame Server can drive the stream through IMFMediaStream2, without
-        // an explicit separate IMFMediaSource::Start call. Apply changes to
-        // the actual sample worker, not just an informational state field.
-        if (state == MF_STREAM_STATE_RUNNING) return Start();
-        if (state == MF_STREAM_STATE_STOPPED) return Stop();
-        return MF_E_INVALID_STATE_TRANSITION; // Camera stream has no pause.
+        // Frame Server's state change is NOT an event-producing Start/Stop.
+        // Do not duplicate MEStreamStarted/MEStreamStopped here; those are
+        // emitted by IMFMediaSource::Start/Stop only.
+        if (state == MF_STREAM_STATE_RUNNING) return Start(false);
+        if (state == MF_STREAM_STATE_STOPPED) return Stop(false);
+        return shutdown_ ? MF_E_SHUTDOWN : MF_E_INVALID_STATE_TRANSITION;
     }
     STDMETHOD(GetStreamState)(MF_STREAM_STATE* state) override {
         if (!state) return E_POINTER;
@@ -130,9 +129,14 @@ public:
         return S_OK;
     }
 
-    HRESULT Start() {
+    HRESULT Start(bool notify = true) {
+        // SetStreamState and IMFMediaSource::Start may be invoked on
+        // different Frame Server threads. Serialize worker_ ownership.
+        std::lock_guard<std::mutex> lifetime(lifecycleMutex_);
         if (shutdown_) return MF_E_SHUTDOWN;
-        if (running_.exchange(true)) return S_OK;
+        if (running_) return S_OK;
+        if (worker_.joinable()) return MF_E_INVALIDREQUEST;
+        running_ = true;
         try {
             worker_ = std::thread([this] { PumpObs(); });
         } catch (...) {
@@ -140,9 +144,13 @@ public:
             return E_OUTOFMEMORY;
         }
         streamState_ = MF_STREAM_STATE_RUNNING;
-        return queue_->QueueEventParamVar(MEStreamStarted, GUID_NULL, S_OK, nullptr);
+        return notify && queue_
+            ? queue_->QueueEventParamVar(MEStreamStarted, GUID_NULL, S_OK, nullptr)
+            : S_OK;
     }
-    HRESULT Stop() {
+    HRESULT Stop(bool notify = true) {
+        std::lock_guard<std::mutex> lifetime(lifecycleMutex_);
+        if (shutdown_) return MF_E_SHUTDOWN;
         const bool wasRunning = running_.exchange(false);
         streamState_ = MF_STREAM_STATE_STOPPED;
         if (worker_.joinable()) worker_.join();
@@ -150,22 +158,24 @@ public:
             std::lock_guard<std::mutex> guard(tokensMutex_);
             pending_.clear();
         }
-        return wasRunning && queue_ && !shutdown_
+        return wasRunning && queue_ && notify
             ? queue_->QueueEventParamVar(MEStreamStopped, GUID_NULL, S_OK, nullptr)
             : S_OK;
     }
     void Shutdown() noexcept {
+        std::lock_guard<std::mutex> lifetime(lifecycleMutex_);
+        if (shutdown_.exchange(true)) return;
         running_ = false;
+        streamState_ = MF_STREAM_STATE_STOPPED;
         if (worker_.joinable()) worker_.join();
         {
             std::lock_guard<std::mutex> guard(tokensMutex_);
             pending_.clear();
         }
-        if (shutdown_.exchange(true)) return;
-        owner_ = nullptr;
         if (queue_) queue_->Shutdown();
         queue_.Reset();
         desc_.Reset();
+        owner_.Reset(); // Break the reference cycle with IMFMediaSource.
     }
 private:
     void PumpObs() noexcept {
@@ -218,7 +228,10 @@ private:
         }
         reader.Close();
     }
-    AvCamMfSource* owner_ = nullptr; // Broken during source shutdown.
+    // Strong parent reference is required while a stream escapes into
+    // Frame Server via MENewStream. Shutdown breaks the parent/stream cycle.
+    ComPtr<IMFMediaSource> owner_;
+    std::mutex lifecycleMutex_;
     ComPtr<IMFMediaEventQueue> queue_;
     ComPtr<IMFStreamDescriptor> desc_;
     std::atomic<bool> running_{false};
@@ -418,8 +431,9 @@ HRESULT AvCamMfStream::GetMediaSource(IMFMediaSource** source) {
     if (!source) return E_POINTER;
     *source = nullptr;
     if (shutdown_) return MF_E_SHUTDOWN;
-    return owner_ ? owner_->QueryInterface(IID_PPV_ARGS(source))
-                  : MF_E_SHUTDOWN;
+    std::lock_guard<std::mutex> lifetime(lifecycleMutex_);
+    if (shutdown_ || !owner_) return MF_E_SHUTDOWN;
+    return owner_.CopyTo(source);
 }
 
 // MFCreateVirtualCamera activates the registered CLSID as IMFActivate,
