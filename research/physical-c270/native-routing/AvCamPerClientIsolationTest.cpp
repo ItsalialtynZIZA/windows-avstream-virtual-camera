@@ -82,6 +82,11 @@ int main() {
         Require(!router.Read(999, 100000, result), "unknown session read");
         Require(!router.Publish(Channel::Obs, Make(0x22, 2, 1)),
             "duplicate OBS frame sequence accepted");
+        Require(!router.Publish(Channel::Obs, Make(0x22, 555, 10)),
+            "parallel OBS publisher hijacked existing epoch");
+        Require(router.Read(200, 100000, result) &&
+            result.frame.bytes[0] == 0xee,
+            "existing OBS frame modified by rejected publisher");
         Require(!router.Read(200, 100751, result), "stale OBS frame exposed");
         Require(router.Read(100, 100500, result) &&
             result.frame.bytes[0] == 0x11, "RAW freshness corrupted");
