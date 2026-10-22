@@ -19,6 +19,12 @@ target_compile_features(AvCamMfSource PRIVATE cxx_std_17)
 target_link_libraries(AvCamMfSource PRIVATE mfplat mfuuid ole32)
 set_target_properties(AvCamMfSource PROPERTIES PREFIX "")
 
+# Explicit-only one-shot LocalService service probe for Windows 11.
+# In CI only --status and consent refusal are exercised; no service created.
+add_executable(AvCamMfLocalServiceProbe ../mf-source/AvCamMfLocalServiceProbe.cpp)
+target_compile_features(AvCamMfLocalServiceProbe PRIVATE cxx_std_17)
+target_link_libraries(AvCamMfLocalServiceProbe PRIVATE advapi32)
+
 add_executable(AvCamMfObsPipeBridge ../mf-source/AvCamMfObsPipeBridge.cpp)
 target_compile_features(AvCamMfObsPipeBridge PRIVATE cxx_std_17)
 target_link_libraries(AvCamMfObsPipeBridge PRIVATE advapi32)
