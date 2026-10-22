@@ -49,7 +49,7 @@ class AvCamMfSource;
 
 class AvCamMfStream final :
     public RuntimeClass<RuntimeClassFlags<ClassicCom>,
-        Microsoft::WRL::ChainInterfaces<IMFMediaStream, IMFMediaEventGenerator>> {
+        Microsoft::WRL::ChainInterfaces<IMFMediaStream2, IMFMediaStream, IMFMediaEventGenerator>> {
 public:
     AvCamMfStream() { ++g_objects; }
     ~AvCamMfStream() override { Shutdown(); --g_objects; }
@@ -93,6 +93,19 @@ public:
         if (shutdown_) return MF_E_SHUTDOWN;
         return queue_ ? queue_->QueueEventParamVar(type, guid, status, value)
                       : MF_E_SHUTDOWN;
+    }
+
+    // IMFMediaStream2 allows Frame Server to control stream state.
+    STDMETHOD(SetStreamState)(MF_STREAM_STATE state) override {
+        if (shutdown_) return MF_E_SHUTDOWN;
+        streamState_ = state;
+        return S_OK;
+    }
+    STDMETHOD(GetStreamState)(MF_STREAM_STATE* state) override {
+        if (!state) return E_POINTER;
+        if (shutdown_) return MF_E_SHUTDOWN;
+        *state = streamState_.load();
+        return S_OK;
     }
 
     // IMFMediaStream
@@ -202,6 +215,7 @@ private:
     ComPtr<IMFMediaEventQueue> queue_;
     ComPtr<IMFStreamDescriptor> desc_;
     std::atomic<bool> running_{false};
+    std::atomic<MF_STREAM_STATE> streamState_{MF_STREAM_STATE_STOPPED};
     std::atomic<bool> shutdown_{false};
     std::mutex tokensMutex_;
     std::deque<ComPtr<IUnknown>> pending_;
@@ -211,7 +225,8 @@ private:
 class AvCamMfSource final :
     public RuntimeClass<RuntimeClassFlags<ClassicCom>,
         Microsoft::WRL::ChainInterfaces<
-            IMFMediaSourceEx, IMFMediaSource, IMFMediaEventGenerator>> {
+            IMFMediaSourceEx, IMFMediaSource, IMFMediaEventGenerator>,
+        IMFGetService, IKsControl> {
 public:
     AvCamMfSource() { ++g_objects; }
     ~AvCamMfSource() override { Shutdown(); --g_objects; }
@@ -359,6 +374,29 @@ public:
         return stream_->Descriptor()->QueryInterface(IID_PPV_ARGS(attributes));
     }
     STDMETHOD(SetD3DManager)(IUnknown*) override { return S_OK; }
+
+    // Mandatory Frame Server interfaces even when no camera controls or
+    // auxiliary Media Foundation services are implemented.
+    STDMETHOD(GetService)(REFGUID, REFIID, LPVOID* output) override {
+        if (!output) return E_POINTER;
+        *output = nullptr;
+        return shutdown_ ? MF_E_SHUTDOWN : MF_E_UNSUPPORTED_SERVICE;
+    }
+    STDMETHOD(KsProperty)(PKSPROPERTY, ULONG, LPVOID, ULONG,
+                          ULONG* bytesReturned) override {
+        if (bytesReturned) *bytesReturned = 0;
+        return HRESULT_FROM_WIN32(ERROR_SET_NOT_FOUND);
+    }
+    STDMETHOD(KsMethod)(PKSMETHOD, ULONG, LPVOID, ULONG,
+                        ULONG* bytesReturned) override {
+        if (bytesReturned) *bytesReturned = 0;
+        return HRESULT_FROM_WIN32(ERROR_SET_NOT_FOUND);
+    }
+    STDMETHOD(KsEvent)(PKSEVENT, ULONG, LPVOID, ULONG,
+                       ULONG* bytesReturned) override {
+        if (bytesReturned) *bytesReturned = 0;
+        return HRESULT_FROM_WIN32(ERROR_SET_NOT_FOUND);
+    }
 private:
     std::mutex mutex_;
     ComPtr<IMFMediaEventQueue> queue_;
