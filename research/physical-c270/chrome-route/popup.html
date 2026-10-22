@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AvCam Chrome Route</title>
+  <style>
+    body { min-width: 310px; margin: 0; font: 14px/1.5 system-ui, sans-serif; background: #101827; color: #f3f6fc; }
+    main { padding: 18px; }
+    h1 { font-size: 17px; margin: 0 0 10px; }
+    p { margin: 8px 0; color: #b8c5d9; }
+    #host { font-weight: 600; overflow-wrap: anywhere; color: #ffffff; }
+    #status { color: #8dd6b1; }
+    button { display: block; width: 100%; padding: 11px; margin: 12px 0 4px; color: white; border: 0; border-radius: 8px; cursor: pointer; font-weight: 600; background: #3d5bdc; }
+    button:disabled { cursor: default; opacity: .45; }
+    #disable { background: #364357; }
+    small { display: block; color: #aab8ca; margin-top: 14px; }
+    #error { color: #ffb7bd; overflow-wrap: anywhere; }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>AvCam · Chrome Route</h1>
+    <p>Сайт: <span id="host">Определяется…</span></p>
+    <p id="status">Проверка…</p>
+    <button id="enable" disabled>Направить Logitech → OBS на этом сайте</button>
+    <button id="disable" disabled>Отключить маршрутизацию</button>
+    <p id="error" role="alert"></p>
+    <small>Работает только внутри веб-страницы. USB-камера Logitech, Deep Live Cam и драйверы Windows не меняются. После переключения страница перезагрузится.</small>
+  </main>
+  <script src="popup.js"></script>
+</body>
+</html>
