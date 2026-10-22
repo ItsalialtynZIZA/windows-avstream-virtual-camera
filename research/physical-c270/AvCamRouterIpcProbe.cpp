@@ -1,6 +1,7 @@
 // Read-only consumer for the optional AvCam router RAW/OBS IPC channels.
 // --self-test uses synthetic frames and does not open a camera or OBS.
 #include "AvCamRouterIpc.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
