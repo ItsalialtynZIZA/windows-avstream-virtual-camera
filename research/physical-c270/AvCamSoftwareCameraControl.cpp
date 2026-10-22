@@ -162,7 +162,7 @@ int wmain(int argc, wchar_t** argv) {
         return RunSession();
     case Mode::Invalid:
         if (argc == 2 && std::wstring(argv[1]) == L"--session") {
-            std::wcerr << L"AVCAM_SOFTWARE_CAMERA_FRAMESERVER_HANG_QUARANTINED\n"
+            std::wcout << L"AVCAM_SOFTWARE_CAMERA_FRAMESERVER_HANG_QUARANTINED\n"
                           L"Real Windows 11 Frame Server hang observed on 2026-10-22.\n";
         }
         PrintUsage();
