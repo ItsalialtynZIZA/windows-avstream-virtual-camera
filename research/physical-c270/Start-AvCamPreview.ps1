@@ -31,9 +31,9 @@ if ($ValidateOnly) {
 # The virtual camera is an OPT-IN *separate* AVStream endpoint.
 # Never install or register test-signed drivers automatically.
 if ($VirtualOutput) {
-    $sinkReport = @(& $feederPath --check-sink)
+    $sinkReport = @(& $feederPath --check-virtual-camera)
     if ($LASTEXITCODE -ne 0) {
-        throw 'Separate AvCam Virtual Camera sink not found. No driver changes were made. Use preview-only mode or an independently approved installed AvCam driver.'
+        throw 'A unique AvCam Virtual Camera was not enumerated by both KS and Media Foundation. No drivers were changed. Use preview-only mode.'
     }
     $sinkReport | ForEach-Object { Write-Host $_ }
 }
