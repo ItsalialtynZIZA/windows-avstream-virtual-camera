@@ -130,12 +130,27 @@ if ($Action -eq 'Unregister') {
     }
     try {
         # Only remove the two files we created. Never recursively delete an
-        # existing folder containing other contents.
-        Remove-Item -LiteralPath $dllPath -Force -ErrorAction SilentlyContinue
-        Remove-Item -LiteralPath $manifestPath -Force -ErrorAction Stop
-        Remove-Item -LiteralPath $installDir -ErrorAction SilentlyContinue
+        # existing folder containing other contents. Do not hide failed DLL
+        # deletion: an in-use COM DLL can remain loaded by Frame Server.
+        if (Test-Path -LiteralPath $dllPath -PathType Leaf) {
+            Remove-Item -LiteralPath $dllPath -Force -ErrorAction Stop
+        }
+        if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+            Remove-Item -LiteralPath $manifestPath -Force -ErrorAction Stop
+        }
+        if (Test-Path -LiteralPath $installDir -PathType Container) {
+            $remaining = @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction Stop)
+            if ($remaining.Count -gt 0) {
+                throw "AvCam installation folder still contains $($remaining.Count) object(s). No recursive deletion performed."
+            }
+            Remove-Item -LiteralPath $installDir -ErrorAction Stop
+        }
+        if ((Test-Path -LiteralPath $dllPath) -or (Test-Path -LiteralPath $installDir)) {
+            throw 'Installed AvCam files still exist after cleanup.'
+        }
         Write-Host 'AVCAM_MF_EXPERIMENTAL_FILES_CLEANED'
     } catch {
-        Write-Warning ('COM removed, files remain: ' + $_.Exception.Message)
+        Write-Warning ('AvCam COM registration was removed but file cleanup is incomplete: ' + $_.Exception.Message)
+        Write-Host 'AVCAM_MF_EXPERIMENTAL_FILES_LEFT'
     }
 }
