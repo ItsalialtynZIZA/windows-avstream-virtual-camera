@@ -1,9 +1,9 @@
 // Experimental Windows 11 software-camera controller.
 // Uses the documented MFCreateVirtualCamera user-mode API.
 // No kernel driver, Device MFT, physical-device PnP or Chrome changes.
-// IMPORTANT: The AvCam media-source COM DLL is not implemented yet.
-// This executable refuses session creation until the intended CLSID
-// is independently installed and registered by an explicit user action.
+// IMPORTANT: The AvCam media-source COM DLL is experimental and currently
+// unregistered. This executable refuses session creation until a reviewed,
+// user-approved source installation exists and its streaming path is verified.
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
@@ -73,7 +73,7 @@ void PrintUsage() {
                   L"  --preflight   Read-only check for Win11 API and source registration\n"
                   L"  --session     Explicit temporary CurrentUser camera session\n"
                   L"  --help        This help\n"
-                  L"The custom AvCam Media Foundation COM source is not yet provided.\n"
+                  L"The experimental AvCam MF COM DLL is not installed or validated in Camera.\n"
                   L"No driver, Logitech or browser settings are modified.\n";
 }
 
@@ -119,7 +119,7 @@ int RunSession() {
     }
 
     std::wcout << L"AVCAM_SOFTWARE_CAMERA_SESSION_CREATED "
-                  L"registered_source_is_not_yet_an_IPC_video_stream\n"
+                  L"experimental_source_requires_end_to_end_camera_validation\n"
                   L"Press Enter to remove the temporary virtual camera.\n";
     std::wstring ignored;
     std::getline(std::wcin, ignored);
