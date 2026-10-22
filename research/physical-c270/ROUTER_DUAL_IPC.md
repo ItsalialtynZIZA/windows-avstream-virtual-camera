@@ -53,6 +53,24 @@ to the retained reader. It runs automatically on Windows CI without opening
 Logitech or OBS. This specifically covers abnormal writer exit, which the
 earlier in-process `AvCamRouterIpcProbe.exe --self-test` could not simulate.
 
+## One-click no-install preview (Windows)
+
+The `AvCam-OBS-Live-Diagnostic` artifact now includes `AvCam-Start.cmd`
+and `Start-AvCamPreview.ps1`. With Deep Live Cam and OBS Virtual Camera
+already running, double-click `AvCam-Start.cmd` in the extracted folder.
+It starts the existing independent RAW/OBS router with `--publish-ipc`,
+then opens `AvCamRouterPreview.exe --mode compare`. Close the viewer window
+to terminate **only the router process launched by that command**.
+An already-running router may prevent the launcher from starting another
+publisher; exit the earlier router first. No administrator permissions,
+device installation or service registration are required.
+
+The command file accepts additional PowerShell launch arguments, e.g.
+`AvCam-Start.cmd -Mode output` to prefer OBS with RAW fallback. The
+`-ValidateOnly` switch checks for the two binaries without opening either
+source; Windows CI checks script syntax and validates its packaged files.
+The launcher does not turn the video into the physical Logitech endpoint.
+
 ## Running (no administrator, no installation)
 
 Run OBS Studio Virtual Camera and make sure the physical C270 can be
