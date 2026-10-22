@@ -12,6 +12,7 @@
 #include <wrl/client.h>
 #include <ks.h>
 #include <ksmedia.h>
+#include <ksproxy.h>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
