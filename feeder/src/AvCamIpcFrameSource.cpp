@@ -51,10 +51,12 @@ bool AvCamIpcFrameSource::ReadChannel(avcam::ipc::Channel channel,
     if (!reader.TryRead(frame, cursor)) return false;
     cursor = frame.Position();
     const auto now = NowMs();
-    if (frame.bgra.size() != avcam::ipc::FrameBytes ||
-        !avcam::preview::Fresh(now, frame.capturedMs)) return false;
+    if (frame.bgra.size() != avcam::ipc::FrameBytes) return false;
+    // A valid but already expired OBS sample must immediately release
+    // fallback, rather than retaining the timestamp of an older fresh one.
     if (channel == avcam::ipc::Channel::Obs)
         lastObsFrameMs_ = frame.capturedMs;
+    if (!avcam::preview::Fresh(now, frame.capturedMs)) return false;
     std::memcpy(dst, frame.bgra.data(), avcam::ipc::FrameBytes);
     // AvCam KS feeder expects a 100-nanosecond timestamp.
     timestamp100ns = frame.capturedMs * 10000ull;
