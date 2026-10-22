@@ -19,6 +19,13 @@ target_compile_features(AvCamMfSource PRIVATE cxx_std_17)
 target_link_libraries(AvCamMfSource PRIVATE mfplat mfuuid ole32)
 set_target_properties(AvCamMfSource PROPERTIES PREFIX "")
 
+add_executable(AvCamMfObsPipeBridge ../mf-source/AvCamMfObsPipeBridge.cpp)
+target_compile_features(AvCamMfObsPipeBridge PRIVATE cxx_std_17)
+target_link_libraries(AvCamMfObsPipeBridge PRIVATE advapi32)
+
+add_executable(AvCamMfPipeSmoke ../mf-source/AvCamMfPipeSmoke.cpp)
+target_compile_features(AvCamMfPipeSmoke PRIVATE cxx_std_17)
+
 add_executable(AvCamMfColorTest ../mf-source/AvCamMfColorTest.cpp)
 target_compile_features(AvCamMfColorTest PRIVATE cxx_std_17)
 
