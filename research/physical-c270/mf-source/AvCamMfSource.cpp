@@ -98,8 +98,12 @@ public:
     // IMFMediaStream2 allows Frame Server to control stream state.
     STDMETHOD(SetStreamState)(MF_STREAM_STATE state) override {
         if (shutdown_) return MF_E_SHUTDOWN;
-        streamState_ = state;
-        return S_OK;
+        // Frame Server can drive the stream through IMFMediaStream2, without
+        // an explicit separate IMFMediaSource::Start call. Apply changes to
+        // the actual sample worker, not just an informational state field.
+        if (state == MF_STREAM_STATE_RUNNING) return Start();
+        if (state == MF_STREAM_STATE_STOPPED) return Stop();
+        return MF_E_INVALID_STATE_TRANSITION; // Camera stream has no pause.
     }
     STDMETHOD(GetStreamState)(MF_STREAM_STATE* state) override {
         if (!state) return E_POINTER;
@@ -134,10 +138,12 @@ public:
             running_ = false;
             return E_OUTOFMEMORY;
         }
+        streamState_ = MF_STREAM_STATE_RUNNING;
         return queue_->QueueEventParamVar(MEStreamStarted, GUID_NULL, S_OK, nullptr);
     }
     HRESULT Stop() {
         const bool wasRunning = running_.exchange(false);
+        streamState_ = MF_STREAM_STATE_STOPPED;
         if (worker_.joinable()) worker_.join();
         {
             std::lock_guard<std::mutex> guard(tokensMutex_);
