@@ -227,18 +227,42 @@ registering the DLL. **This is NOT an installed or verified camera**.
 Never register a third-party source with the reserved AvCam CLSID.
 The controller uses CurrentUser/Session scope and calls Shutdown on exit.
 
-**Remaining release gate:** finish validating the new experimental
-IMFMediaSource/IMFMediaStream COM DLL, and address a critical transport
-boundary: the existing `Local\\AvCamRouterObsV2` shared mapping is
-scoped to the publisher's Windows login session. Windows Camera Frame
-Server may host the Media Foundation source in a different session
-and therefore cannot be assumed to open it. A securely scoped,
-cross-session processed-frame IPC bridge (or a verified equivalent)
-is required before installation. Then review a reversible COM installer
-and verify actual live samples in Windows Camera and Chrome.
-Only after this, with RAW still intact for Deep Live Cam, is a separate
-AvCam virtual camera eligible for a first functional release.
-The original-physical-C270-in-Chrome requirement remains unresolved.
+**Cross-session OBS pipe now implemented and validated in Windows CI:**
+`AvCamMfObsPipeBridge.exe` is an explicitly launched user-mode process.
+It subscribes only to the OBS channel of IPC V2, converts BGRA into
+1280x720 NV12, and delivers the frames through a Windows named pipe.
+The Media Foundation COM source consumes the NV12 pipe instead of
+trying to open a `Local\AvCamRouterObsV2` mapping from session 0.
+
+The pipe has an explicit DACL granting the launching user full control
+and LocalService / SYSTEM read access, and rejects remote clients.
+The server requires its first named-pipe instance to avoid silently
+joining a competing server. Raw Logitech IPC is never opened or sent.
+The test `AvCamMfPipeSmoke.exe` starts a separate broker process,
+verifies no RAW leaks without OBS, then validates the received NV12
+pixels and eight frames after OBS becomes available.
+
+Optional preview-only developer invocation, from the diagnostic archive:
+
+~~~powershell
+.\AvCam-Start.cmd -MfPipe
+~~~
+
+The launcher starts and owns the pipe broker process only when `-MfPipe`
+is specified, and closes it when the preview exits. Normal preview
+does not expose processed video through the service-readable pipe.
+The experimental COM DLL is **not installed or registered**. Starting
+this bridge alone does not create a virtual camera visible to Chrome.
+
+**Remaining release gates:** verify LocalService / Camera Frame Server
+access from the actual session-0 Windows service (CI only proves a
+cross-process exchange within one user session), audit pipe-server
+identity and installation ACLs against pipe squatting, introduce a
+reviewed and reversible Windows COM installation path, and confirm
+real samples in Windows Camera and Chrome on the user's Windows 11.
+The original physical Logitech endpoint remains unchanged. Selecting
+that exact endpoint in Chrome while showing per-app video remains
+a separate unsolved requirement.
 
 Microsoft documents: https://learn.microsoft.com/en-us/windows/win32/api/mfvirtualcamera/nf-mfvirtualcamera-mfcreatevirtualcamera
 Microsoft reference sample: https://github.com/microsoft/Windows-Camera/tree/master/Samples/VirtualCamera
