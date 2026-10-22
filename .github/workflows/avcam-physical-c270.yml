@@ -310,8 +310,18 @@ jobs:
               $softwarePreflight -notmatch '^AVCAM_MF_VIRTUAL_CAMERA_API=[01] media_source_registered=0 current_user_only=1$') {
             throw "Win11 software camera preflight must fail closed without registered COM source"
           }
-          & $softwareCamera --session
+          # A real Windows 11 Frame Server hang was reported by WER.
+          # Refuse live session without a distinct risk-acknowledgement flag,
+          # regardless of whether COM registration exists.
+          $quarantined = @(& $softwareCamera --session 2>&1)
+          $quarantined | ForEach-Object { Write-Host $_ }
+          if ($LASTEXITCODE -ne 2 -or
+              $quarantined -notmatch 'AVCAM_SOFTWARE_CAMERA_FRAMESERVER_HANG_QUARANTINED') {
+            throw 'Windows camera live session must be quarantined after the Frame Server hang'
+          }
+          & $softwareCamera --session --accept-unstable-frame-server
           if ($LASTEXITCODE -ne 6) { throw 'Software camera session created without registered COM source' }
+          Write-Host 'AVCAM_WIN11_FRAMESERVER_HANG_QUARANTINE_PASS'
           & $softwareCamera --invalid
           if ($LASTEXITCODE -ne 2) { throw 'Software camera CLI accepted invalid arguments' }
           Write-Host 'AVCAM_WIN11_SOFTWARE_CAMERA_CONTROLLER_PREFLIGHT_PASS'
