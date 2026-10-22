@@ -34,12 +34,16 @@ public:
         stop_.store(true);
         if (thread_.joinable()) thread_.join();
         connected_.store(false);
+        lastFrameMs_.store(0);
     }
 
     bool Connected() const noexcept { return connected_.load(); }
     std::uint64_t Frames() const noexcept { return frames_.load(); }
     std::uint64_t Reconnects() const noexcept { return reconnects_.load(); }
     std::uint64_t PublishFailures() const noexcept { return failures_.load(); }
+    // Time of the most recently completed OBS frame in steady-clock milliseconds.
+    // Zero means disconnected, stopped, or no frame has arrived yet.
+    std::uint64_t LastFrameMs() const noexcept { return lastFrameMs_.load(); }
 
 private:
     static std::uint64_t NowMs() noexcept {
@@ -75,6 +79,7 @@ private:
             std::uint64_t sourceTimestamp = 0;
             if (!source.ReadFrame(frame.data(), frame.size(), sourceTimestamp)) {
                 connected_.store(false);
+                lastFrameMs_.store(0);
                 source.Stop();
                 router_.DisconnectObs();
                 if (publisher_) publisher_->Invalidate();
@@ -91,9 +96,11 @@ private:
                 ++failures_;
                 break;
             }
+            lastFrameMs_.store(when);
         }
 
         connected_.store(false);
+        lastFrameMs_.store(0);
         source.Stop();
         router_.DisconnectObs();
         if (publisher_) publisher_->Invalidate();
@@ -105,6 +112,7 @@ private:
     std::atomic<bool> connected_{false};
     std::atomic<std::uint64_t> frames_{0};
     std::atomic<std::uint64_t> reconnects_{0};
+    std::atomic<std::uint64_t> lastFrameMs_{0};
     std::atomic<std::uint64_t> failures_{0};
     std::thread thread_;
 };
