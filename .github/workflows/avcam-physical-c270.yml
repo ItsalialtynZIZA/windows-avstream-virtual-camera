@@ -264,6 +264,40 @@ jobs:
           if ($LASTEXITCODE -ne 9) { throw 'IPC consumer invalid argument rejection failed' }
           & ./build/mock-fanout/Release/AvCamFeederIpcSourceTest.exe
           if ($LASTEXITCODE -ne 0) { throw "IPC V2 feeder frame integration failed: $LASTEXITCODE" }
+          # Exercise the ACTUAL packaged feeder, not only its source class,
+          # against a different Windows process publishing synthetic OBS.
+          # No AVStream driver, Logitech camera, or OBS Studio is needed.
+          $feederBinary = (Resolve-Path './build/mock-fanout/avcam-feeder/Release/AvCamFeeder.exe').Path
+          $fakeWriterBinary = (Resolve-Path './build/mock-fanout/Release/AvCamRouterIpcProcessTest.exe').Path
+          $sinkProbe = @(& $feederBinary --check-sink)
+          $sinkCode = $LASTEXITCODE
+          $sinkProbe | ForEach-Object { Write-Host $_ }
+          if ($sinkCode -ne 6 -or $sinkProbe -notcontains 'AVCAM_VIRTUAL_SINK_PRESENT=0 sink_interfaces=0') {
+            throw "Fresh Windows runner unexpectedly has a private AvCam sink: $sinkCode"
+          }
+          $fakeObs = $null
+          try {
+            $fakeObs = Start-Process -FilePath $fakeWriterBinary -ArgumentList @('--writer','obs','155') -PassThru -NoNewWindow
+            Start-Sleep -Milliseconds 650
+            $fakeObs.Refresh()
+            if ($fakeObs.HasExited) { throw "Synthetic OBS publisher exited: $($fakeObs.ExitCode)" }
+            $actualFeederProbe = @(& $feederBinary --source avcam-ipc-obs --check-source --seconds 3)
+            $actualFeederCode = $LASTEXITCODE
+            $actualFeederProbe | ForEach-Object { Write-Host $_ }
+            if ($actualFeederCode -ne 0) { throw "Real feeder IPC check failed: $actualFeederCode" }
+            $metrics = @($actualFeederProbe | Where-Object { $_ -match '^AVCAM_IPC_CHECK frames=([0-9]+)' })
+            if ($metrics.Count -ne 1) { throw 'Real feeder emitted no IPC metrics' }
+            if ($metrics[0] -notmatch '^AVCAM_IPC_CHECK frames=([0-9]+)' -or [int]$Matches[1] -lt 15) {
+              throw 'Real feeder received fewer than 15 distinct frames in 3 seconds'
+            }
+            Write-Host 'AVCAM_FEEDER_REAL_EXE_IPC_PROCESS_PASS'
+          } finally {
+            if ($fakeObs) {
+              $fakeObs.Refresh()
+              if (-not $fakeObs.HasExited) { Stop-Process -Id $fakeObs.Id -Force -ErrorAction SilentlyContinue }
+              $fakeObs.Dispose()
+            }
+          }
           # Spawn separate synthetic Windows publishers, kill one and restart
           # it while the consumer retains its read-only mapped view.
           $ipcProcessOutput = @(& ./build/mock-fanout/Release/AvCamRouterIpcProcessTest.exe --self-test)
