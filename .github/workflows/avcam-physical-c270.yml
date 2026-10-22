@@ -262,6 +262,24 @@ jobs:
           }
           & ./build/mock-fanout/Release/AvCamRouterIpcProbe.exe --invalid
           if ($LASTEXITCODE -ne 9) { throw 'IPC consumer invalid argument rejection failed' }
+          # Spawn separate synthetic Windows publishers, kill one and restart
+          # it while the consumer retains its read-only mapped view.
+          $ipcProcessOutput = @(& ./build/mock-fanout/Release/AvCamRouterIpcProcessTest.exe --self-test)
+          $ipcProcessExit = $LASTEXITCODE
+          $ipcProcessOutput | ForEach-Object { Write-Host $_ }
+          if ($ipcProcessExit -ne 0) {
+            throw "Cross-process IPC crash/restart regression failed: $ipcProcessExit"
+          }
+          foreach ($marker in @(
+            'AVCAM_IPC_PROCESS_CONCURRENT_OWNER_REJECTED=1',
+            'AVCAM_IPC_PROCESS_CRASH_RESTART_PASS',
+            'AVCAM_IPC_PROCESS_LIVE_READER_REATTACHED=1',
+            'AVCAM_IPC_PROCESS_RAW_SURVIVES_OBS_CRASH=1'
+          )) {
+            if ($ipcProcessOutput -notcontains $marker) {
+              throw "Cross-process IPC regression marker missing: $marker"
+            }
+          }
           & ./build/mock-fanout/Release/AvCamPreviewSelectionTest.exe
           if ($LASTEXITCODE -ne 0) { throw 'Preview source selection and freshness policy failed' }
           & ./build/mock-fanout/Release/AvCamAsyncObsWorkerTest.exe
@@ -416,7 +434,10 @@ jobs:
              To see actual video, open AvCamRouterPreview.exe
              or run .\\AvCamRouterPreview.exe --mode compare (side by side).
              --mode output prefers OBS with RAW fallback when unavailable.
-             These mappings are Local\\AvCamRouterRawV1 and Local\\AvCamRouterObsV1.
+             Use matching router/preview binaries from THIS artifact (IPC V2).
+             These mappings are Local\\AvCamRouterRawV2 and Local\\AvCamRouterObsV2.
+             --independent-obs with --continuous keeps RAW independent of OBS waits.
+             If upgrading from V1, close the old router before opening this one.
           6. Expected: AVCAM_PHYSICAL_C270_ROUTER_PASS.
              C270 RAW acquisition may fail if a camera app or negotiated
              capture format prevents simultaneous access. No driver changes.
