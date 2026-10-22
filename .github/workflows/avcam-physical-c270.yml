@@ -271,6 +271,11 @@ jobs:
           $mfSourceDll = (Resolve-Path './build/mock-fanout/Release/AvCamMfSource.dll').Path
           & ./build/mock-fanout/Release/AvCamMfSourceSmoke.exe $mfSourceDll
           if ($LASTEXITCODE -ne 0) { throw "Unregistered camera COM DLL activation and lifecycle failed: $LASTEXITCODE" }
+          # Regression for 0xC00D3E85 on real Windows: IMFMediaSource must
+          # stay usable after its IMFActivate wrapper is released.
+          & ./build/mock-fanout/Release/AvCamMfActivationLifetimeSmoke.exe $mfSourceDll
+          if ($LASTEXITCODE -ne 0) { throw "Media Foundation activation/source lifetime regression failed: $LASTEXITCODE" }
+          Write-Host 'AVCAM_MF_ACTIVATION_LIFETIME_WINDOWS_ACCEPTANCE_PASS'
           $pipeBridge = (Resolve-Path './build/mock-fanout/Release/AvCamMfObsPipeBridge.exe').Path
           & ./build/mock-fanout/Release/AvCamMfPipeSmoke.exe $pipeBridge
           if ($LASTEXITCODE -ne 0) { throw "OBS-only cross-session pipe process test failed: $LASTEXITCODE" }
