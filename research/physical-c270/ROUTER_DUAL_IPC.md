@@ -87,9 +87,35 @@ backoff. Status logs include the OBS worker's frame and reconnect counters.
 An independent camera-free test uses a deliberately delayed synthetic OBS
 source to verify that RAW routing proceeds and reconnection does not alter
 RAW samples. This option does not guarantee the physical source's frame rate
-when other local processes contend for USB, CPU, or memory resources. The
-actual independent-mode throughput on the owner's Windows 11 is still
-unverified; the previously tested baseline does not require repeating.
+when other local processes contend for USB, CPU, or memory resources.
+
+### Owner's Windows 11 acceptance log (2026-10-22)
+
+The owner ran the **independent** mode on the main Windows 11 PC, with
+`--continuous --independent-obs --publish-ipc`, and reported:
+
+```text
+AVCAM_IPC_CHANNELS=RAW,OBS
+AVCAM_OBS_INDEPENDENT_WORKER=1
+AVCAM_ROUTER_MODE=CONTINUOUS
+AVCAM_ROUTER_STATUS raw=151 obs=151 obs_connected=1 reconnects=0
+AVCAM_ROUTER_STATUS raw=302 obs=302 obs_connected=1 reconnects=0
+```
+
+These cumulative counts indicate roughly 30 frames per second over the
+two five-second status periods, with neither an OBS disconnection nor
+reconnection reported. The user also previously confirmed the separate
+RAW/OBS preview works. **This does not establish zero dropped frames,
+the pixel contents of this specific run, or Chrome substitution through
+the original physical C270 endpoint.**
+
+The subsequent router build adds periodic `raw_fps` and `obs_fps`
+rates, `obs_fresh` (frame timestamp no older than 2000 ms, together
+with connection state), and `obs_age_ms` (steady-clock milliseconds
+since the last successful processed frame, or -1 when unavailable).
+The freshness clock resets on OBS source loss and worker stop.
+All counters and freshness checks are read-only diagnostics; they do
+not alter or redirect captured samples.
 
 ## Live video preview (independent Windows application)
 
