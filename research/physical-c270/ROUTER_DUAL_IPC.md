@@ -203,6 +203,49 @@ independence, OBS invalidation and recovery; it is executed by Windows CI.
 It does **not** test real hardware or prove a working Chrome physical C270
 substitution.
 
+## IPC V2 to existing AvCam AVStream virtual camera feeder
+
+The original repository already includes a **separate** experimental AVStream
+virtual camera `AvCam Virtual Camera` and the user-mode `AvCamFeeder.exe`.
+The feeder now accepts RAW/OBS Router **IPC V2** as direct input instead of
+reopening OBS using Media Foundation or DirectShow.
+
+With the router already running, use one of:
+
+```powershell
+.\AvCamFeeder.exe --source avcam-ipc-obs
+.\AvCamFeeder.exe --source avcam-ipc-output
+.\AvCamFeeder.exe --source avcam-ipc-raw
+```
+
+- `avcam-ipc-obs` reads processed OBS only; **never** substitutes RAW.
+- `avcam-ipc-output` prefers processed OBS and uses RAW only on explicit
+  OBS disconnect or after processed frames become stale (over 2000 ms).
+  It deliberately does not substitute RAW during normal intervals between
+  live OBS frames.
+- `avcam-ipc-raw` reads the original physical RAW channel only.
+
+The feeder takes the latest complete BGRA frame from shared memory, converts
+the captured monotonic timestamp from milliseconds to 100-nanosecond units
+for its existing KS transport, then submits it through the pre-existing
+`GUID_DEVINTERFACE_AVCAM_FRAME_SINK` private AVStream producer interface.
+
+This is an **opt-in output bridge**. It can deliver to the repository's
+AvCam virtual camera only if that **distinct test camera driver is already
+properly installed and operational**. The no-install diagnostic package
+includes the feeder executable but **does not register or install the
+test-signed AVStream kernel driver**. Without a compatible existing AvCam
+sink, the feeder waits rather than touching other devices. Neither mode
+changes the original Logitech endpoint or achieves Chrome-specific
+substitution. The test-signed driver has **not** been verified end-to-end on
+the owner's main Windows machine, so the full Windows Camera/Chrome output
+is not claimed as achieved.
+
+Camera-independent CI regression `AvCamFeederIpcSourceTest` confirms
+processed-only isolation, absence of inter-frame RAW flashes, explicit
+fallback, stale frame rejection and restart session handling. It does not
+validate a registered AVStream kernel camera.
+
 ## Critical limitation
 
 RAW and OBS images are now accessible to separate AvCam consumers when
