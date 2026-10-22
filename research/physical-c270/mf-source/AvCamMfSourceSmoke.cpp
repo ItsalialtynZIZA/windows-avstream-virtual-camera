@@ -117,7 +117,8 @@ int wmain(int argc, wchar_t** argv) {
                                 MF_STREAM_STATE streamState{};
                                 if (SUCCEEDED(hr))
                                     hr = stream2->GetStreamState(&streamState);
-                                if (FAILED(hr)) result = 22;
+                                if (FAILED(hr) || streamState != MF_STREAM_STATE_RUNNING)
+                                    result = 22;
                             }
                         }
                         if (result == 0 && FAILED(source->Stop())) result = 16;
