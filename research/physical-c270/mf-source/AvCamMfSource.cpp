@@ -61,6 +61,11 @@ public:
         IMFMediaType* types[] = {type};
         hr = MFCreateStreamDescriptor(0, 1, types, desc_.GetAddressOf());
         if (FAILED(hr)) return hr;
+        ComPtr<IMFMediaTypeHandler> handler;
+        hr = desc_->GetMediaTypeHandler(handler.GetAddressOf());
+        if (FAILED(hr)) return hr;
+        hr = handler->SetCurrentMediaType(type);
+        if (FAILED(hr)) return hr;
         // Advertise capture output to Windows camera enumeration.
         hr = desc_->SetGUID(MF_DEVICESTREAM_STREAM_CATEGORY, PINNAME_VIDEO_CAPTURE);
         if (FAILED(hr)) return hr;
