@@ -20,8 +20,7 @@
 #include <mutex>
 #include <thread>
 #include <vector>
-#include "AvCamMfColor.h"
-#include "../AvCamRouterIpc.h"
+#include "AvCamMfPipe.h"
 
 using Microsoft::WRL::ComPtr;
 using Microsoft::WRL::Make;
@@ -150,25 +149,20 @@ public:
     }
 private:
     void PumpObs() noexcept {
-        // Media Foundation frame-server may be in a separate Windows session.
-        // IPC V2 currently uses Local namespace. If it is inaccessible,
-        // no frames are fabricated or read from the physical RAW mapping.
-        avcam::ipc::Subscriber obs;
-        avcam::ipc::Cursor cursor{};
-        std::vector<std::uint8_t> nv12(avcam::mfcolor::Nv12Bytes);
+        // Camera Frame Server runs as LocalService in session 0. The
+        // interactive user's Local\ IPC mapping cannot be reached there.
+        // ONLY read NV12 from the ACL-protected cross-session OBS pipe.
+        // No Logitech device or RAW mapping is opened in this service.
+        avcam::mfpipe::Reader reader;
         while (running_) {
-            if (!obs.Attached() && !obs.Start(avcam::ipc::Channel::Obs)) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            avcam::mfpipe::Frame frame;
+            if (!reader.Next(frame)) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(35));
                 continue;
             }
-            avcam::ipc::Snapshot frame;
-            if (!obs.TryRead(frame, cursor)) {
-                std::this_thread::sleep_for(std::chrono::milliseconds(3));
+            if (!Fresh(NowMs(), frame.header.capturedMs) ||
+                frame.nv12.size() != avcam::mfpipe::PayloadBytes)
                 continue;
-            }
-            cursor = frame.Position();
-            if (!Fresh(NowMs(), frame.capturedMs) ||
-                frame.bgra.size() != avcam::mfcolor::BgraBytes) continue;
 
             ComPtr<IUnknown> token;
             {
@@ -177,20 +171,20 @@ private:
                 token = pending_.front();
                 pending_.pop_front();
             }
-            if (!avcam::mfcolor::Convert(frame.bgra.data(), frame.bgra.size(),
-                                         nv12.data(), nv12.size())) continue;
             ComPtr<IMFMediaBuffer> buffer;
             HRESULT hr = MFCreateMemoryBuffer(
-                static_cast<DWORD>(nv12.size()), buffer.GetAddressOf());
+                static_cast<DWORD>(frame.nv12.size()), buffer.GetAddressOf());
             if (FAILED(hr)) continue;
             BYTE* target = nullptr;
-            DWORD max = 0;
-            hr = buffer->Lock(&target, &max, nullptr);
+            DWORD capacity = 0;
+            hr = buffer->Lock(&target, &capacity, nullptr);
             if (FAILED(hr)) continue;
-            if (max >= nv12.size()) std::memcpy(target, nv12.data(), nv12.size());
+            if (capacity >= frame.nv12.size())
+                std::memcpy(target, frame.nv12.data(), frame.nv12.size());
             buffer->Unlock();
-            if (max < nv12.size() ||
-                FAILED(buffer->SetCurrentLength(static_cast<DWORD>(nv12.size()))))
+            if (capacity < frame.nv12.size() ||
+                FAILED(buffer->SetCurrentLength(
+                    static_cast<DWORD>(frame.nv12.size()))))
                 continue;
             ComPtr<IMFSample> sample;
             if (FAILED(MFCreateSample(sample.GetAddressOf()))) continue;
@@ -202,7 +196,7 @@ private:
                 queue_->QueueEventParamUnk(
                     MEMediaSample, GUID_NULL, S_OK, sample.Get());
         }
-        obs.Stop();
+        reader.Close();
     }
     AvCamMfSource* owner_ = nullptr; // Broken during source shutdown.
     ComPtr<IMFMediaEventQueue> queue_;
