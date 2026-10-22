@@ -63,6 +63,34 @@ failure and 12 for a frame publishing failure. Without `--publish-ipc`, it
 does not create the two new mappings. With `--raw-only --publish-ipc`,
 only the RAW mapping is created.
 
+## Optional independent OBS reader
+
+Owner confirmed on Windows 11 (2026-10-22) that the existing AvCam Router
+preview works. That is a local application-space video validation, **not**
+physical Logitech endpoint substitution.
+
+The baseline router behavior remains unchanged. The additional
+`--independent-obs` flag starts OBS capture and reconnect handling on a
+dedicated worker thread; the original Logitech RAW acquisition loop no longer
+waits on the OBS shared-memory queue or NV12 decoding. The flag requires
+`--continuous` and cannot be combined with `--raw-only`.
+It works with the same optional IPC publisher:
+
+```powershell
+.\\AvCamRouterPhysicalRawObs.exe --continuous --independent-obs --publish-ipc
+```
+
+Run `AvCamRouterPreview.exe --mode compare` separately as before. The worker
+automatically invalidates the processed channel on OBS loss while the RAW
+publisher continues independently, and retries OBS with an interruptible
+backoff. Status logs include the OBS worker's frame and reconnect counters.
+An independent camera-free test uses a deliberately delayed synthetic OBS
+source to verify that RAW routing proceeds and reconnection does not alter
+RAW samples. This option does not guarantee the physical source's frame rate
+when other local processes contend for USB, CPU, or memory resources. The
+actual independent-mode throughput on the owner's Windows 11 is still
+unverified; the previously tested baseline does not require repeating.
+
 ## Live video preview (independent Windows application)
 
 The updated no-install artifact also contains `AvCamRouterPreview.exe`.
