@@ -203,6 +203,35 @@ independence, OBS invalidation and recovery; it is executed by Windows CI.
 It does **not** test real hardware or prove a working Chrome physical C270
 substitution.
 
+## Windows 11 user-mode software camera (experimental, distinct device)
+
+Microsoft documents `MFCreateVirtualCamera` on Windows 11 (build 22000+).
+It can create a CurrentUser, Session-lifetime separate software camera
+without the project's experimental kernel AVStream driver. It does NOT
+replace original physical Logitech C270 on a per-application basis.
+
+The new native `AvCamSoftwareCameraControl.exe --preflight` checks the
+Windows Media Foundation API and the reserved custom AvCam media-source
+COM registration. It does not create a device or open any video input.
+Missing registration returns 6 and reports `media_source_registered=0`.
+
+`--session` is an explicit developer-only session controller that requires
+the project's matching custom COM media source DLL to be registered.
+That DLL is NOT implemented in this version; the controller alone
+cannot produce frames. Do not register a third-party source with the
+reserved AvCam CLSID. The session uses CurrentUser/Session scope and
+calls Shutdown before exit, but is not a complete product.
+
+**Remaining release gate:** implement and validate a Windows 11 custom
+IMFMediaSource and IMFMediaStream server that reads only processed
+AvCam IPC V2 OBS frames; review a reversible COM installation path;
+then verify its activation and live frames in Windows Camera and Chrome.
+Only after this, with RAW still intact for Deep Live Cam, is a separate
+AvCam virtual camera eligible for a first functional release.
+The original-physical-C270-in-Chrome requirement remains unresolved.
+
+Microsoft documents: https://learn.microsoft.com/en-us/windows/win32/api/mfvirtualcamera/nf-mfvirtualcamera-mfcreatevirtualcamera
+Microsoft reference sample: https://github.com/microsoft/Windows-Camera/tree/master/Samples/VirtualCamera
 ## IPC V2 to existing AvCam AVStream virtual camera feeder
 
 The original repository already includes a **separate** experimental AVStream
