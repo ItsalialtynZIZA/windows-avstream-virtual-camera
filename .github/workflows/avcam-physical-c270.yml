@@ -247,6 +247,8 @@ jobs:
           Write-Host 'AVCAM_ROUTER_CLI_VALIDATION_PASSED'
           & ./build/mock-fanout/Release/AvCamRouterRunPolicyTest.exe
           if ($LASTEXITCODE -ne 0) { throw 'AvCam bounded run policy test failed' }
+          & ./build/mock-fanout/Release/AvCamRouterDiagnosticsTest.exe
+          if ($LASTEXITCODE -ne 0) { throw 'RAW/OBS fps and sample freshness regression failed' }
           & ./build/mock-fanout/Release/AvCamRouterIpcProbe.exe --self-test
           if ($LASTEXITCODE -ne 0) { throw 'Independent RAW/OBS IPC contract failed' }
           & ./build/mock-fanout/Release/AvCamRouterIpcProbe.exe --invalid
