@@ -1,0 +1,52 @@
+name: AvCam Chrome Route - extension MVP
+
+on:
+  push:
+    branches: [dev/manual-vhci]
+    paths:
+      - "research/physical-c270/chrome-route/**"
+      - ".github/workflows/avcam-chrome-route.yml"
+  workflow_dispatch:
+
+jobs:
+  test-and-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Validate manifest and expected permissions
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const m = require('./research/physical-c270/chrome-route/manifest.json');
+          if (m.manifest_version !== 3 ||
+              m.host_permissions !== undefined ||
+              m.permissions.includes('debugger') ||
+              m.permissions.includes('nativeMessaging') ||
+              m.permissions.includes('webRequest')) {
+            throw Error('Chrome bridge manifest is not site-consent-only');
+          }
+          console.log('AVCAM_CHROME_ROUTE_MANIFEST_PASS');
+          NODE
+      - name: Check JavaScript syntax
+        run: |
+          for f in research/physical-c270/chrome-route/*.js; do
+            node --check "$f"
+          done
+      - name: Run Chrome bridge tests
+        run: node --test research/physical-c270/chrome-route/tests/bridge.test.cjs
+      - name: Upload unpacked Chrome extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: AvCam-Chrome-Route-MVP
+          path: |
+            research/physical-c270/chrome-route/manifest.json
+            research/physical-c270/chrome-route/bridge.js
+            research/physical-c270/chrome-route/background.js
+            research/physical-c270/chrome-route/popup.html
+            research/physical-c270/chrome-route/popup.js
+            research/physical-c270/chrome-route/README.md
+          if-no-files-found: error
