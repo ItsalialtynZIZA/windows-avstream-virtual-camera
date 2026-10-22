@@ -429,7 +429,17 @@ class AvCamMfActivation final :
         Microsoft::WRL::ChainInterfaces<IMFActivate, IMFAttributes>> {
 public:
     AvCamMfActivation() { ++g_objects; }
-    ~AvCamMfActivation() override { ShutdownObject(); --g_objects; }
+    // Activation lifetime is not the activated IMFMediaSource lifetime.
+    // The Frame Server can release the activation wrapper and continue
+    // using the separately AddRef'd source. Do NOT Shutdown the source
+    // from this destructor, or subsequent calls return MF_E_SHUTDOWN.
+    ~AvCamMfActivation() override {
+        {
+            std::lock_guard<std::mutex> guard(mutex_);
+            source_.Reset();
+        }
+        --g_objects;
+    }
     HRESULT Initialize() { return MFCreateAttributes(attributes_.GetAddressOf(), 8); }
 
     STDMETHOD(ActivateObject)(REFIID iid, void** result) override {
