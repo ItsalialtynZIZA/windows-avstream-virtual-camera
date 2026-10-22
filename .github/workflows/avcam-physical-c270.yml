@@ -262,6 +262,8 @@ jobs:
           }
           & ./build/mock-fanout/Release/AvCamRouterIpcProbe.exe --invalid
           if ($LASTEXITCODE -ne 9) { throw 'IPC consumer invalid argument rejection failed' }
+          & ./build/mock-fanout/Release/AvCamFeederIpcSourceTest.exe
+          if ($LASTEXITCODE -ne 0) { throw "IPC V2 feeder frame integration failed: $LASTEXITCODE" }
           # Spawn separate synthetic Windows publishers, kill one and restart
           # it while the consumer retains its read-only mapped view.
           $ipcProcessOutput = @(& ./build/mock-fanout/Release/AvCamRouterIpcProcessTest.exe --self-test)
