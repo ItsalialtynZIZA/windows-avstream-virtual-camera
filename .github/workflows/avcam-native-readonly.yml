@@ -1,0 +1,49 @@
+name: AvCam Native Endpoint - read only
+
+on:
+  push:
+    branches: [dev/manual-vhci]
+    paths:
+      - "research/physical-c270/native-routing/**"
+      - ".github/workflows/avcam-native-readonly.yml"
+  workflow_dispatch:
+
+jobs:
+  read-only-topology:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PowerShell syntax and read-only static contract
+        shell: powershell
+        run: |
+          $path = 'research/physical-c270/native-routing/Inspect-AvCamPhysicalEndpoint.ps1'
+          $errors = $null
+          $tokens = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path $path).Path, [ref]$tokens, [ref]$errors)
+          if ($errors.Count -gt 0) { throw ($errors | Out-String) }
+          $source = Get-Content $path -Raw
+          foreach ($unsafe in @(
+              'Set-PnpDevice','Disable-PnpDevice','Enable-PnpDevice',
+              'Remove-PnpDevice','Stop-Service','Restart-Service',
+              'Set-ItemProperty','Remove-Item','New-ItemProperty',
+              'AvCamSoftwareCameraControl.exe','MFCreateVirtualCamera'
+          )) {
+              if ($source -match [regex]::Escape($unsafe)) {
+                  throw "Unexpected mutation/camera activation command: $unsafe"
+              }
+          }
+          Write-Host 'AVCAM_NATIVE_ENDPOINT_READ_ONLY_STATIC_PASS'
+      - name: Read Windows runner snapshot (no camera opened)
+        shell: powershell
+        run: |
+          $output = @(& 'research/physical-c270/native-routing/Inspect-AvCamPhysicalEndpoint.ps1')
+          if ($LASTEXITCODE -notin @(0, $null)) {
+              throw 'Read-only topology inspection failed'
+          }
+          $output | ForEach-Object { Write-Host $_ }
+          if ($output -notcontains 'AVCAM_NATIVE_PHYSICAL_ENDPOINT_READ_ONLY_PASS' -or
+              $output -notcontains 'AVCAM_STRICT_PER_CLIENT_PHYSICAL_ROUTE=NOT_PROVEN') {
+              throw 'Native read-only physical-route inspection contract failed'
+          }
