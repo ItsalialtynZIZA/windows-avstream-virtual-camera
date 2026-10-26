@@ -20,7 +20,7 @@ $folder = Join-Path $env:ProgramFiles 'AvCamDualCameraBuiltInLab'
 $installedDll = Join-Path $folder 'AvCamDualCameraDeviceMft.dll'
 $backupState = Join-Path $folder 'lab-install-state.json'
 
-function Get-PhysicalLogitech {
+function Get-BuiltInOutputCamera {
     return @(Get-PnpDevice -PresentOnly | Where-Object {
         $_.InstanceId -match '(?i)^USB\\VID_2B7E&PID_B685' -and
         $_.Status -eq 'OK' -and $_.Class -match '(?i)Camera|Image'
@@ -139,7 +139,7 @@ if ($Disable) {
     return
 }
 
-$physical = @(Get-PhysicalLogitech)
+$physical = @(Get-BuiltInOutputCamera)
 Write-Host "Healthy built-in USB2.0 camera devices: $($physical.Count)"
 foreach ($item in $physical) { Write-Host "$($item.FriendlyName) [$($item.InstanceId)]" }
 if ($physical.Count -ne 1) { throw 'Exactly one healthy built-in USB2.0 HD UVC camera is required' }
@@ -158,8 +158,6 @@ if (-not $Enable -and -not $Disable) {
 Test-Administrator
 if ([Environment]::OSVersion.Version.Build -lt 22000) { throw 'Windows 11 required.' }
 if (-not [Environment]::Is64BitProcess) { throw '64-bit PowerShell required.' }
-$other = @(Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -like 'USB\VID_046D&PID_0825*' -and $_.Class -eq 'Camera' -and $_.Status -eq 'OK' })
-if ($other.Count -ne 1) { throw 'Physical Logitech C270 capture camera not found. No changes made.' }
 if ($key.GetValue('CameraPostProcessingPluginCLSID', $null)) { throw 'Existing camera effect detected. No changes made.' }
 # Check that Logitech is a clean source before enabling MFT on the
 # other camera. A Device MFT on Logitech could cause a recursive OBS loop.
@@ -216,7 +214,7 @@ Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AvCamDualCameraDeviceMft.dll') 
 } | ConvertTo-Json | Set-Content -LiteralPath $backupState -Encoding UTF8
 $registerExit = Invoke-AvCamRegsvr32 -DllPath $installedDll
 if ($registerExit -ne 0) {
-    throw "COM registration failed ($registerExit). Physical Logitech registry was not changed. Use -Disable to clean up the partial attempt."
+    throw "COM registration failed ($registerExit). Built-in camera registry was not changed. Use -Disable to clean up the partial attempt."
 }
 try {
     New-ItemProperty -LiteralPath $key.PSPath -Name 'CameraDeviceMftClsid' -PropertyType String -Value $clsid -Force | Out-Null
