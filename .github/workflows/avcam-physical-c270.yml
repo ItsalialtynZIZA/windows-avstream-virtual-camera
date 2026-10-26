@@ -548,6 +548,7 @@ jobs:
           Copy-Item build/physical-c270/Release/AvCamPhysicalBridge.exe $out
           Copy-Item research/physical-c270/AvCamDualCameraMft.ps1 $out
           Copy-Item research/physical-c270/DUAL_CAMERA_RED_TRIAL.md $out
+          Copy-Item research/physical-c270/DUAL_CAMERA_MFT_LAB_README.md $out
           $dll = Join-Path $out 'AvCamDualCameraDeviceMft.dll'
           $sha = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
           "$sha  AvCamDualCameraDeviceMft.dll" | Set-Content -Path (Join-Path $out 'LAB_SHA256SUMS.txt') -Encoding ascii
@@ -555,12 +556,8 @@ jobs:
           $script = Join-Path $out 'AvCamDualCameraMft.ps1'
           [System.Management.Automation.Language.Parser]::ParseFile($script,[ref]$tokens,[ref]$errors) | Out-Null
           if ($errors.Count -gt 0) { throw "Lab installer parse failed: $errors" }
-          $status = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script)
-          $statusCode = $LASTEXITCODE
-          $status | ForEach-Object { Write-Host $_ }
-          if ($statusCode -ne 0 -or $status -notcontains 'PREFLIGHT_ONLY: physical Logitech driver/registry untouched.') {
-            Write-Host 'Lab status (no physical camera on CI) validated by syntax; use read-only status mode separately.'
-          }
+          # Never attempt camera enumeration/registration on camera-free CI.
+          # Without -DualCameraLab, the CLI must reject -Enable before PnP.
           $refusal = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Enable 2>&1)
           if ($LASTEXITCODE -eq 0) { throw 'Dual-camera lab enabled without explicit -DualCameraLab' }
           $global:LASTEXITCODE = 0
