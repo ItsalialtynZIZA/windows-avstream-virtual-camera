@@ -11,7 +11,7 @@ if ($Enable -and $Disable) { throw 'Choose -Enable OR -Disable' }
 # only to Chrome while preserving Deep Live Cam's raw sensor stream.
 # Keep preflight and rollback functional, but prohibit further opt-in installs.
 if ($Enable -and -not $DualCameraLab) {
-    throw 'Dual camera experiment requires the explicit -DualCameraLab flag; old global installer stays disabled.'
+    throw 'Use -Enable -DualCameraLab only on an explicitly authorized dual-camera test host.'
 }
 $clsid = '{1DE4C92F-A801-45BB-9D5A-74723A8EF460}'
 $cameraClass = '{E5323777-F976-4F5B-9B55-B94699C46E44}'
@@ -156,88 +156,30 @@ if (-not $Enable -and -not $Disable) {
     return
 }
 Test-Administrator
-if ([Environment]::OSVersion.Version.Build -lt 22000 -or -not [Environment]::Is64BitProcess) {
-    throw 'Dual-camera lab requires Windows 11 x64.'
-}
-$builtIn = @(Get-PnpDevice -PresentOnly | Where-Object {
-    $_.InstanceId -like 'USB\VID_2B7E&PID_B685*' -and
-    $_.Class -match '(?i)Camera|Image' -and $_.Status -eq 'OK'
-})
-if ($builtIn.Count -ne 1) {
-    throw 'Dual-camera lab requires the independent built-in USB2.0 UVC camera. No changes made.'
-}
-if ($key.GetValue('CameraPostProcessingPluginCLSID', $null)) {
-    throw 'Existing postprocessor detected. Refusing to overwrite vendor extension.'
-}
+if ([Environment]::OSVersion.Version.Build -lt 22000) { throw 'Windows 11 required.' }
+if (-not [Environment]::Is64BitProcess) { throw '64-bit PowerShell required.' }
+$other = @(Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -like 'USB\VID_2B7E&PID_B685*' -and $_.Class -eq 'Camera' -and $_.Status -eq 'OK' })
+if ($other.Count -ne 1) { throw 'Separate built-in USB camera not found. No changes made.' }
+if ($key.GetValue('CameraPostProcessingPluginCLSID', $null)) { throw 'Existing camera effect detected. No changes made.' }
 $required = @('AvCamDualCameraDeviceMft.dll','LAB_SHA256SUMS.txt')
 foreach ($file in $required) {
     if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot $file) -PathType Leaf)) {
         throw "Missing experimental package component: $file"
     }
 }
-$labDll = Join-Path $PSScriptRoot 'AvCamDualCameraDeviceMft.dll'
-$manifestPath = Join-Path $PSScriptRoot 'LAB_SHA256SUMS.txt'
-$manifestLines = @(Get-Content -LiteralPath $manifestPath | Where-Object {
-    $_ -match '(?i)^[a-f0-9]{64}\s+AvCamDualCameraDeviceMft\.dll\s*
-    throw 'Existing Logitech Device MFT configuration detected; refusing third-party replacement.'
-}
-if (Test-Path -LiteralPath $backupState) {
-    throw "AvCam installation record exists: $backupState. Use -Disable first."
-}
-Write-Host 'Only the physical Logitech camera interface will be updated. No USB drivers changed.'
-Write-Host 'Experimental DLL may fail to load or stop camera streaming.'
-$ack = Read-Host 'Type ENABLE_DUAL_CAMERA_C270 to register the experimental camera transform'
-if ($ack -ne 'ENABLE_DUAL_CAMERA_C270') {
-    Write-Host 'Not enabled.'
-    return
-}
-New-Item -ItemType Directory -Path $folder -Force | Out-Null
-Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AvCamDualCameraDeviceMft.dll') -Destination $installedDll -Force
-@{
-    RegistryPath=$key.Name
-    Clsid=$clsid
-    Created=(Get-Date).ToString('o')
-} | ConvertTo-Json | Set-Content -LiteralPath $backupState -Encoding UTF8
-$registerExit = Invoke-AvCamRegsvr32 -DllPath $installedDll
-if ($registerExit -ne 0) {
-    throw "COM registration failed ($registerExit). Physical Logitech registry was not changed. Use -Disable to clean up the partial attempt."
-}
-try {
-    New-ItemProperty -LiteralPath $key.PSPath -Name 'CameraDeviceMftClsid' -PropertyType String -Value $clsid -Force | Out-Null
-    $verified = (Get-Item -LiteralPath $key.PSPath).GetValue('CameraDeviceMftClsid',$null)
-    if ($verified -ne $clsid) { throw 'Device MFT registry write not verified' }
-    Write-Host 'AVCAM_DUAL_CAMERA_C270_LAB_ENABLED'
-    Write-Host 'Logitech USB VID/PID and usbvideo.sys driver were not changed.'
-    Write-Host 'Close camera apps, start OBS Virtual Camera, then AvCamPhysicalBridge.exe as admin.'
-} catch {
-    Remove-ItemProperty -LiteralPath $key.PSPath -Name 'CameraDeviceMftClsid' -ErrorAction SilentlyContinue
-    $undoExit = Invoke-AvCamRegsvr32 -DllPath $installedDll -Unregister
-    if ($undoExit -ne 0) {
-        Write-Warning "Could not unregister AvCam COM class during rollback: $undoExit. Use -Disable."
-    }
-    throw
-}
-
-})
-if ($manifestLines.Count -ne 1) { throw 'LAB DLL checksum manifest is invalid.' }
-$expectedHash = ($manifestLines[0] -split '\s+')[0]
-if ((Get-FileHash -LiteralPath $labDll -Algorithm SHA256).Hash -ine $expectedHash) {
-    throw 'Lab DLL does not match its SHA-256 manifest. No changes made.'
-}
-Write-Warning 'DEVICE-WIDE effect: all consumers of Logitech C270 may see OBS-processed video.'
-Write-Warning 'Deep-Live-Cam MUST use the separate internal camera as its original source.'
-Write-Warning 'This does not change Logitech USB VID/PID, and does not prove sensor-origin content.'
-Write-Warning 'Experimental camera extension may destabilize Windows Camera FrameServer. Keep rollback access.'
+Write-Warning 'Lab affects ALL Logitech C270 consumers, not just Chrome. Deep-Live-Cam must use built-in camera.'
 if ($existing -or $chain) {
     throw 'Existing Logitech Device MFT configuration detected; refusing third-party replacement.'
 }
 if (Test-Path -LiteralPath $backupState) {
     throw "AvCam installation record exists: $backupState. Use -Disable first."
 }
+$hashManifest = ((Get-Content -LiteralPath (Join-Path $PSScriptRoot 'LAB_SHA256SUMS.txt') -TotalCount 1) -split ' ')[0]
+if ($hashManifest.Length -ne 64 -or (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'AvCamDualCameraDeviceMft.dll') -Algorithm SHA256).Hash -ine $hashManifest) { throw 'Lab DLL SHA256 manifest mismatch.' }
 Write-Host 'Only the physical Logitech camera interface will be updated. No USB drivers changed.'
 Write-Host 'Experimental DLL may fail to load or stop camera streaming.'
-$ack = Read-Host 'Type ENABLE_DUAL_CAMERA_C270 to register the experimental camera transform'
-if ($ack -ne 'ENABLE_DUAL_CAMERA_C270') {
+$ack = Read-Host 'Type ENABLE_DUAL_CAMERA_C270 to register this device-wide experimental transform'
+if ($ack -cne 'ENABLE_DUAL_CAMERA_C270') {
     Write-Host 'Not enabled.'
     return
 }
