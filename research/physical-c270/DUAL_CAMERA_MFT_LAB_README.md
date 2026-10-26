@@ -64,6 +64,26 @@ cd C:\AvCam-Dual-Lab
 
 The rollback reads its saved exact physical Logitech interface path and removes only its own `CameraDeviceMftClsid`. It does not require a functioning/connected Logitech. Unregistration leaves the recovery record in place if COM cleanup fails; **do not delete it manually**. Close/reopen camera clients, or reboot if the Frame Server still has the prior DLL loaded. The bridge alone can be stopped with `Ctrl+C`, after which stale JPEG expires and the transform should pass through Logitech RAW.
 
+## Chrome resolution regression observed on second laptop (2026-10-26)
+
+User reported that Chrome's WebRTC resolution demo selecting the physical Logitech C270 delivers **physical RAW** for resolutions up to **640x480**, but **no video** at **1280x720** or greater. In the separate input-output demo, Chrome negotiated `Logi C270 HD WebCam (046d:0825)`, `live`, `muted=false`, 640x480@30. This establishes an enumerated physical webcam, not OBS replacement. A 720p blank display does not distinguish Chromium's capture startup failure from a Device MFT rejection/mismatch.
+
+A Chromium issue filed August 26, 2026 documents a similar failure on some USB2 UVC webcams when the MediaFoundation D3D11 capture pathway selects uncompressed NV12 at larger resolutions: https://issues.chromium.org/issues/552881780. It is **only a hypothesis for this host**, not a confirmed C270 root cause.
+
+### Non-invasive A/B test
+
+Open a separate disposable Chrome profile with only `MediaFoundationD3D11VideoCapture` disabled for that process. Do **not** disable Windows Frame Server, re-register MFT, replace USB camera INF, or expand the MFT to other formats blindly. With the normal OBS bridge still active, compare VGA vs HD/720p in both regular Chrome and the test profile. Do not reuse the ordinary Chrome profile for this experiment.
+
+If 720p now works only in the isolated Chrome profile, this implicates a browser capture/backend mode; it **does not by itself prove OBS replacement**. If 720p still fails, collect MFT ETW with:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\AvCamPhysicalCaptureEtw.ps1 -Target ChromeWebRTC -Seconds 35
+```
+
+The script uses a bounded named `logman` trace, stops it in `finally`, and prints queue subtype/dimensions and whether `SampleReplaced` or `SampleSkipped` appeared. It does not log camera pixels. On Windows, MFT ETW events may be unavailable even if a transform runs, so zero records is inconclusive.
+
+**Do not claim the original Logitech has begun emitting OBS from the real USB sensor.** Processing is device-scoped inside the Windows capture pipeline, downstream of the sensor.
+
 ## Exit criteria
 
 Mark `CHROME_PHYSICAL_C270_OBS_PASS` only if (1) Chrome itself selects the original physical C270, (2) its pixels visibly track changes in OBS, (3) Deep-Live-Cam is still using the independent built-in camera, (4) stopping OBS/bridge falls back to RAW without hang, and (5) rollback restores stock behavior.
