@@ -39,6 +39,18 @@ This script **never** installs a driver, registers a COM class, writes registry 
 4. Confirm the OBS pane shows red. Verify the left **RAW Logitech** pane remains live and unchanged.
 5. Restore the previous OBS scene and verify OBS IPC resumes. This validates only the application-space routing and fallback, **not** MFT insertion or Chrome C270 output.
 
+## Stage R1b — deterministic red MJPEG transport (implemented in C++)
+
+The new `AvCamPhysicalBridge.exe --red-test` emits 90 valid 1280x720 red JPEG frames over approximately three seconds. It requires neither OBS nor any camera device. Unlike the normal publisher, the red test uses an **isolated** `Local\\AvCamRedMjpegDiagnosticV1` mapping and a separate named mutex. No installed physical C270 Device MFT can subscribe to that diagnostic name. It never starts a camera capture, modifies the physical Logitech driver, registers COM, or alters browser settings.
+
+From the matching *new CI artifact* containing `AvCamPhysicalBridge.exe`:
+
+```powershell
+.\AvCamPhysicalBridge.exe --red-test
+```
+
+Expected line: `AVCAM_RED_MJPEG_TRANSPORT_PASS frames=90 ... camera_modified=0`. If OBS IPC is working and the physical Device MFT is absent, this test establishes only the JPEG frame publication path, **not** that Chrome receives synthetic red through the original physical C270 endpoint. CI executes this red publisher on camera-free Windows runners.
+
 ## Stage R2 — native physical C270 transform (blocked pending separate implementation/review)
 
 The existing `AvCamPhysicalInstall.ps1 -Enable` remains deliberately disabled, and `AvCamMftBuildSafety.h` rejects `AVCAM_EXPERIMENTAL_UNSCOPED_MFT_REPLACEMENT` at compile time. Do **not** remove those guards or invoke obsolete RC3 install scripts merely because the input cameras are now physically separate.
