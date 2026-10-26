@@ -51,6 +51,23 @@ From the matching *new CI artifact* containing `AvCamPhysicalBridge.exe`:
 
 Expected line: `AVCAM_RED_MJPEG_TRANSPORT_PASS frames=90 ... camera_modified=0`. If OBS IPC is working and the physical Device MFT is absent, this test establishes only the JPEG frame publication path, **not** that Chrome receives synthetic red through the original physical C270 endpoint. CI executes this red publisher on camera-free Windows runners.
 
+## Stage R1c — live window-capture MJPEG (implemented, pending hardware run)
+
+We no longer need to use the red scene as the first **live video** test. The new `AvCamPhysicalBridge.exe --obs-test` receives real output from the OBS virtual-camera queue (including a Deep Live Cam window-capture scene), converts NV12 -> BGRA -> MJPEG, and publishes up to 90 frames to **isolated** `Local\\AvCamObsMjpegDiagnosticV1` memory. A read-only sample hash tracks whether image contents change. The mode does NOT register the physical C270 Device MFT or make Chrome show OBS through the physical C270.
+
+On the second laptop:
+
+1. Start OBS Virtual Camera first, then Deep Live Cam. Ensure the OBS program scene shows the live window capture.
+2. Download the newly built `AvCam-Physical-C270-RC3` CI artifact for this change. Extract a **separate directory** and use only `AvCamPhysicalBridge.exe`; do **not** run `AvCamSetup.cmd`, `AvCamPhysicalInstall.ps1`, or other legacy driver/COM installer scripts.
+3. In PowerShell in that directory, run:
+   ```powershell
+   .\\AvCamPhysicalBridge.exe --obs-test
+   ```
+4. Expect `AVCAM_OBS_MJPEG_LIVE_PASS frames=90 changed=N fps=... camera_modified=0`; confirm `changed > 0` by moving the live picture in OBS. An unchanged picture can still be successfully encoded; `changed=0` means the motion part was not proven.
+5. After the test, use Windows Camera to verify that the unchanged physical Logitech C270 still shows its own sensor; the test never opens it.
+
+This isolates capture/window ingestion + MJPEG encoding from a future device-scoped MFT. Any statement that the physical C270 endpoint itself outputs OBS requires a separate real Chrome/Windows Camera acceptance test and a carefully reviewed, reversible installation path.
+
 ## Stage R2 — native physical C270 transform (blocked pending separate implementation/review)
 
 The existing `AvCamPhysicalInstall.ps1 -Enable` remains deliberately disabled, and `AvCamMftBuildSafety.h` rejects `AVCAM_EXPERIMENTAL_UNSCOPED_MFT_REPLACEMENT` at compile time. Do **not** remove those guards or invoke obsolete RC3 install scripts merely because the input cameras are now physically separate.
