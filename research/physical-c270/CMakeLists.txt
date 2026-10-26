@@ -32,6 +32,14 @@ add_library(AvCamPhysicalDeviceMft SHARED ${dmft_paths})
 target_include_directories(AvCamPhysicalDeviceMft PRIVATE
   "${sample}" "${base}" "${MICROSOFT_WIL_INCLUDE}")
 target_compile_features(AvCamPhysicalDeviceMft PRIVATE cxx_std_17)
+# Never enable device-wide sample replacement in the default shipped build.
+# A separate opt-in lab build must be packaged and installed by its dedicated,
+# reversible two-camera tool. It affects ALL consumers of the physical C270.
+option(AVCAM_DUAL_CAMERA_LAB "Build experimental device-wide C270 output for a separate internal capture camera" OFF)
+if(AVCAM_DUAL_CAMERA_LAB)
+  target_compile_definitions(AvCamPhysicalDeviceMft PRIVATE AVCAM_DUAL_CAMERA_LAB_MFT)
+  set_target_properties(AvCamPhysicalDeviceMft PROPERTIES OUTPUT_NAME "AvCamDualCameraDeviceMft")
+endif()
 # The physical C270 is now shared by Deep Live Cam and Chrome using
 # Windows 11 25H2 Multi-app camera mode. A Device MFT is device-scoped;
 # unscoped OBS replacement risks processing Deep Live Cam's input and looping.
