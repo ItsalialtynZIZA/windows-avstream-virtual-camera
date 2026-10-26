@@ -437,6 +437,12 @@ jobs:
           & ./build/physical-c270/Release/AvCamPhysicalBridge.exe --self-test
           if ($LASTEXITCODE -ne 0) { throw "Bridge mapping restart selftest failed with $LASTEXITCODE" }
           Write-Host 'AVCAM_C270_BRIDGE_RESTART_SELFTEST_CI_PASSED'
+      - name: Bounded solid-red MJPEG publisher without webcam, OBS, or MFT
+        shell: powershell
+        run: |
+          & ./build/physical-c270/Release/AvCamPhysicalBridge.exe --red-test
+          if ($LASTEXITCODE -ne 0) { throw "Red MJPEG transport test failed with $LASTEXITCODE" }
+          Write-Host 'AVCAM_RED_MJPEG_TRANSPORT_CI_PASS'
       - name: Validate scripts and prepare owner-only opt-in package
         shell: pwsh
         run: |
