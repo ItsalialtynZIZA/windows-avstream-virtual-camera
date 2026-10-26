@@ -174,6 +174,12 @@ if ($existing -or $chain) {
 if (Test-Path -LiteralPath $backupState) {
     throw "AvCam installation record exists: $backupState. Use -Disable first."
 }
+if (Test-Path -LiteralPath ("Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Classes\CLSID\" + $clsid)) {
+    throw 'Existing COM registration uses the reserved AvCam CLSID. Refusing to overwrite.'
+}
+if (Test-Path -LiteralPath $installedDll) {
+    throw 'Existing lab DLL present. Refusing a second install; review rollback state.'
+}
 $hashManifest = ((Get-Content -LiteralPath (Join-Path $PSScriptRoot 'LAB_SHA256SUMS.txt') -TotalCount 1) -split ' ')[0]
 if ($hashManifest.Length -ne 64 -or (Get-FileHash -LiteralPath (Join-Path $PSScriptRoot 'AvCamDualCameraDeviceMft.dll') -Algorithm SHA256).Hash -ine $hashManifest) { throw 'Lab DLL SHA256 manifest mismatch.' }
 Write-Host 'Only the physical Logitech camera interface will be updated. No USB drivers changed.'
