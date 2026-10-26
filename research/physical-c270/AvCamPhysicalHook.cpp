@@ -159,11 +159,12 @@ bool AvCamReplaceMjpegSample(const void* queue, IMFSample* original,
                              IMFSample** replacement) {
     if (!replacement || !original) return false;
     *replacement = nullptr;
-    // Windows 11 multi-app capture shares the physical camera across clients.
-    // This MFT is device-scoped, not Chrome-scoped. Until the original-input
-    // protection and per-client isolation are proven, never replace frames
-    // in a production build. Experimental builds must explicitly opt in.
-#ifndef AVCAM_EXPERIMENTAL_UNSCOPED_MFT_REPLACEMENT
+    // Default release: always preserve physical samples. The separate
+    // explicitly built DUAL-CAMERA LAB variant may replace C270 frames
+    // device-wide. Deep-Live-Cam MUST source its input from a distinct
+    // built-in webcam. This does NOT distinguish Chrome from other C270
+    // consumers or make processed pixels authentic sensor evidence.
+#ifndef AVCAM_DUAL_CAMERA_LAB_MFT
     // A Device MFT operates on the shared camera pipeline. This is NOT
     // authenticated per-consumer evidence, regardless of which process
     // later requests the camera. Keep Chrome and Deep Live Cam raw.
@@ -240,5 +241,5 @@ bool AvCamReplaceMjpegSample(const void* queue, IMFSample* original,
     if (replacements <= 3 || replacements % 300 == 0)
         TraceRaw(L"SampleReplaced: fresh OBS MJPEG frame supplied to Device MFT");
     return true;
-#endif // AVCAM_EXPERIMENTAL_UNSCOPED_MFT_REPLACEMENT
+#endif // AVCAM_DUAL_CAMERA_LAB_MFT
 }
