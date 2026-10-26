@@ -68,6 +68,19 @@ On the second laptop:
 
 This isolates capture/window ingestion + MJPEG encoding from a future device-scoped MFT. Any statement that the physical C270 endpoint itself outputs OBS requires a separate real Chrome/Windows Camera acceptance test and a carefully reviewed, reversible installation path.
 
+## Actual second-laptop OBS Window Capture result (operator report, 2026-10-26)
+
+Command executed from `C:\AvCam-LiveTest`:
+
+```text
+AvCamPhysicalBridge.exe --obs-test
+AVCAM_OBS_MJPEG_LIVE_PASS frames=90 changed=30 fps=30.48 camera_modified=0
+```
+
+**Live OBS Window Capture -> MJPEG transport is now hardware-confirmed** on the second laptop. The `changed` count is a sampled-pixel motion indicator; it does not measure an exact source-specific unique-frame rate. This test uses the isolated diagnostic mapping and does **not** install/register the Logitech Device MFT, change its VID/PID, or establish Chrome receiving OBS through the original C270 physical device path.
+
+Next acceptance gate: inspect physical Logitech MFT registration and capture media-type negotiation; verify a reversible, explicitly approved device-scoped integration plan before modifying the Logitech camera stack. The old `AvCamPhysicalInstall.ps1 -Enable` remains blocked.
+
 ## Stage R2 — native physical C270 transform (blocked pending separate implementation/review)
 
 The existing `AvCamPhysicalInstall.ps1 -Enable` remains deliberately disabled, and `AvCamMftBuildSafety.h` rejects `AVCAM_EXPERIMENTAL_UNSCOPED_MFT_REPLACEMENT` at compile time. Do **not** remove those guards or invoke obsolete RC3 install scripts merely because the input cameras are now physically separate.
