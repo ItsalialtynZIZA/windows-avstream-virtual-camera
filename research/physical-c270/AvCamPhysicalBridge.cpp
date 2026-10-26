@@ -172,8 +172,11 @@ int wmain(int argc, wchar_t** argv) {
     // No camera configuration is changed by this switch.
     const bool waitForEnter =
         argc == 2 && wcscmp(argv[1], L"--wait-for-enter") == 0;
-    if (argc > 1 && !waitForEnter) {
-        std::puts("Usage: AvCamPhysicalBridge.exe [--self-test|--wait-for-enter]");
+    // Bounded, camera-free solid-red MJPEG transport test. Does not activate
+    // any device-specific MFT or make the physical Logitech output red.
+    const bool redTest = argc == 2 && wcscmp(argv[1], L"--red-test") == 0;
+    if (argc > 1 && !waitForEnter && !redTest) {
+        std::puts("Usage: AvCamPhysicalBridge.exe [--self-test|--wait-for-enter|--red-test]");
         return 2;
     }
     SetConsoleCtrlHandler(CtrlHandler, TRUE);
@@ -192,6 +195,43 @@ int wmain(int argc, wchar_t** argv) {
     }
     std::vector<unsigned char> bgra(AVCAM_FRAME_BYTES_BGRA32);
     std::vector<unsigned char> jpeg;
+    if (redTest) {
+        // BGRA, opaque, pure red. Encode once, publish at nominal 30 FPS.
+        // All data stays in our private mapping. No camera device is opened.
+        for (std::size_t index = 0; index < bgra.size(); index += 4) {
+            bgra[index] = 0;
+            bgra[index + 1] = 0;
+            bgra[index + 2] = 255;
+            bgra[index + 3] = 255;
+        }
+        if (!AvCamUde::EncodeBgraToMjpeg(wic.Get(), bgra.data(),
+                AVCAM_FRAME_WIDTH, AVCAM_FRAME_HEIGHT,
+                AVCAM_FRAME_STRIDE_BGRA32, jpeg) ||
+            jpeg.size() < 32 || jpeg.size() > AvCamPhysical::kCapacity ||
+            jpeg[0] != 0xff || jpeg[1] != 0xd8 ||
+            jpeg[jpeg.size() - 2] != 0xff || jpeg[jpeg.size() - 1] != 0xd9) {
+            std::puts("AVCAM_RED_MJPEG_ENCODE_FAILED");
+            CoUninitialize();
+            return 31;
+        }
+        for (unsigned count = 0; count < 90 && !g_stop.load(); ++count) {
+            if (!Publish(mapping, jpeg, GetTickCount64() * 10000ull)) {
+                std::puts("AVCAM_RED_MJPEG_PUBLISH_FAILED");
+                CoUninitialize();
+                return 32;
+            }
+            Sleep(33);
+        }
+        if (g_stop.load()) {
+            std::puts("AVCAM_RED_MJPEG_INTERRUPTED");
+            CoUninitialize();
+            return 33;
+        }
+        std::printf("AVCAM_RED_MJPEG_TRANSPORT_PASS frames=90 jpeg_bytes=%zu camera_modified=0\n",
+            jpeg.size());
+        CoUninitialize();
+        return 0;
+    }
     unsigned long long frames = 0;
     unsigned long long reconnects = 0;
     // A mapping may exist even when OBS Virtual Camera failed to start.
