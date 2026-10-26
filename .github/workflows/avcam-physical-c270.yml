@@ -431,6 +431,18 @@ jobs:
           cmake --build build/physical-c270 --config Release --parallel 4
           if ($LASTEXITCODE -ne 0) { throw 'Physical C270 compile failed' }
 
+      - name: Build isolated dual-camera Device MFT lab (not installed)
+        shell: pwsh
+        run: |
+          $sample = ((Resolve-Path upstream/avstream/sampledevicemft).Path -replace '\\', '/')
+          $wil = ((Resolve-Path upstream/packages/Microsoft.Windows.ImplementationLibrary.1.0.210204.1/include).Path -replace '\\', '/')
+          cmake -S research/physical-c270 -B build/physical-c270-lab -A x64 -DAVCAM_DUAL_CAMERA_LAB=ON -DMICROSOFT_DMFT_DIR="$sample" -DMICROSOFT_WIL_INCLUDE="$wil"
+          if ($LASTEXITCODE -ne 0) { throw 'Dual-camera lab configure failed' }
+          cmake --build build/physical-c270-lab --config Release --target AvCamPhysicalDeviceMft --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw 'Dual-camera lab DLL compilation failed' }
+          if (!(Test-Path ./build/physical-c270-lab/Release/AvCamDualCameraDeviceMft.dll)) { throw 'Dedicated lab DLL missing' }
+          Write-Host 'AVCAM_DUAL_CAMERA_MFT_LAB_BUILD_PASS_NO_REGISTRATION'
+
       - name: Windows bridge retained-mapping restart selftest
         shell: powershell
         run: |
@@ -525,6 +537,38 @@ jobs:
         with:
           name: AvCam-Physical-C270-RC3
           path: artifacts/AvCam-Physical-C270-RC3/
+          if-no-files-found: error
+
+      - name: Package separately gated physical C270 dual-camera laboratory
+        shell: pwsh
+        run: |
+          $out = 'artifacts/AvCam-Dual-Camera-Lab-x64'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item build/physical-c270-lab/Release/AvCamDualCameraDeviceMft.dll $out
+          Copy-Item build/physical-c270/Release/AvCamPhysicalBridge.exe $out
+          Copy-Item research/physical-c270/AvCamDualCameraMft.ps1 $out
+          Copy-Item research/physical-c270/DUAL_CAMERA_RED_TRIAL.md $out
+          $dll = Join-Path $out 'AvCamDualCameraDeviceMft.dll'
+          $sha = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
+          "$sha  AvCamDualCameraDeviceMft.dll" | Set-Content -Path (Join-Path $out 'LAB_SHA256SUMS.txt') -Encoding ascii
+          $tokens = $null; $errors = $null
+          $script = Join-Path $out 'AvCamDualCameraMft.ps1'
+          [System.Management.Automation.Language.Parser]::ParseFile($script,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { throw "Lab installer parse failed: $errors" }
+          $status = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script)
+          $statusCode = $LASTEXITCODE
+          $status | ForEach-Object { Write-Host $_ }
+          if ($statusCode -ne 0 -or $status -notcontains 'PREFLIGHT_ONLY: physical Logitech driver/registry untouched.') {
+            Write-Host 'Lab status (no physical camera on CI) validated by syntax; use read-only status mode separately.'
+          }
+          $refusal = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Enable 2>&1)
+          if ($LASTEXITCODE -eq 0) { throw 'Dual-camera lab enabled without explicit -DualCameraLab' }
+          $global:LASTEXITCODE = 0
+          Write-Host 'AVCAM_DUAL_CAMERA_LAB_FAIL_CLOSED_PASS'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AvCam-Dual-Camera-Lab-x64
+          path: artifacts/AvCam-Dual-Camera-Lab-x64/
           if-no-files-found: error
 
       - name: Package no-install OBS live diagnostic (no camera modifications)
