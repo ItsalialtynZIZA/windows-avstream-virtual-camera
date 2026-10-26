@@ -40,12 +40,13 @@ struct Mapping {
         }
     }
 };
-bool CreateSharedMapping(Mapping& map) {
+bool CreateSharedMapping(Mapping& map,
+                         const wchar_t* mappingName = AvCamPhysical::kMappingName,
+                         const wchar_t* mutexName = L"Global\\AvCamPhysicalPublisherLockV1") {
     // An abandoned publisher must be replaceable without restarting the
     // Windows Camera Frame Server, which can retain a shared mapping handle.
     // A named mutex prevents two live publishers from writing concurrently.
-    map.publisherMutex = CreateMutexW(nullptr, FALSE,
-        L"Global\\AvCamPhysicalPublisherLockV1");
+    map.publisherMutex = CreateMutexW(nullptr, FALSE, mutexName);
     if (!map.publisherMutex) {
         std::printf("Create publisher mutex failed: %lu\n", GetLastError());
         return false;
@@ -66,7 +67,7 @@ bool CreateSharedMapping(Mapping& map) {
     SECURITY_ATTRIBUTES sa{sizeof(sa), sd, FALSE};
     map.handle = CreateFileMappingW(INVALID_HANDLE_VALUE, &sa,
         PAGE_READWRITE, 0, AvCamPhysical::kTotalBytes,
-        AvCamPhysical::kMappingName);
+        mappingName);
     const DWORD result = GetLastError();
     LocalFree(sd);
     if (!map.handle) {
@@ -189,7 +190,15 @@ int wmain(int argc, wchar_t** argv) {
         return 11;
     }
     Mapping mapping;
-    if (!CreateSharedMapping(mapping)) {
+    // An isolated Local\\ test mapping can NEVER be read by the installed
+    // device-wide MFT, which expects Global\\AvCamPhysicalMjpegV1.
+    // Even a stale legacy MFT installation therefore cannot consume red-test
+    // samples accidentally. The normal OBS bridge keeps its legacy ABI.
+    const wchar_t* const targetMapping = redTest ?
+        L"Local\\AvCamRedMjpegDiagnosticV1" : AvCamPhysical::kMappingName;
+    const wchar_t* const publisherLock = redTest ?
+        L"Local\\AvCamRedPublisherLockV1" : L"Global\\AvCamPhysicalPublisherLockV1";
+    if (!CreateSharedMapping(mapping, targetMapping, publisherLock)) {
         CoUninitialize();
         return 12;
     }
