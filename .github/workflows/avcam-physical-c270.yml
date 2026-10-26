@@ -202,6 +202,12 @@ jobs:
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File research/physical-c270/AvCamPhysicalControl.ps1 -Action Status
           if ($LASTEXITCODE -ne 0) { throw 'AvCam release controller status failed in clean Windows' }
           Write-Host 'AVCAM_C270_RELEASE_CONTROLLER_WINDOWS_POWERSHELL_PASSED'
+      - name: Validate the dual physical-camera red-scene safety preflight
+        shell: powershell
+        run: |
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File research/physical-c270/AvCamDualCameraRedPreflight.ps1 -SelfTest
+          if ($LASTEXITCODE -ne 0) { throw 'Dual-camera preflight selftest failed' }
+          Write-Host 'AVCAM_TWO_CAMERA_RED_PREFLIGHT_CI_PASS'
       - name: Regression check task identity against localized short account names
         shell: powershell
         run: |
