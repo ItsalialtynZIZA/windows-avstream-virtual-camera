@@ -4,7 +4,7 @@
 [CmdletBinding()]
 param(
     [ValidateRange(10,120)][int]$Seconds = 30,
-    [ValidateSet('WindowsCamera','DeepLiveCam')][string]$Target = 'WindowsCamera'
+    [ValidateSet('WindowsCamera','DeepLiveCam','ChromeWebRTC')][string]$Target = 'WindowsCamera'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -27,6 +27,11 @@ try {
     if ($Target -eq 'DeepLiveCam') {
         Write-Host 'TRACE_STARTED: Launch Deep Live Cam NOW; attempt to start the physical Logitech C270 once. Note the exact error.'
         Write-Host 'Do not open Chrome or Windows Camera during the reproduction.'
+    } elseif ($Target -eq 'ChromeWebRTC') {
+        Write-Host 'TRACE_STARTED: In an already open Chrome WebRTC resolution test, select ORIGINAL Logi C270,'
+        Write-Host 'then try VGA (640x480) and HD/720p (1280x720), one at a time.'
+        Write-Host 'Keep OBS and AvCamPhysicalBridge running if you are testing their pipeline.'
+        Write-Host 'This trace reads AvCam MFT event messages; no video images, camera registry, or driver settings are modified.'
     } else {
         Write-Host 'TRACE_STARTED: Open Windows Camera NOW; keep physical C270 preview active.'
     }
@@ -70,9 +75,12 @@ if (Test-Path -LiteralPath $etl) {
             $initialized = @($messages | Where-Object { $_ -match 'AvCamDeviceMftInitialize|InitializeTransform called' }).Count -gt 0
             $formats = @($messages | Where-Object { $_ -match 'AvCamQueueNegotiated|QueueFormat' }).Count
             $replaced = @($messages | Where-Object { $_ -match 'SampleReplaced' }).Count
+            $passthrough = @($messages | Where-Object { $_ -match 'SampleSkipped|AvCamMultiAppSafePassThrough' }).Count
             Write-Host ('AVCAM_MFT_INITIALIZED_OBSERVED=' + $initialized)
             Write-Host ('AVCAM_MFT_QUEUE_EVENTS_OBSERVED=' + $formats)
             Write-Host ('AVCAM_MFT_REPLACEMENT_EVENTS_OBSERVED=' + $replaced)
+            Write-Host ('AVCAM_MFT_PASSTHROUGH_EVENTS_OBSERVED=' + $passthrough)
+            Write-Host 'NOTE: ETW summaries count sampled diagnostic EVENTS, not delivered video frames.'
             Write-Host 'EVIDENCE_LEVEL=DEVICE_MFT_ONLY'
             Write-Host 'No event above proves an individual Chrome or Deep Live Cam consumer.'
             Write-Host 'Note: observed ETW events are not a complete frame count.'
