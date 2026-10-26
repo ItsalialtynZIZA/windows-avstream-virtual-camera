@@ -42,7 +42,8 @@ struct Mapping {
 };
 bool CreateSharedMapping(Mapping& map,
                          const wchar_t* mappingName = AvCamPhysical::kMappingName,
-                         const wchar_t* mutexName = L"Global\\AvCamPhysicalPublisherLockV1") {
+                         const wchar_t* mutexName = L"Global\\AvCamPhysicalPublisherLockV1",
+                         bool localDiagnostic = false) {
     // An abandoned publisher must be replaceable without restarting the
     // Windows Camera Frame Server, which can retain a shared mapping handle.
     // A named mutex prevents two live publishers from writing concurrently.
@@ -65,7 +66,8 @@ bool CreateSharedMapping(Mapping& map,
         L"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GR;;;LS)(A;;GR;;;NS)",
         SDDL_REVISION_1, &sd, nullptr)) return false;
     SECURITY_ATTRIBUTES sa{sizeof(sa), sd, FALSE};
-    map.handle = CreateFileMappingW(INVALID_HANDLE_VALUE, &sa,
+    map.handle = CreateFileMappingW(INVALID_HANDLE_VALUE,
+        localDiagnostic ? nullptr : &sa,
         PAGE_READWRITE, 0, AvCamPhysical::kTotalBytes,
         mappingName);
     const DWORD result = GetLastError();
@@ -176,8 +178,9 @@ int wmain(int argc, wchar_t** argv) {
     // Bounded, camera-free solid-red MJPEG transport test. Does not activate
     // any device-specific MFT or make the physical Logitech output red.
     const bool redTest = argc == 2 && wcscmp(argv[1], L"--red-test") == 0;
-    if (argc > 1 && !waitForEnter && !redTest) {
-        std::puts("Usage: AvCamPhysicalBridge.exe [--self-test|--wait-for-enter|--red-test]");
+    const bool obsTest = argc == 2 && wcscmp(argv[1], L"--obs-test") == 0;
+    if (argc > 1 && !waitForEnter && !redTest && !obsTest) {
+        std::puts("Usage: AvCamPhysicalBridge.exe [--self-test|--wait-for-enter|--red-test|--obs-test]");
         return 2;
     }
     SetConsoleCtrlHandler(CtrlHandler, TRUE);
@@ -195,10 +198,13 @@ int wmain(int argc, wchar_t** argv) {
     // Even a stale legacy MFT installation therefore cannot consume red-test
     // samples accidentally. The normal OBS bridge keeps its legacy ABI.
     const wchar_t* const targetMapping = redTest ?
-        L"Local\\AvCamRedMjpegDiagnosticV1" : AvCamPhysical::kMappingName;
+        L"Local\\AvCamRedMjpegDiagnosticV1" :
+        (obsTest ? L"Local\\AvCamObsMjpegDiagnosticV1" : AvCamPhysical::kMappingName);
     const wchar_t* const publisherLock = redTest ?
-        L"Local\\AvCamRedPublisherLockV1" : L"Global\\AvCamPhysicalPublisherLockV1";
-    if (!CreateSharedMapping(mapping, targetMapping, publisherLock)) {
+        L"Local\\AvCamRedPublisherLockV1" :
+        (obsTest ? L"Local\\AvCamObsPublisherLockV1" : L"Global\\AvCamPhysicalPublisherLockV1");
+    if (!CreateSharedMapping(mapping, targetMapping, publisherLock,
+                             redTest || obsTest)) {
         CoUninitialize();
         return 12;
     }
@@ -238,6 +244,63 @@ int wmain(int argc, wchar_t** argv) {
         }
         std::printf("AVCAM_RED_MJPEG_TRANSPORT_PASS frames=90 jpeg_bytes=%zu camera_modified=0\n",
             jpeg.size());
+        CoUninitialize();
+        return 0;
+    }
+    if (obsTest) {
+        // Direct live validation: OBS Virtual Camera (including Window Capture)
+        // -> NV12 -> BGRA -> JPEG -> private IPC. Does not open C270, register
+        // a COM camera transform, or modify any physical capture endpoint.
+        ObsSharedMemorySource source;
+        if (!source.Start()) {
+            std::printf("AVCAM_OBS_MJPEG_SOURCE_FAILED code=0x%08lX\n", source.LastErrorCode());
+            CoUninitialize();
+            return 34;
+        }
+        unsigned frames = 0;
+        unsigned changed = 0;
+        std::uint64_t previousHash = 0;
+        const ULONGLONG begin = GetTickCount64();
+        while (!g_stop.load() && frames < 90 && GetTickCount64() - begin < 10000ull) {
+            std::uint64_t timestamp = 0;
+            if (!source.ReadFrame(bgra.data(), bgra.size(), timestamp)) break;
+            // Sample B,G,R bytes from across the entire picture. The counter
+            // is a motion indicator, not a proof of source identity.
+            std::uint64_t hash = 1469598103934665603ull;
+            for (std::size_t index = 0; index + 2 < bgra.size(); index += 4096) {
+                for (unsigned channel = 0; channel < 3; ++channel) {
+                    hash ^= bgra[index + channel];
+                    hash *= 1099511628211ull;
+                }
+            }
+            if (frames > 0 && previousHash != hash) ++changed;
+            previousHash = hash;
+            if (!AvCamUde::EncodeBgraToMjpeg(wic.Get(), bgra.data(),
+                    AVCAM_FRAME_WIDTH, AVCAM_FRAME_HEIGHT,
+                    AVCAM_FRAME_STRIDE_BGRA32, jpeg) ||
+                jpeg.size() < 32 || jpeg.size() > AvCamPhysical::kCapacity ||
+                jpeg[0] != 0xff || jpeg[1] != 0xd8 ||
+                jpeg[jpeg.size() - 2] != 0xff || jpeg[jpeg.size() - 1] != 0xd9 ||
+                !Publish(mapping, jpeg, timestamp)) {
+                std::puts("AVCAM_OBS_MJPEG_ENCODE_OR_PUBLISH_FAILED");
+                source.Stop();
+                CoUninitialize();
+                return 35;
+            }
+            ++frames;
+        }
+        const ULONGLONG elapsedMs = GetTickCount64() - begin;
+        source.Stop();
+        if (frames < 30 || g_stop.load()) {
+            std::printf("AVCAM_OBS_MJPEG_LIVE_INCOMPLETE frames=%u changed=%u elapsed_ms=%llu\n",
+                frames, changed, static_cast<unsigned long long>(elapsedMs));
+            CoUninitialize();
+            return 36;
+        }
+        const double fps = elapsedMs ?
+            (static_cast<double>(frames) * 1000.0 / static_cast<double>(elapsedMs)) : 0.0;
+        std::printf("AVCAM_OBS_MJPEG_LIVE_PASS frames=%u changed=%u fps=%.2f camera_modified=0\n",
+            frames, changed, fps);
         CoUninitialize();
         return 0;
     }
