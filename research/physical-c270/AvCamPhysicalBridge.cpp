@@ -205,7 +205,8 @@ int wmain(int argc, wchar_t** argv) {
         (obsTest ? L"Local\\AvCamObsPublisherLockV1" : L"Global\\AvCamPhysicalPublisherLockV1");
     if (!CreateSharedMapping(mapping, targetMapping, publisherLock,
                              redTest || obsTest)) {
-        CoUninitialize();
+        wic.Reset();
+            CoUninitialize();
         return 12;
     }
     std::vector<unsigned char> bgra(AVCAM_FRAME_BYTES_BGRA32);
@@ -226,25 +227,29 @@ int wmain(int argc, wchar_t** argv) {
             jpeg[0] != 0xff || jpeg[1] != 0xd8 ||
             jpeg[jpeg.size() - 2] != 0xff || jpeg[jpeg.size() - 1] != 0xd9) {
             std::puts("AVCAM_RED_MJPEG_ENCODE_FAILED");
+            wic.Reset();
             CoUninitialize();
             return 31;
         }
         for (unsigned count = 0; count < 90 && !g_stop.load(); ++count) {
             if (!Publish(mapping, jpeg, GetTickCount64() * 10000ull)) {
                 std::puts("AVCAM_RED_MJPEG_PUBLISH_FAILED");
-                CoUninitialize();
+                wic.Reset();
+            CoUninitialize();
                 return 32;
             }
             Sleep(33);
         }
         if (g_stop.load()) {
             std::puts("AVCAM_RED_MJPEG_INTERRUPTED");
+            wic.Reset();
             CoUninitialize();
             return 33;
         }
         std::printf("AVCAM_RED_MJPEG_TRANSPORT_PASS frames=90 jpeg_bytes=%zu camera_modified=0\n",
             jpeg.size());
-        CoUninitialize();
+        wic.Reset();
+            CoUninitialize();
         return 0;
     }
     if (obsTest) {
@@ -254,6 +259,7 @@ int wmain(int argc, wchar_t** argv) {
         ObsSharedMemorySource source;
         if (!source.Start()) {
             std::printf("AVCAM_OBS_MJPEG_SOURCE_FAILED code=0x%08lX\n", source.LastErrorCode());
+            wic.Reset();
             CoUninitialize();
             return 34;
         }
@@ -284,7 +290,8 @@ int wmain(int argc, wchar_t** argv) {
                 !Publish(mapping, jpeg, timestamp)) {
                 std::puts("AVCAM_OBS_MJPEG_ENCODE_OR_PUBLISH_FAILED");
                 source.Stop();
-                CoUninitialize();
+                wic.Reset();
+            CoUninitialize();
                 return 35;
             }
             ++frames;
@@ -294,6 +301,7 @@ int wmain(int argc, wchar_t** argv) {
         if (frames < 30 || g_stop.load()) {
             std::printf("AVCAM_OBS_MJPEG_LIVE_INCOMPLETE frames=%u changed=%u elapsed_ms=%llu\n",
                 frames, changed, static_cast<unsigned long long>(elapsedMs));
+            wic.Reset();
             CoUninitialize();
             return 36;
         }
@@ -301,7 +309,8 @@ int wmain(int argc, wchar_t** argv) {
             (static_cast<double>(frames) * 1000.0 / static_cast<double>(elapsedMs)) : 0.0;
         std::printf("AVCAM_OBS_MJPEG_LIVE_PASS frames=%u changed=%u fps=%.2f camera_modified=0\n",
             frames, changed, fps);
-        CoUninitialize();
+        wic.Reset();
+            CoUninitialize();
         return 0;
     }
     unsigned long long frames = 0;
@@ -328,6 +337,7 @@ int wmain(int argc, wchar_t** argv) {
         // CLI option is intended for an interactive operator console only.
         (void)getchar();
         if (g_stop.load()) {
+            wic.Reset();
             CoUninitialize();
             return 0;
         }
@@ -380,6 +390,7 @@ int wmain(int argc, wchar_t** argv) {
             Sleep(100);
     }
     std::printf("AvCam Physical Bridge stopped; total frames=%llu\n", frames);
-    CoUninitialize();
+    wic.Reset();
+            CoUninitialize();
     return 0;
 }
