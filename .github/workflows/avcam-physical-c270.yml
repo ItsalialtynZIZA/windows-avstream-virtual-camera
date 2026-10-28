@@ -38,6 +38,12 @@ jobs:
             research/physical-c270/AvCamPerClientRoutingPolicyTest.cpp \
             -o /tmp/avcam-client-policy
           /tmp/avcam-client-policy
+      - name: Verify Sonix DMFT pin evidence cannot be inferred from source streams
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -Iresearch/physical-c270 \
+            research/physical-c270/AvCamDmftTopologyGateTest.cpp \
+            -o /tmp/avcam-dmft-topology-policy
+          /tmp/avcam-dmft-topology-policy
       - name: Verify unscoped MFT replacement is rejected by the compiler
         run: |
           echo '#include "AvCamMftBuildSafety.h"' > /tmp/avcam-safe-mft.cpp
@@ -65,7 +71,7 @@ jobs:
       - name: Compile SetupAPI enumerator and strict identity test
         shell: pwsh
         run: |
-          cmake --build build/c270-identity --config Release --target AvCamEnumeratePhysicalC270 AvCamPhysicalEndpointAcceptanceTest AvCamIntegratedCameraFormats AvCamIntegratedNativeCaptureSmoke AvCamDmftComContract
+          cmake --build build/c270-identity --config Release --target AvCamEnumeratePhysicalC270 AvCamPhysicalEndpointAcceptanceTest AvCamIntegratedCameraFormats AvCamIntegratedNativeCaptureSmoke AvCamDmftComContract AvCamDmftTopologyGateTest
           if ($LASTEXITCODE -ne 0) { throw 'C270 SetupAPI compilation failed' }
       - name: Run identity selftests without physical camera
         shell: pwsh
@@ -78,6 +84,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Native Integrated Camera MJPEG smoke selftest failed: $LASTEXITCODE" }
           & ./build/c270-identity/Release/AvCamDmftComContract.exe --selftest
           if ($LASTEXITCODE -ne 0) { throw "AvCam Device MFT COM contract selftest failed: $LASTEXITCODE" }
+          & ./build/c270-identity/Release/AvCamDmftTopologyGateTest.exe
+          if ($LASTEXITCODE -ne 0) { throw "AvCam topology evidence gate failed: $LASTEXITCODE" }
           & ./build/c270-identity/Release/AvCamEnumeratePhysicalC270.exe
           if ($LASTEXITCODE -ne 0) { throw "Read-only camera enumeration failed: $LASTEXITCODE" }
       - name: Publish read-only C270 PnP diagnostic separately
