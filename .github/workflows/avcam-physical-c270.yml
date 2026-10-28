@@ -323,6 +323,17 @@ jobs:
           if (!$stagedMft.Contains('AvCamDeviceMftPinTopology')) {
             throw 'Adapted Device MFT implementation lacks the stream topology event'
           }
+          # Verify that the actual staged Microsoft sample, not just
+          # Adapt-Sample.ps1, contains the new OEM safety guards.
+          if (!$stagedMft.Contains('duplicate_stream_ids=1')) {
+            throw 'Staged MFT is missing duplicate upstream stream ID rejection'
+          }
+          $stagedBasePin = Get-Content 'upstream/avstream/sampledevicemft/basepin.cpp' -Raw
+          if (!$stagedBasePin.Contains('kMaxObservedTypesPerStream') -or
+              !$stagedBasePin.Contains('AvCamUpstreamMediaTypeEnumerationRejected')) {
+            throw 'Staged MFT still has an unbounded OEM media-type enumeration'
+          }
+          Write-Host 'AVCAM_OEM_STREAM_IDS_AND_MEDIA_ENUMERATION_BOUNDED_PASS'
           foreach ($marker in @(
             'AvCamQueueNegotiated',
             'AvCamDeviceMftInitialize',
