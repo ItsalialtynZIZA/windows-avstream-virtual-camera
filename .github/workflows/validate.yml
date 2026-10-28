@@ -107,9 +107,26 @@ jobs:
         shell: pwsh
         run: msbuild driver/AvCam.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:StampInfToolPath="$env:StampInfToolPath"
 
+      - name: Build DevCon-free AvCam root camera installer (no device changes)
+        shell: pwsh
+        run: |
+          cmake -S tools/avcam-root-install -B build/avcam-root-install -A x64
+          if ($LASTEXITCODE -ne 0) { throw 'Root installer configure failed' }
+          cmake --build build/avcam-root-install --config Release --parallel 4
+          if ($LASTEXITCODE -ne 0) { throw 'Root installer compile failed' }
+          $installer = 'build/avcam-root-install/Release/AvCamRootInstall.exe'
+          & $installer --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'Root installer no-device selftest failed' }
+          $dest = 'driver/x64/Release/AvCam'
+          if (!(Test-Path -LiteralPath (Join-Path $dest 'AvCam.inf'))) {
+            throw 'Driver package output directory missing'
+          }
+          Copy-Item -LiteralPath $installer -Destination $dest
+          Write-Host 'AVCAM_ROOT_INSTALLER_PACKAGED_NO_DEVCON_PASS'
+
       - name: Show driver outputs
         shell: pwsh
-        run: Get-ChildItem driver -Recurse -Include AvCam.sys,AvCam.inf,AvCam.cat,AvCam.cer
+        run: Get-ChildItem driver -Recurse -Include AvCam.sys,AvCam.inf,AvCam.cat,AvCam.cer,AvCamRootInstall.exe
 
       - name: Upload test-signed driver package
         uses: actions/upload-artifact@v4
