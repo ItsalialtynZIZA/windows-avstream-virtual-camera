@@ -147,6 +147,14 @@ jobs:
             }
           }
           Write-Host 'AVCAM_MFT_ROUTING_POLICY_AND_HOOK_STAGED=PASS'
+          # The patched sample must emit runtime topology after reading
+          # its predecessor IMFTransform counts, without enabling installation.
+          $impl = Get-Content 'upstream/avstream/sampledevicemft/multipinmft.cpp' -Raw
+          $callCount = ([regex]::Matches($impl, 'AvCamTraceDeviceMftTopology\\(')).Count
+          if ($callCount -ne 1) {
+            throw "Missing or duplicate AvCam upstream topology telemetry: $callCount"
+          }
+          Write-Host 'AVCAM_DMFT_UPSTREAM_TOPOLOGY_TELEMETRY_STAGED=PASS'
       - name: Self-test Sonix OEM chain preflight (Windows PowerShell 5.1, camera-free)
         shell: powershell
         run: |
