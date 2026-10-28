@@ -82,7 +82,7 @@ if ($rootTool) {
     $toolsRoot = Join-Path $programFilesX86 'Windows Kits\10\Tools'
     $devcon = if (Test-Path -LiteralPath $toolsRoot) {
         Get-ChildItem $toolsRoot -Recurse -Filter devcon.exe -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match '\\\\x64\\\\devcon\\.exe$' } |
+            Where-Object { $_.FullName -like '*\x64\devcon.exe' } |
             Sort-Object FullName -Descending |
             Select-Object -First 1 -ExpandProperty FullName
     }
