@@ -65,7 +65,7 @@ jobs:
       - name: Compile SetupAPI enumerator and strict identity test
         shell: pwsh
         run: |
-          cmake --build build/c270-identity --config Release --target AvCamEnumeratePhysicalC270 AvCamPhysicalEndpointAcceptanceTest AvCamIntegratedCameraFormats AvCamIntegratedNativeCaptureSmoke
+          cmake --build build/c270-identity --config Release --target AvCamEnumeratePhysicalC270 AvCamPhysicalEndpointAcceptanceTest AvCamIntegratedCameraFormats AvCamIntegratedNativeCaptureSmoke AvCamDmftComContract
           if ($LASTEXITCODE -ne 0) { throw 'C270 SetupAPI compilation failed' }
       - name: Run identity selftests without physical camera
         shell: pwsh
@@ -76,6 +76,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Integrated Media Foundation type audit selftest failed: $LASTEXITCODE" }
           & ./build/c270-identity/Release/AvCamIntegratedNativeCaptureSmoke.exe --selftest
           if ($LASTEXITCODE -ne 0) { throw "Native Integrated Camera MJPEG smoke selftest failed: $LASTEXITCODE" }
+          & ./build/c270-identity/Release/AvCamDmftComContract.exe --selftest
+          if ($LASTEXITCODE -ne 0) { throw "AvCam Device MFT COM contract selftest failed: $LASTEXITCODE" }
           & ./build/c270-identity/Release/AvCamEnumeratePhysicalC270.exe
           if ($LASTEXITCODE -ne 0) { throw "Read-only camera enumeration failed: $LASTEXITCODE" }
       - name: Publish read-only C270 PnP diagnostic separately
@@ -659,6 +661,7 @@ jobs:
           Copy-Item research/physical-c270/AvCamSonixChainPlan.ps1 $out
           Copy-Item build/physical-c270/Release/AvCamIntegratedCameraFormats.exe $out
           Copy-Item build/physical-c270/Release/AvCamIntegratedNativeCaptureSmoke.exe $out
+          Copy-Item build/physical-c270/Release/AvCamDmftComContract.exe $out
           Copy-Item research/physical-c270/Run-AvCamIntegratedNativeCaptureSmoke.ps1 $out
           Copy-Item research/physical-c270/INTEGRATED_13D3_REVERSE_LAB.md $out
           $dll = Join-Path $out 'AvCamDualCameraDeviceMft.dll'
