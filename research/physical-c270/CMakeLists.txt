@@ -14,6 +14,12 @@ add_executable(AvCamDmftComContract AvCamDmftComContract.cpp)
 target_compile_features(AvCamDmftComContract PRIVATE cxx_std_17)
 target_link_libraries(AvCamDmftComContract PRIVATE ole32)
 
+# Optional signed Sonix OEM class-factory inspection. The CI --selftest path
+# does not load the OEM DLL, initialize a camera or modify the registry.
+add_executable(AvCamSonixComContract AvCamSonixComContract.cpp)
+target_compile_features(AvCamSonixComContract PRIVATE cxx_std_17)
+target_link_libraries(AvCamSonixComContract PRIVATE ole32 wintrust)
+
 add_executable(AvCamIntegratedNativeCaptureSmoke AvCamIntegratedNativeCaptureSmoke.cpp)
 target_compile_features(AvCamIntegratedNativeCaptureSmoke PRIVATE cxx_std_17)
 target_link_libraries(AvCamIntegratedNativeCaptureSmoke PRIVATE mfplat mf mfreadwrite mfuuid ole32)
