@@ -56,3 +56,22 @@ Success marker: `AVCAM_INTEGRATED_13D3_LAB_DISABLED`. Restart Windows. Do **not*
 ## Evidence level
 
 CI: C++ compilation, PowerShell syntax and fail-closed install gate; NO camera registration and NO Chrome camera testing. Hardware acceptance requires live tests performed on the actual laptop. This must not be used as evidence for identity verification/liveness claims.
+
+
+## Observed baseline on new laptop: existing Sonix Device MFT chain
+
+User ran the October 28, 2026 artifact `AvCam-Integrated-13D3-Lab-x64`:
+
+```
+AVCAM_OBS_MJPEG_LIVE_PASS frames=90 changed=22 fps=30.16 camera_modified=0
+Healthy Integrated Camera (VID_13D3 PID_56FF) devices: 1
+Existing CameraDeviceMftClsid:
+Existing CameraDeviceMftClsidChain: {5A50829A-86DD-4D18-8685-891EEE643C24}
+PREFLIGHT_ONLY: original Integrated Camera USB device/registry untouched.
+```
+
+**DO NOT call `-Enable -DualCameraLab` for this laptop with the current installer.** The existing `CameraDeviceMftClsidChain` is a manufacturer/provider processing chain, and the installer deliberately fails closed on any nonempty chain. According to Microsoft's UVC documentation, when the chain exists the *legacy* `CameraDeviceMftClsid` entry is ignored, so writing it would not correctly append our transform even if we relaxed the guard: https://learn.microsoft.com/en-us/windows-hardware/drivers/stream/uvc-camera-implementation-guide
+
+The existing CLSID `{5A50829A-86DD-4D18-8685-891EEE643C24}` has been reported as the `SonixDeviceMFT.dll` COM class in a public security advisory: https://herolab.usd.de/en/security-advisories/usd-2023-0029/ . This is evidence of *likely Sonix processing*, **not** proof that the owner's current driver is vulnerable. Read the actual COM `InprocServer32` path, code signature, and registry ACL without changing them; if permissions are unsafe, prefer verified OEM/Windows Update remediation. Do not delete or rewrite OEM chain/registry/DLL.
+
+Future support for this notebook requires a separately designed **chain-aware**, reversible installer that preserves the exact original `REG_MULTI_SZ` chain, adds its own Device MFT only after compatible format/capture evidence, verifies appropriate ordering, enforces the OS chain length, and restores the exact original chain on rollback. Tests must prove correct interoperability with the OEM DMFT, real Chrome frame capture, and failure/rollback. The existing `AvCamIntegrated13D3Mft.ps1` is **not** chain-aware; do not use `-Enable` until a purpose-built implementation is reviewed. Selecting `OBS Virtual Camera` directly in Chrome remains the no-registry-change fallback.
