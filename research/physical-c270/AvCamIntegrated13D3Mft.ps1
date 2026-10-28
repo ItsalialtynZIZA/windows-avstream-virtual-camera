@@ -152,8 +152,13 @@ Write-Host "Existing CameraDeviceMftClsid: $existing"
 Write-Host "Existing CameraDeviceMftClsidChain: $chain"
 if (-not $Enable -and -not $Disable) {
     Write-Host 'PREFLIGHT_ONLY: original Integrated Camera USB device/registry untouched.'
-    Write-Host 'Run -Enable -DualCameraLab (administrator) ONLY after RAW camera and OBS MJPEG baselines pass.'
-    Write-Host 'Run -Disable to remove ONLY the AvCam Device MFT.'
+    if ($chain) {
+        Write-Warning 'Existing OEM Device MFT chain: this installer is NOT chain-aware and MUST NOT be enabled.'
+        Write-Host 'Use the read-only AvCamSonixChainPreflight.ps1; do not replace the Sonix chain.'
+    } else {
+        Write-Host 'Run -Enable -DualCameraLab (administrator) ONLY after RAW camera and OBS MJPEG baselines pass.'
+    }
+    Write-Host 'Run -Disable only if this AvCam lab was previously installed.'
     return
 }
 Test-Administrator
