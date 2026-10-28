@@ -105,6 +105,35 @@ STDMETHODIMP CMultipinMft::InitializeTransform (
     AvCamTrace(avcamInitEvent);
 '@
 
+
+# The upstream reference MFT gets the previous transform's output stream
+# count from the actual MF_DEVICEMFT_CONNECTED_FILTER_KSCONTROL object inside
+# InitializeTransform. Observe that count AND our resulting pin topology.
+# We cannot identify the previous transform as Sonix from this callback alone;
+# never convert the event into a production installation permission.
+Replace-Once $mftImpl @'
+    m_InputPinCount =  ULONG ( m_InPins.size() );
+    m_OutputPinCount = ULONG ( m_OutPins.size() );
+'@ @'
+    m_InputPinCount =  ULONG ( m_InPins.size() );
+    m_OutputPinCount = ULONG ( m_OutPins.size() );
+
+    // Observational event only: upstream identity is unverified.
+    // For a valid initialized pipeline the upstream output stream count
+    // should agree with this MFT input pin count.
+    wchar_t avcamTopology[320]{};
+    (void)swprintf_s(
+        avcamTopology,
+        L"AvCamDeviceMftPinTopology host_pid=%lu upstream_input=%lu upstream_output=%lu avcam_input=%lu avcam_output=%lu identity=unknown",
+        GetCurrentProcessId(),
+        static_cast<unsigned long>(inputStreams),
+        static_cast<unsigned long>(outputStreams),
+        static_cast<unsigned long>(m_InputPinCount),
+        static_cast<unsigned long>(m_OutputPinCount));
+    AvCamTrace(avcamTopology);
+'@
+
+
 $common=Join-Path $base 'common.h'
 # Microsoft's reference relies on WPP-generated check macros. The CMake
 # standalone build runs without WPP, so enable upstream's documented
