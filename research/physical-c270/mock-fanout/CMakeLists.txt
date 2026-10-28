@@ -119,6 +119,11 @@ add_executable(AvCamEnumeratePhysicalC270 ../AvCamEnumeratePhysicalC270.cpp)
 target_compile_features(AvCamEnumeratePhysicalC270 PRIVATE cxx_std_17)
 target_link_libraries(AvCamEnumeratePhysicalC270 PRIVATE setupapi)
 
+# The --selftest path is fully camera-free in CI.
+add_executable(AvCamIntegratedCameraFormats ../AvCamIntegratedCameraFormats.cpp)
+target_compile_features(AvCamIntegratedCameraFormats PRIVATE cxx_std_17)
+target_link_libraries(AvCamIntegratedCameraFormats PRIVATE mfplat mf mfuuid ole32)
+
 # Reuse the shipping AVStream feeder build, now with IPC V2 input modes.
 # This does not install or register the test-signed virtual camera driver.
 add_subdirectory(../../../feeder "${CMAKE_CURRENT_BINARY_DIR}/avcam-feeder")
