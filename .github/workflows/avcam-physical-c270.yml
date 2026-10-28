@@ -50,6 +50,12 @@ jobs:
             research/physical-c270/AvCamDmftMediaContractTest.cpp \
             -o /tmp/avcam-dmft-media-contract
           /tmp/avcam-dmft-media-contract
+      - name: Verify mock adjacent MFT explicit pin links (no camera or OEM COM)
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -Iresearch/physical-c270 \
+            research/physical-c270/AvCamDmftConnectedPinMapTest.cpp \
+            -o /tmp/avcam-dmft-connected-pin-map
+          /tmp/avcam-dmft-connected-pin-map
       - name: Verify unscoped MFT replacement is rejected by the compiler
         run: |
           echo '#include "AvCamMftBuildSafety.h"' > /tmp/avcam-safe-mft.cpp
@@ -77,7 +83,7 @@ jobs:
       - name: Compile SetupAPI enumerator and strict identity test
         shell: pwsh
         run: |
-          cmake --build build/c270-identity --config Release --target AvCamEnumeratePhysicalC270 AvCamPhysicalEndpointAcceptanceTest AvCamIntegratedCameraFormats AvCamIntegratedNativeCaptureSmoke AvCamDmftComContract AvCamDmftTopologyGateTest AvCamDmftMediaContractTest
+          cmake --build build/c270-identity --config Release --target AvCamEnumeratePhysicalC270 AvCamPhysicalEndpointAcceptanceTest AvCamIntegratedCameraFormats AvCamIntegratedNativeCaptureSmoke AvCamDmftComContract AvCamDmftTopologyGateTest AvCamDmftMediaContractTest AvCamDmftConnectedPinMapTest
           if ($LASTEXITCODE -ne 0) { throw 'C270 SetupAPI compilation failed' }
       - name: Run identity selftests without physical camera
         shell: pwsh
@@ -94,6 +100,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "AvCam topology evidence gate failed: $LASTEXITCODE" }
           & ./build/c270-identity/Release/AvCamDmftMediaContractTest.exe
           if ($LASTEXITCODE -ne 0) { throw "Connected MFT media contract failed: $LASTEXITCODE" }
+          & ./build/c270-identity/Release/AvCamDmftConnectedPinMapTest.exe
+          if ($LASTEXITCODE -ne 0) { throw "Mock adjacent MFT pin mapping failed: $LASTEXITCODE" }
           & ./build/c270-identity/Release/AvCamEnumeratePhysicalC270.exe
           if ($LASTEXITCODE -ne 0) { throw "Read-only camera enumeration failed: $LASTEXITCODE" }
       - name: Publish read-only C270 PnP diagnostic separately
