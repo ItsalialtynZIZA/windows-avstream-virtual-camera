@@ -163,6 +163,17 @@ jobs:
             throw "Missing or duplicate AvCam upstream topology telemetry: $callCount"
           }
           Write-Host 'AVCAM_DMFT_UPSTREAM_TOPOLOGY_TELEMETRY_STAGED=PASS'
+          # A malformed predecessor could return enormous pin counts.
+          # The guard must run BEFORE the sample allocates its ID arrays.
+          $countCall = $impl.IndexOf('m_spSourceTransform->GetStreamCount( &inputStreams, &outputStreams )')
+          $countGuard = $impl.IndexOf('CheckUpstreamPinCounts(inputStreams, outputStreams)')
+          $allocation = $impl.IndexOf('pcOutputStreams = new (std::nothrow) DWORD[ outputStreams ]')
+          if ($countCall -lt 0 -or $countGuard -le $countCall -or
+              $allocation -le $countGuard -or
+              !$impl.Contains('AvCamUpstreamTopologyRejected invalid_pin_count=1')) {
+            throw 'Missing fail-closed predecessor count bound before allocation'
+          }
+          Write-Host 'AVCAM_DMFT_UPSTREAM_PIN_ALLOC_BOUND_STAGED=PASS'
           # Bound and verify telemetry from the upstream IMFDeviceTransform.
           $source = Get-Content 'upstream/avstream/sampledevicemft/multipinmft.cpp' -Raw
           $typeCalls = $source.Split([string[]]@('AvCamTraceUpstreamMediaContract('), [StringSplitOptions]::None).Count - 1
