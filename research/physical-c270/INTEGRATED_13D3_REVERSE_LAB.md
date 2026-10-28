@@ -157,3 +157,25 @@ The ETW decoder `AvCamPhysicalCaptureEtw.ps1` now reports `AVCAM_UPSTREAM_MEDIA_
 **Evidence boundary:** these events can only appear when an AvCam Device MFT actually receives `InitializeTransform` from an upstream camera pipeline. The current owner's Lenovo **has not had AvCam appended to its Sonix OEM chain**. Thus no new upstream data has been obtained from the Lenovo and no compatibility or working Chrome output can be claimed. Native camera MJPG capture evidence is not equivalent to connected Sonix→AvCam type negotiation. The OEM chain and physical camera remain untouched; no installer enabling this path is included. A separately scoped test host and reviewed rollback are required for any subsequent live chain experiment.
 
 The physically separate `OBS Virtual Camera` remains a usable non-invasive selection in supported apps. Replacing the original OEM camera endpoint for all consumers is not a proof of genuine sensor provenance or camera-origin authenticity.
+
+## 2026-10-29: Simultaneous user-space baseline on Lenovo, BEFORE any Sonix chain installation
+
+The owner confirmed the current `AvCamPhysicalBridge.exe --obs-test` output:
+`AVCAM_OBS_MJPEG_LIVE_PASS frames=90 changed=22 fps=30.15 camera_modified=0`.
+While Logitech -> Deep-Live-Cam -> OBS were active, Chrome selected the
+**original** Lenovo Integrated Camera and displayed its **original sensor
+image**, not the OBS feed.
+
+These are two distinct pieces of evidence: OBS frames arrive at an isolated
+AvCam diagnostic transport, and the unchanged Sonix camera remains available
+to Chrome. They do NOT show a link between that OBS feed and the OEM camera
+endpoint. In `--obs-test`, AvCam uses the private
+`Local\\AvCamObsMjpegDiagnosticV1` mapping: it is intentionally not the
+original camera's production output.
+
+`AvCamDmftMediaContract.h` now also contains a **portable synthetic**
+adjacent-MFT MJPEG-format gate. It requires explicit, verified pin mapping
+and two connected, fully enumerated format descriptors, accepts equivalent
+30-fps rational rates, and rejects NV12 for the current MJPEG-only path.
+It does NOT infer OEM Sonix identity or approve installation. The original
+camera's `CameraDeviceMftClsidChain` stays unchanged.
