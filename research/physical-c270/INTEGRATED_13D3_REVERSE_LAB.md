@@ -229,3 +229,53 @@ not prove pin mapping, negotiated MJPEG frames, or compatibility with AvCam.
 
 No production installation is supported. The `AvCamIntegrated13D3Mft.ps1`
 `-Enable` mode remains forbidden on the observed OEM Sonix chain.
+
+## 2026-10-29: confirmed device-wide OBS output (two distinct physical cameras)
+
+**Accepted product requirement:** the owner explicitly accepts processed OBS
+frames being shown to every application opening the original Lenovo
+`Integrated Camera` (USB VID_13D3&PID_56FF). This is device-scoped,
+not Chrome-scoped. Deep-Live-Cam must take its RAW input from the separate
+Logitech C270 (VID_046D&PID_0825), never from the Lenovo output.
+
+Target: Logitech C270 RAW -> Deep-Live-Cam -> OBS Virtual Camera ->
+AvCamPhysicalBridge -> **Lenovo Sonix Device MFT -> AvCam Device MFT** ->
+every Media Foundation consumer of Lenovo Integrated Camera.
+
+The camera name / hardware device identity remains Lenovo's own, but
+the processed pixels come from OBS when the format matches and the publisher
+is live. This does not make processed footage originate from the physical
+Lenovo sensor, and does not guarantee compatibility with authenticity or
+liveness checks. The replacement must fail open to the real Lenovo frame
+on stale/invalid/absent OBS data or unsupported media type.
+
+**Completed on the real host:** Sonix-only OEM MFT chain enumerated and
+Authenticode signature valid; Sonix required COM interfaces are available;
+the original Lenovo MF source captured 30 genuine MJPG 1280x720@30 frames
+(29 changed, 0 malformed). OBS-to-AvCam diagnostic has independently
+received moving frames. This is NOT a successful Sonix->AvCam chain.
+
+**Engineering blockers before a device-wide on-device trial:**
+
+1. Verify actual adjacent Sonix output pin IDs and type enumeration against
+   AvCam input pins after the real OEM transform has been initialized.
+   Matching the camera's MF source descriptor is not sufficient.
+2. Implement chain-aware registration using the existing REG_MULTI_SZ
+   `CameraDeviceMftClsidChain`, keeping Sonix CLSID first and appending
+   only AvCam; never write the legacy `CameraDeviceMftClsid` value.
+3. Add exact original-chain snapshot, digest/validation, crash-safe
+   recovery and an independent rollback path that does not require a
+   working camera. Deny install when the OEM baseline has changed.
+4. Verify 1280x720 MJPG timing and all-consumer output with moving OBS
+   content, then stop the bridge and verify safe physical pass-through.
+5. Confirm that Deep-Live-Cam continues capturing Logitech RAW, that
+   no OBS feedback loop exists, and that Chrome plus Windows Camera work
+   without FrameServer hangs before approving any release.
+
+**Current permission:** consent to device-wide OUTPUT semantics, not a
+blanket instruction to edit the host's OEM camera registry. The current
+chain registration remains BLOCKED until interoperability and recovery
+are validated and a separate explicit hardware-trial decision is made.
+
+`AvCamSonixChainPlan.ps1` is a read-only candidate planner only; it now
+requires distinct healthy physical RAW input and processed output cameras.
