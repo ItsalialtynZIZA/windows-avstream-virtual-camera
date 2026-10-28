@@ -85,7 +85,7 @@ function Run-SandboxSelfTest {
     Assert-Sandbox $path
     $dir=Join-Path $env:TEMP "AvCamSonixTransaction-$id"
     New-Item -ItemType Directory -Path $dir -ErrorAction Stop | Out-Null
-    $root=[Microsoft.Win32.RegistryKey]::CurrentUser
+    $root=[Microsoft.Win32.Registry]::CurrentUser
     $key=$null
     try {
         $key=$root.CreateSubKey($path)
