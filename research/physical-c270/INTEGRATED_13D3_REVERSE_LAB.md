@@ -179,3 +179,23 @@ and two connected, fully enumerated format descriptors, accepts equivalent
 30-fps rational rates, and rejects NV12 for the current MJPEG-only path.
 It does NOT infer OEM Sonix identity or approve installation. The original
 camera's `CameraDeviceMftClsidChain` stays unchanged.
+
+## 2026-10-29: Isolated adjacent Device MFT pin-link simulation
+
+The portable `AvCamDmftConnectedPinMap.h` and `AvCamDmftConnectedPinMapTest.cpp`
+model one-to-one predecessor-output to successor-input links with **opaque,
+nonidentical stream IDs** and validate their completeness before the existing
+MJPEG 1280x720@30 media contract is considered. Duplicate links, unknown IDs,
+duplicate source IDs, oversized counts, missing links and missing evidence are
+all rejected without allocating unbounded memory.
+
+The test runs on Linux and Windows CI using synthetic arrays only. It does
+**not** instantiate SonixDeviceMFT.dll, connect the actual OEM transform to
+AvCam, install any COM class, or establish live Lenovo camera compatibility.
+Its purpose is to prevent a later chain adapter from assuming consecutive or
+identical stream IDs. Physical Sonix installation remains blocked.
+
+The owner also confirmed Chrome displays the **original** Integrated Camera
+while Deep-Live-Cam and OBS run: this is normal RAW pass-through and not
+evidence that the OEM camera is fed from OBS. An isolated test and a safe
+reversible hardware evaluation would be required before any OEM modification.
