@@ -45,6 +45,66 @@ constexpr StreamIdAudit AuditStreamIds(const T* streamIds,
     return StreamIdAudit::Unique;
 }
 
+// Adjacent MFT pins need explicit mapping evidence. The upstream output and
+// downstream input may have DIFFERENT stream IDs, so matching numeric IDs
+// is neither required nor sufficient. This pure check is for isolated tests:
+// no real OEM identity or pin mapping can be inferred from a source descriptor.
+enum class MediaSubtype {
+    Unknown,
+    Mjpg,
+    Nv12
+};
+struct PinMediaEvidence {
+    bool available = false;
+    bool fromConnectedTransform = false;
+    bool enumerationComplete = false;
+    std::uint32_t streamId = 0;
+    MediaSubtype subtype = MediaSubtype::Unknown;
+    std::uint32_t width = 0;
+    std::uint32_t height = 0;
+    std::uint32_t fpsNumerator = 0;
+    std::uint32_t fpsDenominator = 0;
+};
+enum class AdjacentMediaGate {
+    MissingEvidence,
+    NotFromConnectedTransforms,
+    IncompleteEnumeration,
+    MappingUnverified,
+    UnsupportedType,
+    FrameFormatMismatch,
+    FormatMatchOnly
+};
+
+// For the current MJPEG-only replacement path, the connected upstream and
+// downstream pins must both expose compatible MJPG 1280x720 at exactly 30 fps.
+// Numerical stream IDs need not be identical. This does NOT inspect frames,
+// establish Sonix COM identity, or authorize registration on a physical camera.
+constexpr AdjacentMediaGate CheckAdjacentMjpeg(
+    const PinMediaEvidence& upstream,
+    const PinMediaEvidence& downstream,
+    bool mappingVerified) noexcept {
+    if (!upstream.available || !downstream.available)
+        return AdjacentMediaGate::MissingEvidence;
+    if (!upstream.fromConnectedTransform || !downstream.fromConnectedTransform)
+        return AdjacentMediaGate::NotFromConnectedTransforms;
+    if (!upstream.enumerationComplete || !downstream.enumerationComplete)
+        return AdjacentMediaGate::IncompleteEnumeration;
+    if (!mappingVerified)
+        return AdjacentMediaGate::MappingUnverified;
+    if (upstream.subtype != MediaSubtype::Mjpg ||
+        downstream.subtype != MediaSubtype::Mjpg)
+        return AdjacentMediaGate::UnsupportedType;
+    if (!Is720p30(upstream.width, upstream.height,
+                   upstream.fpsNumerator, upstream.fpsDenominator) ||
+        !Is720p30(downstream.width, downstream.height,
+                   downstream.fpsNumerator, downstream.fpsDenominator))
+        return AdjacentMediaGate::FrameFormatMismatch;
+    return AdjacentMediaGate::FormatMatchOnly;
+}
+constexpr bool PermitsSonixChainInstall(AdjacentMediaGate) noexcept {
+    return false;
+}
+
 // A valid numeric/rate match is only observational evidence. Installation
 // always remains disabled until actual connected OEM compatibility is proven.
 constexpr bool PermitsSonixChainInstall(StreamIdAudit) noexcept { return false; }
