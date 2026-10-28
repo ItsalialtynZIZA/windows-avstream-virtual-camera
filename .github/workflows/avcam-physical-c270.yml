@@ -675,7 +675,7 @@ jobs:
           if ($code -ne 0) { throw "Bridge dual-format transport selftest failed with $code" }
           foreach ($marker in @('AVCAM_BRIDGE_MAPPING_RESTART_SELFTEST_PASSED',
                                 'AVCAM_NV12_TRANSPORT_LOCAL_SELFTEST_PASS')) {
-            if ($output -notmatch [regex]::Escape($marker)) {
+            if (($output -join "`n") -notmatch [regex]::Escape($marker)) {
               throw "Bridge selftest marker missing: $marker"
             }
           }
