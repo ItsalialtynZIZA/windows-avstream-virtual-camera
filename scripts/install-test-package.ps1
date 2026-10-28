@@ -46,8 +46,12 @@ if ($bcdExit -ne 0) {
     throw "Cannot read BCD test-signing status (exit=$bcdExit). No changes made."
 }
 $bcd = $bcdLines -join "`n"
-# The output field name is invariant, whereas the value may be localized.
-$testSigningEnabled = $bcd -match '(?im)^\s*testsigning\s+(?:Yes|On|Да|1)\s*
+# On a Russian locale, the BCD value may be 'Да'.
+$testSigningEnabled = $bcd -match '(?im)^\s*testsigning\s+(?:Yes|On|Да|1)\s*$'
+if (-not $testSigningEnabled) {
+    throw 'TESTSIGNING is not confirmed active for the current boot. No driver/certificate changes made.'
+}
+Write-Host 'AVCAM_TESTSIGNING_CONFIRMED=1'
 
 if ($TrustTestCertificate) {
     if (-not $cer) {
@@ -73,12 +77,12 @@ if ($rootTool) {
         throw "AvCamRootInstall failed with exit code $LASTEXITCODE. Inspect setupapi.dev.log."
     }
 } else {
-    # Allow older packages to use a pre-existing WDK DevCon, if available.
+    # Legacy package: use a pre-existing WDK DevCon if available.
     $programFilesX86 = ${env:ProgramFiles(x86)}
     $toolsRoot = Join-Path $programFilesX86 'Windows Kits\10\Tools'
     $devcon = if (Test-Path -LiteralPath $toolsRoot) {
         Get-ChildItem $toolsRoot -Recurse -Filter devcon.exe -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.FullName -match '\\x64\\devcon\.exe$' } |
+            Where-Object { $_.FullName -match '\\\\x64\\\\devcon\\.exe$' } |
             Sort-Object FullName -Descending |
             Select-Object -First 1 -ExpandProperty FullName
     }
@@ -101,61 +105,3 @@ Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
     Format-List Status, Class, FriendlyName, InstanceId, Problem, ConfigManagerErrorCode
 
 Write-Host 'AVCAM_TEST_SIGNED_DRIVER_INSTALL_ATTEMPT_COMPLETE'
-
-if (-not $testSigningEnabled) {
-    throw 'TESTSIGNING is not confirmed active for the current boot. No driver/certificate changes made.'
-}
-Write-Host 'AVCAM_TESTSIGNING_CONFIRMED=1'
-
-if ($TrustTestCertificate) {
-    if (-not $cer) {
-        throw '-TrustTestCertificate was specified but AvCam.cer was not found.'
-    }
-
-    Write-Warning 'Importing the CI test certificate into LocalMachine Root and TrustedPublisher. Use only on a dedicated test machine.'
-    Import-Certificate -FilePath $cer.FullName -CertStoreLocation 'Cert:\LocalMachine\Root' | Out-Null
-    Import-Certificate -FilePath $cer.FullName -CertStoreLocation 'Cert:\LocalMachine\TrustedPublisher' | Out-Null
-    Write-Host 'Test certificate imported.'
-} elseif ($cer) {
-    Write-Host 'Test certificate was found but was not trusted automatically.'
-    Write-Host 'Re-run with -TrustTestCertificate only on a dedicated development/test machine if required.'
-}
-
-$programFilesX86 = ${env:ProgramFiles(x86)}
-$toolsRoot = Join-Path $programFilesX86 'Windows Kits\10\Tools'
-$devconCandidates = @(
-    (Join-Path $toolsRoot 'x64\devcon.exe'),
-    (Join-Path $toolsRoot '10.0.26100.0\x64\devcon.exe')
-)
-
-$devcon = $devconCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $devcon -and (Test-Path $toolsRoot)) {
-    $devcon = Get-ChildItem $toolsRoot -Recurse -Filter devcon.exe -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -match '\\x64\\devcon\.exe$' } |
-        Sort-Object FullName -Descending |
-        Select-Object -First 1 -ExpandProperty FullName
-}
-
-if (-not $devcon) {
-    throw 'devcon.exe was not found. Install the Windows Driver Kit (WDK) Tools component.'
-}
-
-Write-Host ''
-Write-Host "Using devcon: $devcon"
-& $devcon install $inf.FullName 'Root\AvCamVirtualCamera'
-if ($LASTEXITCODE -ne 0) {
-    throw "devcon install failed with exit code $LASTEXITCODE."
-}
-
-Write-Host ''
-Write-Host 'Driver installation requested. Current AvCam device state:'
-Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue |
-    Where-Object {
-        $_.InstanceId -like 'ROOT\AVCAMVIRTUALCAMERA*' -or
-        $_.FriendlyName -eq 'AvCam Virtual Camera'
-    } |
-    Format-List Status, Class, FriendlyName, InstanceId, Problem, ConfigManagerErrorCode
-
-if (-not $testSigningEnabled) {
-    Write-Warning 'If Windows reports a signature/start failure, use a dedicated test machine and explicitly enable test-signing before retrying.'
-}
