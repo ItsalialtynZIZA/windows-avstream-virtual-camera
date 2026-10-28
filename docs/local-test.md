@@ -49,19 +49,34 @@ After reboot, return to the extracted runtime-bundle directory and re-create `$D
 
 ## 3. Install the CI test package
 
-First try the guarded installer without changing certificate stores:
+**This driver is test-signed.** The installer now refuses to create a device
+unless test-signing is already confirmed active in the current boot and the
+operator explicitly opts in. If `bcdedit /enum '{current}'` has no
+`testsigning Yes` (or localized `Да`), stop here. Do not weaken Secure
+Boot on a primary workstation to make this lab work.
+
+On a dedicated, previously prepared test machine use an elevated PowerShell:
 
 ```powershell
-& "$DriverDir\scripts\install-test-package.ps1" -PackageDirectory $DriverDir
+& "$DriverDir\scripts\install-test-package.ps1" -PackageDirectory $DriverDir -AcceptTestSignedDriver
 ```
 
-If Windows rejects the package because the CI test certificate is not trusted, and this is a dedicated test machine, explicitly opt in to certificate trust:
+If the signed package is rejected only because its test certificate is not
+trusted, review the actual signer and opt in explicitly on that test machine:
 
 ```powershell
-& "$DriverDir\scripts\install-test-package.ps1" -PackageDirectory $DriverDir -TrustTestCertificate
+& "$DriverDir\scripts\install-test-package.ps1" -PackageDirectory $DriverDir -AcceptTestSignedDriver -TrustTestCertificate
 ```
 
-The installer does not enable test-signing by itself.
+The current CI artifact includes `AvCamRootInstall.exe`, which uses
+SetupAPI/NewDev to register *only* `Root\AvCamVirtualCamera`. **DevCon
+and the Windows Driver Kit are not required** on the test host. The helper
+does not enable test-signing, disable Secure Boot, register a Sonix Device
+MFT, or modify a physical USB camera.
+
+To undo installation, run the included `scripts\uninstall-driver.ps1`
+as administrator. It uses the same bundled native tool for the separate
+AvCam root device; it does not require DevCon.
 
 ## 4. Verify PnP enumeration
 
