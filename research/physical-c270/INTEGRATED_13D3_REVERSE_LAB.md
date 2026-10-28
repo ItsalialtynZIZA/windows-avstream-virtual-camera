@@ -111,3 +111,20 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\AvCam-Integrated-Lab
 ```
 
 A successful run prints `AVCAM_CAPTURE_NEGOTIATED=MJPG_1280X720_30`, `AVCAM_INTEGRATED_NATIVE_MJPEG_CAPTURE_PASS`, and `AVCAM_BOUNDED_NATIVE_CAPTURE_COMPLETE`. This checks normal genuine video from the OEM Sonix chain, not interoperability with a second MFT or the Chrome-selected type. Windows CI only compiles/selftests without opening a camera.
+
+
+## 2026-10-29: physical MJPEG baseline passed; wrapper exit-code fixed
+
+Owner's Lenovo 82K1, Windows 11 build 26300, with original Sonix OEM chain (unchanged):
+
+- `AVCAM_CAPTURE_CAMERA_MATCHES=1`
+- `AVCAM_CAPTURE_NEGOTIATED=MJPG_1280X720_30`
+- `AVCAM_CAPTURE_FRAMES=30 CHANGED_PREFIXES=29 MALFORMED=0 TICKS=1 NON_INCREASING_TS=0 ELAPSED_MS=1484 FLAGS=256`
+- `AVCAM_INTEGRATED_NATIVE_MJPEG_CAPTURE_PASS`
+- `AVCAM_MFT_CHAIN_INTEROP=NOT_VERIFIED`
+
+The old 5.1 PowerShell wrapper printed `AVCAM_NATIVE_CAPTURE_FAILED exitcode=` **after** native success, because its `Start-Process -PassThru` exit-code value was empty. The wrapper now uses a directly-owned .NET Process with synchronous exit observation, async output draining, and no registry writes. `-WrapperSelfTest` checks exit code 0 and 17 without camera, and the user confirmed `AVCAM_BOUNDED_WRAPPER_SELFTEST_PASS`. No hardware re-test is necessary solely to confirm the old wrapper error.
+
+The new `AvCamSonixChainPlan.ps1` is a **read-only, standalone planner** for the observed `REG_MULTI_SZ` chain `[Sonix]`. It calculates the candidate `[Sonix, AvCam]`, preserving Sonix nearest DevProxy, plus an exact original-chain rollback requirement. It intentionally rejects nonmatching OEM values, duplicates, old Windows builds and incompatible chain shapes. No `-Enable` option exists; it never installs COM DLLs or edits the camera. `AVCAM_SONIX_CHAIN_INSTALL=BLOCKED` remains the decision until the pin counts, required COM interfaces, media-type negotiation, source Frame Server behavior and rollback are actually verified. Microsoft's documented chain-capacity support is not proof of interoperability.
+
+No frame-authenticity or biometric/liveness compatibility claims are made.
