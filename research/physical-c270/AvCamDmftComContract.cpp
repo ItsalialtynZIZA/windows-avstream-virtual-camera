@@ -8,6 +8,7 @@
 #include <unknwn.h>
 #include <mfidl.h>
 #include <mftransform.h>
+#include <ks.h>
 #include <ksproxy.h>
 #include <iomanip>
 #include <iostream>
