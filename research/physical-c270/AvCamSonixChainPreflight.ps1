@@ -71,7 +71,7 @@ $build = [int]$os.BuildNumber
 if ($build -lt 22000) { throw 'Windows 11 required for this host-specific audit' }
 
 $physical = @(Get-PnpDevice -PresentOnly | Where-Object {
-    $_.InstanceId -match '(?i)^USB\VID_13D3&PID_56FF&MI_00\' -and
+    $_.InstanceId -match '(?i)^USB\\VID_13D3&PID_56FF&MI_00\\' -and
     $_.Class -eq 'Camera' -and $_.Status -eq 'OK' -and
     $_.FriendlyName -eq 'Integrated Camera'
 })
@@ -154,7 +154,7 @@ try {
         Write-Host 'AVCAM_CHAIN_INTEROP=NOT_VERIFIED'
         return
     }
-    $sonixFound = ($chain | Where-Object { $_ -ieq $expectedSonix }).Count -eq 1
+    $sonixFound = @($chain | Where-Object { $_ -ieq $expectedSonix }).Count -eq 1
     if (-not $sonixFound) {
         Write-Warning 'Expected Sonix CLSID was not found in OEM chain.'
     }
@@ -200,7 +200,7 @@ try {
                             $untrustedSids -notcontains $rule.IdentityReference.Value) {
                             continue
                         }
-                        $isWrite = Test-WriteMask ([int64]$rule.RegistryRights.value__)
+                        $isWrite = Test-WriteMask ([int64]$rule.RegistryRights)
                         if ($isWrite) {
                             $aclUnsafe = $true
                             Write-Warning "Possible untrusted write ACE: $path SID=$($rule.IdentityReference.Value) Inherited=$($rule.IsInherited)"
