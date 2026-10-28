@@ -150,7 +150,7 @@ jobs:
           # The patched sample must emit runtime topology after reading
           # its predecessor IMFTransform counts, without enabling installation.
           $impl = Get-Content 'upstream/avstream/sampledevicemft/multipinmft.cpp' -Raw
-          $callCount = ([regex]::Matches($impl, 'AvCamTraceDeviceMftTopology\\(')).Count
+          $callCount = $impl.Split([string[]]@('AvCamTraceDeviceMftTopology('), [StringSplitOptions]::None).Count - 1
           if ($callCount -ne 1) {
             throw "Missing or duplicate AvCam upstream topology telemetry: $callCount"
           }
