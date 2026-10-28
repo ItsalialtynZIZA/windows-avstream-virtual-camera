@@ -145,6 +145,26 @@ void AvCamSetQueueFormat(const void* queue, IMFMediaType* input,
 void AvCamTrace(const wchar_t* message) {
     TraceRaw(message);
 }
+
+void AvCamTraceDeviceMftTopology(long result, unsigned long upstreamInput,
+                                 unsigned long upstreamOutput,
+                                 unsigned long ownInput, unsigned long ownOutput) {
+    // This event observes REAL numbers from the upstream IMFTransform and this
+    // MFT's initialized pin arrays, but does not prove that upstream == Sonix.
+    // Never turn a count match into an installation/compatibility approval.
+    const bool usable = SUCCEEDED(static_cast<HRESULT>(result)) &&
+                        upstreamOutput > 0 && upstreamOutput <= 32 &&
+                        upstreamOutput == ownInput &&
+                        ownOutput > 0 && ownOutput <= 32;
+    wchar_t event[384]{};
+    (void)swprintf_s(event,
+        L"AvCamDmftTopology result=0x%08lX upstream_input=%lu upstream_output=%lu "
+        L"avcam_input=%lu avcam_output=%lu count_match=%d "
+        L"upstream_identity=unknown pin_types=unknown chain_interop=NOT_VERIFIED",
+        static_cast<unsigned long>(result), upstreamInput, upstreamOutput,
+        ownInput, ownOutput, usable ? 1 : 0);
+    TraceRaw(event);
+}
 void AvCamRemoveQueue(const void* queue) {
     {
         std::lock_guard<std::mutex> lock(g_modesMutex);
