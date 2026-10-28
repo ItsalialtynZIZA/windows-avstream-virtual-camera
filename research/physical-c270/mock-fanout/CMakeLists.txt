@@ -121,6 +121,9 @@ target_link_libraries(AvCamEnumeratePhysicalC270 PRIVATE setupapi)
 
 # The --selftest path is fully camera-free in CI.
 # Registration-free COM contract probe; CI --selftest never loads a camera or DLL.
+add_executable(AvCamDmftTopologyGateTest ../AvCamDmftTopologyGateTest.cpp)
+target_compile_features(AvCamDmftTopologyGateTest PRIVATE cxx_std_17)
+
 add_executable(AvCamDmftComContract ../AvCamDmftComContract.cpp)
 target_compile_features(AvCamDmftComContract PRIVATE cxx_std_17)
 target_link_libraries(AvCamDmftComContract PRIVATE ole32)
