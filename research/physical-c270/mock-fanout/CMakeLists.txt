@@ -44,6 +44,12 @@ add_executable(AvCamMfActivationLifetimeSmoke ../mf-source/AvCamMfActivationLife
 target_compile_features(AvCamMfActivationLifetimeSmoke PRIVATE cxx_std_17)
 target_link_libraries(AvCamMfActivationLifetimeSmoke PRIVATE mfplat mfuuid ole32)
 
+# Race event retrieval, descriptor queries, Start/Stop and Shutdown
+# against an unregistered in-process MF COM source. No camera is opened.
+add_executable(AvCamMfConcurrentShutdownSmoke ../mf-source/AvCamMfConcurrentShutdownSmoke.cpp)
+target_compile_features(AvCamMfConcurrentShutdownSmoke PRIVATE cxx_std_17)
+target_link_libraries(AvCamMfConcurrentShutdownSmoke PRIVATE mfplat mfuuid ole32)
+
 # Full synthetic OBS IPC -> separate broker -> MF COM source -> MEMediaSample.
 # No COM registration, camera, installed driver or service required in CI.
 add_executable(AvCamMfEndToEndSmoke ../mf-source/AvCamMfEndToEndSmoke.cpp)
