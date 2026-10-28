@@ -151,6 +151,20 @@ jobs:
           }
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -SelfTest
           if ($LASTEXITCODE -ne 0) { throw 'Sonix preflight selftest failed' }
+      - name: Validate bounded native capture wrapper in Windows PowerShell 5.1 (no camera)
+        shell: powershell
+        run: |
+          $path = 'research/physical-c270/Run-AvCamIntegratedNativeCaptureSmoke.ps1'
+          $errors = $null
+          $tokens = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path $path).Path, [ref]$tokens, [ref]$errors)
+          if ($errors.Count -ne 0) {
+            $errors | ForEach-Object { Write-Host $_ }
+            throw 'Integrated native capture wrapper syntax failed'
+          }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $path -WrapperSelfTest
+          if ($LASTEXITCODE -ne 0) { throw 'Bounded wrapper process and exit-code regression failed' }
       - name: Test physical Logitech registry preflight without accessing protected subkeys
         shell: powershell
         run: |
