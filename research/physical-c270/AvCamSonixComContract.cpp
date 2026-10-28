@@ -42,11 +42,11 @@ bool IsSignedOemModule(const wchar_t* path) {
     WINTRUST_DATA data{};
     data.cbStruct = sizeof(data);
     data.dwUIChoice = WTD_UI_NONE;
-    data.fdwUnionChoice = WTD_CHOICE_FILE;
+    data.dwUnionChoice = WTD_CHOICE_FILE;
     data.pFile = &file;
-    data.fdwStateAction = WTD_STATEACTION_IGNORE;
+    data.dwStateAction = WTD_STATEACTION_IGNORE;
     // This is local signature validation, not an online revocation audit.
-    data.fdwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL;
+    data.dwProvFlags = WTD_CACHE_ONLY_URL_RETRIEVAL;
     GUID action = WINTRUST_ACTION_GENERIC_VERIFY_V2;
     return WinVerifyTrust(nullptr, &action, &data) == ERROR_SUCCESS;
 }
