@@ -74,26 +74,47 @@ public:
     }
     IMFStreamDescriptor* Descriptor() const { return desc_.Get(); }
 
-    // IMFMediaEventGenerator
+    // Snapshot COM references before releasing the lifecycle mutex.
+    // In particular, a blocking GetEvent must never hold this mutex
+    // while Stop/Shutdown waits for other MF operations.
     STDMETHOD(GetEvent)(DWORD flags, IMFMediaEvent** event) override {
         if (!event) return E_POINTER;
-        if (shutdown_) return MF_E_SHUTDOWN;
-        ComPtr<IMFMediaEventQueue> queue = queue_;
+        ComPtr<IMFMediaEventQueue> queue;
+        {
+            std::lock_guard<std::mutex> guard(lifecycleMutex_);
+            if (shutdown_) return MF_E_SHUTDOWN;
+            queue = queue_;
+        }
         return queue ? queue->GetEvent(flags, event) : MF_E_SHUTDOWN;
     }
     STDMETHOD(BeginGetEvent)(IMFAsyncCallback* callback, IUnknown* state) override {
-        if (shutdown_) return MF_E_SHUTDOWN;
-        return queue_ ? queue_->BeginGetEvent(callback, state) : MF_E_SHUTDOWN;
+        ComPtr<IMFMediaEventQueue> queue;
+        {
+            std::lock_guard<std::mutex> guard(lifecycleMutex_);
+            if (shutdown_) return MF_E_SHUTDOWN;
+            queue = queue_;
+        }
+        return queue ? queue->BeginGetEvent(callback, state) : MF_E_SHUTDOWN;
     }
     STDMETHOD(EndGetEvent)(IMFAsyncResult* result, IMFMediaEvent** event) override {
-        if (shutdown_) return MF_E_SHUTDOWN;
-        return queue_ ? queue_->EndGetEvent(result, event) : MF_E_SHUTDOWN;
+        ComPtr<IMFMediaEventQueue> queue;
+        {
+            std::lock_guard<std::mutex> guard(lifecycleMutex_);
+            if (shutdown_) return MF_E_SHUTDOWN;
+            queue = queue_;
+        }
+        return queue ? queue->EndGetEvent(result, event) : MF_E_SHUTDOWN;
     }
     STDMETHOD(QueueEvent)(MediaEventType type, REFGUID guid,
                           HRESULT status, const PROPVARIANT* value) override {
-        if (shutdown_) return MF_E_SHUTDOWN;
-        return queue_ ? queue_->QueueEventParamVar(type, guid, status, value)
-                      : MF_E_SHUTDOWN;
+        ComPtr<IMFMediaEventQueue> queue;
+        {
+            std::lock_guard<std::mutex> guard(lifecycleMutex_);
+            if (shutdown_) return MF_E_SHUTDOWN;
+            queue = queue_;
+        }
+        return queue ? queue->QueueEventParamVar(type, guid, status, value)
+                     : MF_E_SHUTDOWN;
     }
 
     // IMFMediaStream2 allows Frame Server to control stream state.
@@ -117,10 +138,13 @@ public:
     STDMETHOD(GetStreamDescriptor)(IMFStreamDescriptor** desc) override {
         if (!desc) return E_POINTER;
         *desc = nullptr;
+        std::lock_guard<std::mutex> lifetime(lifecycleMutex_);
         if (shutdown_) return MF_E_SHUTDOWN;
         return desc_.CopyTo(desc);
     }
     STDMETHOD(RequestSample)(IUnknown* token) override {
+        // Order: lifecycleMutex_ -> tokensMutex_, identical to Stop/Shutdown.
+        std::lock_guard<std::mutex> lifetime(lifecycleMutex_);
         if (shutdown_) return MF_E_SHUTDOWN;
         if (!running_) return MF_E_INVALIDREQUEST;
         std::lock_guard<std::mutex> guard(tokensMutex_);
@@ -184,6 +208,10 @@ private:
         // ONLY read NV12 from the ACL-protected cross-session OBS pipe.
         // No Logitech device or RAW mapping is opened in this service.
         avcam::mfpipe::Reader reader;
+        // Stable COM reference for the entire worker lifetime. Shutdown
+        // joins this worker before resetting queue_. Do not acquire
+        // lifecycleMutex_ inside the worker: Stop joins while holding it.
+        ComPtr<IMFMediaEventQueue> events = queue_;
         while (running_) {
             avcam::mfpipe::Frame frame;
             if (!reader.Next(frame)) {
@@ -222,8 +250,8 @@ private:
             if (token) sample->SetUnknown(MFSampleExtension_Token, token.Get());
             sample->SetSampleTime(MFGetSystemTime());
             sample->SetSampleDuration(kDuration);
-            if (running_ && queue_)
-                queue_->QueueEventParamUnk(
+            if (running_ && events)
+                events->QueueEventParamUnk(
                     MEMediaSample, GUID_NULL, S_OK, sample.Get());
         }
         reader.Close();
@@ -293,26 +321,46 @@ public:
         if (FAILED(hr)) return hr;
         return pd_->SelectStream(0);
     }
-    // IMFMediaEventGenerator
+    // IMFMediaEventGenerator: do not access resettable COM pointers outside
+    // mutex_. Never hold mutex_ while GetEvent may block.
     STDMETHOD(GetEvent)(DWORD flags, IMFMediaEvent** event) override {
         if (!event) return E_POINTER;
-        if (shutdown_) return MF_E_SHUTDOWN;
-        ComPtr<IMFMediaEventQueue> queue = queue_;
+        ComPtr<IMFMediaEventQueue> queue;
+        {
+            std::lock_guard<std::mutex> guard(mutex_);
+            if (shutdown_) return MF_E_SHUTDOWN;
+            queue = queue_;
+        }
         return queue ? queue->GetEvent(flags, event) : MF_E_SHUTDOWN;
     }
     STDMETHOD(BeginGetEvent)(IMFAsyncCallback* cb, IUnknown* state) override {
-        if (shutdown_) return MF_E_SHUTDOWN;
-        return queue_ ? queue_->BeginGetEvent(cb, state) : MF_E_SHUTDOWN;
+        ComPtr<IMFMediaEventQueue> queue;
+        {
+            std::lock_guard<std::mutex> guard(mutex_);
+            if (shutdown_) return MF_E_SHUTDOWN;
+            queue = queue_;
+        }
+        return queue ? queue->BeginGetEvent(cb, state) : MF_E_SHUTDOWN;
     }
     STDMETHOD(EndGetEvent)(IMFAsyncResult* res, IMFMediaEvent** event) override {
-        if (shutdown_) return MF_E_SHUTDOWN;
-        return queue_ ? queue_->EndGetEvent(res, event) : MF_E_SHUTDOWN;
+        ComPtr<IMFMediaEventQueue> queue;
+        {
+            std::lock_guard<std::mutex> guard(mutex_);
+            if (shutdown_) return MF_E_SHUTDOWN;
+            queue = queue_;
+        }
+        return queue ? queue->EndGetEvent(res, event) : MF_E_SHUTDOWN;
     }
     STDMETHOD(QueueEvent)(MediaEventType type, REFGUID guid,
                           HRESULT status, const PROPVARIANT* value) override {
-        if (shutdown_) return MF_E_SHUTDOWN;
-        return queue_ ? queue_->QueueEventParamVar(type, guid, status, value)
-                      : MF_E_SHUTDOWN;
+        ComPtr<IMFMediaEventQueue> queue;
+        {
+            std::lock_guard<std::mutex> guard(mutex_);
+            if (shutdown_) return MF_E_SHUTDOWN;
+            queue = queue_;
+        }
+        return queue ? queue->QueueEventParamVar(type, guid, status, value)
+                     : MF_E_SHUTDOWN;
     }
     // IMFMediaSource
     STDMETHOD(GetCharacteristics)(DWORD* flags) override {
@@ -323,8 +371,14 @@ public:
     }
     STDMETHOD(CreatePresentationDescriptor)(IMFPresentationDescriptor** pd) override {
         if (!pd) return E_POINTER;
-        if (shutdown_) return MF_E_SHUTDOWN;
-        return pd_ ? pd_->Clone(pd) : MF_E_NOT_INITIALIZED;
+        *pd = nullptr;
+        ComPtr<IMFPresentationDescriptor> snapshot;
+        {
+            std::lock_guard<std::mutex> guard(mutex_);
+            if (shutdown_) return MF_E_SHUTDOWN;
+            snapshot = pd_;
+        }
+        return snapshot ? snapshot->Clone(pd) : MF_E_NOT_INITIALIZED;
     }
     STDMETHOD(Start)(IMFPresentationDescriptor* descriptor,
                      const GUID* timeFormat, const PROPVARIANT* start) override {
@@ -382,16 +436,26 @@ public:
     STDMETHOD(GetSourceAttributes)(IMFAttributes** attributes) override {
         if (!attributes) return E_POINTER;
         *attributes = nullptr;
+        std::lock_guard<std::mutex> guard(mutex_);
         if (shutdown_) return MF_E_SHUTDOWN;
-        return attributes_.CopyTo(attributes);
+        return attributes_ ? attributes_.CopyTo(attributes) : MF_E_NOT_INITIALIZED;
     }
     STDMETHOD(GetStreamAttributes)(DWORD streamID,
                                    IMFAttributes** attributes) override {
         if (!attributes) return E_POINTER;
         *attributes = nullptr;
-        if (shutdown_) return MF_E_SHUTDOWN;
-        if (streamID != 0) return MF_E_INVALIDSTREAMNUMBER;
-        return stream_->Descriptor()->QueryInterface(IID_PPV_ARGS(attributes));
+        ComPtr<AvCamMfStream> stream;
+        {
+            std::lock_guard<std::mutex> guard(mutex_);
+            if (shutdown_) return MF_E_SHUTDOWN;
+            if (streamID != 0) return MF_E_INVALIDSTREAMNUMBER;
+            stream = stream_;
+        }
+        if (!stream) return MF_E_NOT_INITIALIZED;
+        ComPtr<IMFStreamDescriptor> desc;
+        const HRESULT hr = stream->GetStreamDescriptor(desc.GetAddressOf());
+        if (FAILED(hr)) return hr;
+        return desc->QueryInterface(IID_PPV_ARGS(attributes));
     }
     STDMETHOD(SetD3DManager)(IUnknown*) override { return S_OK; }
 
