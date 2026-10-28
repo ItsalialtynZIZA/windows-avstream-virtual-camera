@@ -622,6 +622,7 @@ jobs:
           Copy-Item build/physical-c270-lab/Release/AvCamDualCameraDeviceMft.dll $out
           Copy-Item build/physical-c270/Release/AvCamPhysicalBridge.exe $out
           Copy-Item research/physical-c270/AvCamIntegrated13D3Mft.ps1 $out
+          Copy-Item research/physical-c270/AvCamSonixChainPreflight.ps1 $out
           Copy-Item research/physical-c270/INTEGRATED_13D3_REVERSE_LAB.md $out
           $dll = Join-Path $out 'AvCamDualCameraDeviceMft.dll'
           $sha = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
