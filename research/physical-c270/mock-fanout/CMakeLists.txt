@@ -124,6 +124,9 @@ target_link_libraries(AvCamEnumeratePhysicalC270 PRIVATE setupapi)
 add_executable(AvCamDmftTopologyGateTest ../AvCamDmftTopologyGateTest.cpp)
 target_compile_features(AvCamDmftTopologyGateTest PRIVATE cxx_std_17)
 
+add_executable(AvCamDmftMediaContractTest ../AvCamDmftMediaContractTest.cpp)
+target_compile_features(AvCamDmftMediaContractTest PRIVATE cxx_std_17)
+
 add_executable(AvCamDmftComContract ../AvCamDmftComContract.cpp)
 target_compile_features(AvCamDmftComContract PRIVATE cxx_std_17)
 target_link_libraries(AvCamDmftComContract PRIVATE ole32)
