@@ -155,6 +155,19 @@ jobs:
             throw "Missing or duplicate AvCam upstream topology telemetry: $callCount"
           }
           Write-Host 'AVCAM_DMFT_UPSTREAM_TOPOLOGY_TELEMETRY_STAGED=PASS'
+          # Bound and verify telemetry from the upstream IMFDeviceTransform.
+          $source = Get-Content 'upstream/avstream/sampledevicemft/multipinmft.cpp' -Raw
+          $typeCalls = $source.Split([string[]]@('AvCamTraceUpstreamMediaContract('), [StringSplitOptions]::None).Count - 1
+          if ($typeCalls -ne 1) {
+            throw "Expected exactly one connected upstream media-type trace call; got $typeCalls"
+          }
+          $hook = Get-Content 'upstream/avstream/sampledevicemft/AvCamPhysicalHook.cpp' -Raw
+          if (!$hook.Contains('GetOutputAvailableType(streamId, index,') -or
+              !$hook.Contains('kMaxTypesPerPin = 64') -or
+              !$hook.Contains('chain_interop=NOT_VERIFIED')) {
+            throw 'Missing bounded upstream type-enumeration guard and interop disclaimer'
+          }
+          Write-Host 'AVCAM_DMFT_UPSTREAM_MEDIA_CONTRACT_TELEMETRY_STAGED=PASS'
       - name: Self-test Sonix OEM chain preflight (Windows PowerShell 5.1, camera-free)
         shell: powershell
         run: |
