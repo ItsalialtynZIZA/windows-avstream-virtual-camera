@@ -24,6 +24,26 @@ constexpr bool Is720p30(std::uint32_t width, std::uint32_t height,
            IsExact30Fps(numerator, denominator);
 }
 
+// Device MFT predecessor topology comes from a COM interface and must be
+// bounded BEFORE allocating its ID arrays. Zero upstream inputs is valid
+// for a source transform; zero upstream outputs cannot form our input pins.
+enum class UpstreamCountGate {
+    InputOutOfRange,
+    MissingOutput,
+    OutputOutOfRange,
+    BoundedForEnumeration
+};
+constexpr UpstreamCountGate CheckUpstreamPinCounts(
+    std::uint32_t inputStreams, std::uint32_t outputStreams) noexcept {
+    if (inputStreams > kMaxObservedStreams)
+        return UpstreamCountGate::InputOutOfRange;
+    if (outputStreams == 0)
+        return UpstreamCountGate::MissingOutput;
+    if (outputStreams > kMaxObservedStreams)
+        return UpstreamCountGate::OutputOutOfRange;
+    return UpstreamCountGate::BoundedForEnumeration;
+}
+
 enum class StreamIdAudit {
     Missing,
     CountOutOfRange,
