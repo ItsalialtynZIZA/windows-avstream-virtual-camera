@@ -279,3 +279,34 @@ are validated and a separate explicit hardware-trial decision is made.
 
 `AvCamSonixChainPlan.ps1` is a read-only candidate planner only; it now
 requires distinct healthy physical RAW input and processed output cameras.
+
+## Prior real-hardware OBS replacement achieved on physical Logitech (2026-10-20)
+
+On the *previous laptop*, the owner reported that both **Windows Camera**
+and **Chrome**, with the **original physical `Logi C270 HD WebCam`** selected,
+displayed the red OBS test scene. This confirms that AvCam's Device MFT
+replacement mechanism demonstrably worked for the Logitech physical endpoint
+in those applications. This is more than CI compilation or an IPC smoke test.
+
+The evidence has an important limitation: the Chrome/Windows Camera
+OBS-pixel success was observed **without Deep-Live-Cam running**. When
+Deep-Live-Cam used that same Logitech as RAW input simultaneously with
+Chrome, the user encountered occupied-camera/stream instability.
+Therefore the previous laptop did NOT pass the full concurrent
+Logitech RAW -> Deep-Live-Cam -> OBS -> Logitech physical endpoint
+end-to-end acceptance.
+
+**What to reuse, not reinvent:** the existing `AVCAM_DUAL_CAMERA_LAB_MFT`
+branch of `AvCamPhysicalHook.cpp` already accepts fresh OBS MJPEG
+1280x720 frames through `AvCamPhysicalBridge` and can replace negotiated
+MJPG samples device-wide. The new host must feed Deep-Live-Cam from the
+external Logitech and apply that existing proven frame-replacement approach
+to the *different* Lenovo Integrated Camera output after its pre-existing
+Sonix Device MFT. Only the Sonix->AvCam chain integration is new.
+
+The new Lenovo has an existing `CameraDeviceMftClsidChain` containing Sonix.
+Current old `AvCamIntegrated13D3Mft.ps1` single-CLSID installer cannot
+safely append to that OEM chain and remains blocked. Real Sonix COM QI
+and the camera's native 30-frame MJPG capture already passed, but **actual
+adjacent Sonix->AvCam pin mapping, negotiated format, device-wide OBS
+replacement and rollback have not been demonstrated**. Do not claim otherwise.
