@@ -182,6 +182,36 @@ jobs:
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -SelfTest
           if ($LASTEXITCODE -ne 0) { throw 'Sonix chain planner selftest failed' }
           Write-Host 'AVCAM_SONIX_CHAIN_PLAN_CI=PASS'
+      - name: Validate transactional Sonix DMFT rollback in isolated HKCU sandbox
+        shell: powershell
+        run: |
+          $script = 'research/physical-c270/AvCamSonixChainTransaction.ps1'
+          $tokens = $null
+          $syntax = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path $script).Path, [ref]$tokens, [ref]$syntax)
+          if ($syntax.Count -gt 0) {
+            $syntax | ForEach-Object { Write-Host $_ }
+            throw 'Sonix chain transaction parser failure'
+          }
+          $out = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -SelfTest)
+          $exit = $LASTEXITCODE
+          $out | ForEach-Object { Write-Host $_ }
+          if ($exit -ne 0) { throw "Sonix rollback simulation failed with exit $exit" }
+          foreach ($marker in @(
+            'AVCAM_SONIX_TRANSACTION_NORMAL_ROLLBACK_PASS',
+            'AVCAM_SONIX_TRANSACTION_FAULT_RECOVERY_PASS',
+            'AVCAM_SONIX_TRANSACTION_CONCURRENT_GUARD_PASS',
+            'AVCAM_SONIX_TRANSACTION_REGTYPE_GUARD_PASS',
+            'AVCAM_SONIX_TRANSACTION_SELFTEST_PASS'
+          )) {
+            if ($out -notcontains $marker) { throw "Missing transaction marker: $marker" }
+          }
+          $disabled = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script)
+          if ($LASTEXITCODE -ne 0 -or
+              $disabled -notcontains 'AVCAM_SONIX_TRANSACTION_INSTALL=BLOCKED') {
+            throw 'Sonix chain transaction unexpectedly allows production install'
+          }
       - name: Test physical Logitech registry preflight without accessing protected subkeys
         shell: powershell
         run: |
@@ -699,6 +729,7 @@ jobs:
           Copy-Item research/physical-c270/AvCamIntegrated13D3Mft.ps1 $out
           Copy-Item research/physical-c270/AvCamSonixChainPreflight.ps1 $out
           Copy-Item research/physical-c270/AvCamSonixChainPlan.ps1 $out
+          Copy-Item research/physical-c270/AvCamSonixChainTransaction.ps1 $out
           Copy-Item build/physical-c270/Release/AvCamIntegratedCameraFormats.exe $out
           Copy-Item build/physical-c270/Release/AvCamIntegratedNativeCaptureSmoke.exe $out
           Copy-Item build/physical-c270/Release/AvCamDmftComContract.exe $out
