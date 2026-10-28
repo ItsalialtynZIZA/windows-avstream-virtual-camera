@@ -600,6 +600,37 @@ jobs:
           path: artifacts/AvCam-Reverse-Cameras-Lab-x64/
           if-no-files-found: error
 
+      - name: Package 13D3 Integrated Camera reverse lab (NO installation)
+        shell: pwsh
+        run: |
+          $out = 'artifacts/AvCam-Integrated-13D3-Lab-x64'
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          Copy-Item build/physical-c270-lab/Release/AvCamDualCameraDeviceMft.dll $out
+          Copy-Item build/physical-c270/Release/AvCamPhysicalBridge.exe $out
+          Copy-Item research/physical-c270/AvCamIntegrated13D3Mft.ps1 $out
+          Copy-Item research/physical-c270/INTEGRATED_13D3_REVERSE_LAB.md $out
+          $dll = Join-Path $out 'AvCamDualCameraDeviceMft.dll'
+          $sha = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
+          "$sha  AvCamDualCameraDeviceMft.dll" | Set-Content -Path (Join-Path $out 'LAB_SHA256SUMS.txt') -Encoding ascii
+          $script = Join-Path $out 'AvCamIntegrated13D3Mft.ps1'
+          $content = Get-Content -LiteralPath $script -Raw
+          $tokens = $null; $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($script,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { throw "Integrated 13D3 MFT script syntax failure: $errors" }
+          foreach ($needle in @('VID_13D3&PID_56FF','VID_046D&PID_0825','LOGITECH_SOURCE_HAS_ACTIVE_MFT','LOGITECH_LAB_ROLLBACK_STATE_PRESENT','ENABLE_INTEGRATED_13D3_LAB','AVCAM_INTEGRATED_13D3_LAB_DISABLED')) {
+            if (!$content.Contains($needle)) { throw "Missing integrated lab guard: $needle" }
+          }
+          if ($content.Contains('VID_2B7E&PID_B685')) { throw 'Old laptop USB identity leaked into 13D3 installer' }
+          $null = @(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -Enable 2>&1)
+          if ($LASTEXITCODE -eq 0) { throw '13D3 installer accepted unapproved enable' }
+          $global:LASTEXITCODE = 0
+          Write-Host 'AVCAM_INTEGRATED_13D3_STATIC_GUARDS_PASS_NO_DEVICE_CHANGES'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AvCam-Integrated-13D3-Lab-x64
+          path: artifacts/AvCam-Integrated-13D3-Lab-x64/
+          if-no-files-found: error
+
       - name: Package no-install OBS live diagnostic (no camera modifications)
         shell: pwsh
         run: |
