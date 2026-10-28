@@ -492,6 +492,46 @@ jobs:
           if (!(Test-Path ./build/physical-c270-lab/Release/AvCamDualCameraDeviceMft.dll)) { throw 'Dedicated lab DLL missing' }
           Write-Host 'AVCAM_DUAL_CAMERA_MFT_LAB_BUILD_PASS_NO_REGISTRATION'
 
+      - name: Inspect AvCam Device MFT COM interfaces without registration
+        shell: pwsh
+        run: |
+          $probe = (Resolve-Path 'build/physical-c270/Release/AvCamDmftComContract.exe').Path
+          $dll = (Resolve-Path 'build/physical-c270-lab/Release/AvCamDualCameraDeviceMft.dll').Path
+          $psi = [System.Diagnostics.ProcessStartInfo]::new()
+          $psi.FileName = $probe
+          $psi.Arguments = '--inspect-dll "' + $dll + '"'
+          $psi.UseShellExecute = $false
+          $psi.CreateNoWindow = $true
+          $psi.RedirectStandardOutput = $true
+          $psi.RedirectStandardError = $true
+          $p = [System.Diagnostics.Process]::new()
+          $p.StartInfo = $psi
+          $started = $false
+          try {
+            $started = $p.Start()
+            if (-not $started) { throw 'Unable to launch unregistered Device MFT inspection' }
+            $outTask = $p.StandardOutput.ReadToEndAsync()
+            $errTask = $p.StandardError.ReadToEndAsync()
+            if (-not $p.WaitForExit(15000)) {
+              $p.Kill()
+              [void]$p.WaitForExit(3000)
+              throw 'Device MFT COM inspection timed out without touching installed cameras'
+            }
+            $output = $outTask.GetAwaiter().GetResult()
+            $errorText = $errTask.GetAwaiter().GetResult()
+            Write-Host $output
+            if ($errorText) { Write-Warning $errorText }
+            if ($p.ExitCode -ne 0 -or
+                $output -notmatch 'AVCAM_DMFT_REQUIRED_COM_INTERFACES=PASS') {
+              throw "Device MFT required COM interface audit failed: $($p.ExitCode)"
+            }
+          } finally {
+            if ($started -and -not $p.HasExited) {
+              try { $p.Kill() } catch {}
+            }
+            $p.Dispose()
+          }
+
       - name: Windows bridge retained-mapping restart selftest
         shell: powershell
         run: |
