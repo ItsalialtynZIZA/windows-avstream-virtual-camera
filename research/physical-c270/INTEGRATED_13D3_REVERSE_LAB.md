@@ -199,3 +199,33 @@ The owner also confirmed Chrome displays the **original** Integrated Camera
 while Deep-Live-Cam and OBS run: this is normal RAW pass-through and not
 evidence that the OEM camera is fed from OBS. An isolated test and a safe
 reversible hardware evaluation would be required before any OEM modification.
+
+## 2026-10-29: Optional signed Sonix COM contract inspection, no installation
+
+`AvCamSonixComContract.exe` is included in the **Integrated-13D3 lab artifact**
+as a narrowly scoped diagnostic. Windows CI runs its **`--selftest` only**,
+with no Sonix DLL on the runner.
+
+The optional on-device inspection requires the exact Windows system directory
+module `System32\SONiX\SonixDeviceMFT.dll`, a locally valid Authenticode
+signature, and an explicit `--i-accept-oem-dll-execution` flag. It uses the
+observed Sonix CLSID `{5A50829A-86DD-4D18-8685-891EEE643C24}` and
+direct `DllGetClassObject` / `IClassFactory` / `QueryInterface` calls in the
+diagnostic process, without registering or appending any COM class to the
+camera interface. It **does load and execute OEM code** (DllMain and class
+constructor), so this is NOT strictly read-only with respect to arbitrary
+OEM DLL runtime side effects. Run it only as a separately consented
+experiment in a disposable process with an external timeout; do not assume
+no effects just because the AvCam diagnostic makes no registry writes.
+It deliberately does **not** call `InitializeTransform`, enumerate video
+pin media types, acquire frames or open the camera.
+
+The test reports support for `IMFDeviceTransform`, `IKsControl`,
+`IMFRealTimeClientEx` and `IMFShutdown` interfaces, plus the mandatory
+`AVCAM_SONIX_CONNECTED_PINS=NOT_VERIFIED` and
+`AVCAM_SONIX_CHAIN_INSTALL=BLOCKED` markers. A PASS only proves
+*class factory instantiation and relevant QueryInterface support*; it does
+not prove pin mapping, negotiated MJPEG frames, or compatibility with AvCam.
+
+No production installation is supported. The `AvCamIntegrated13D3Mft.ps1`
+`-Enable` mode remains forbidden on the observed OEM Sonix chain.
