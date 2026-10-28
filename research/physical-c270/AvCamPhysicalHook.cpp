@@ -6,6 +6,7 @@
 #include <mfidl.h>
 #include <mfobjects.h>
 #include <mftransform.h>
+#include <mferror.h>
 #include <wrl/client.h>
 #include <mutex>
 #include <atomic>
@@ -165,6 +166,60 @@ void AvCamTraceDeviceMftTopology(long result, unsigned long upstreamInput,
         ownInput, ownOutput, usable ? 1 : 0);
     TraceRaw(event);
 }
+// Observational only. The connected predecessor may be DevProxy or an OEM
+// Device MFT: a matching media type is not proof of chain interoperability.
+// Bound all calls so a badly behaved upstream cannot trap the frame path in
+// an unbounded type-enumeration loop. Never examine or retain frame content.
+void AvCamTraceUpstreamMediaContract(IMFDeviceTransform* upstream,
+                                     const unsigned long* outputIds,
+                                     unsigned long outputCount) {
+    if (!upstream || !outputIds || outputCount == 0 || outputCount > 32) {
+        TraceRaw(L"AvCamUpstreamMediaContract invalid_stream_topology=1 upstream_identity=unknown");
+        return;
+    }
+    constexpr unsigned long kMaxTypesPerPin = 64;
+    for (unsigned long pin = 0; pin < outputCount; ++pin) {
+        const DWORD streamId = static_cast<DWORD>(outputIds[pin]);
+        unsigned long inspected = 0;
+        bool mjpg720p30 = false;
+        bool nv12720p30 = false;
+        bool completed = false;
+        HRESULT last = S_OK;
+        for (DWORD index = 0; index < kMaxTypesPerPin; ++index) {
+            Microsoft::WRL::ComPtr<IMFMediaType> type;
+            last = upstream->GetOutputAvailableType(streamId, index,
+                                                    type.GetAddressOf());
+            if (last == MF_E_NO_MORE_TYPES) {
+                completed = true;
+                break;
+            }
+            if (FAILED(last) || !type) break;
+            ++inspected;
+            GUID subtype = GUID_NULL;
+            UINT32 width = 0, height = 0, numerator = 0, denominator = 0;
+            if (SUCCEEDED(type->GetGUID(MF_MT_SUBTYPE, &subtype)) &&
+                SUCCEEDED(MFGetAttributeSize(type.Get(), MF_MT_FRAME_SIZE,
+                                             &width, &height)) &&
+                SUCCEEDED(MFGetAttributeRatio(type.Get(), MF_MT_FRAME_RATE,
+                                              &numerator, &denominator)) &&
+                width == 1280 && height == 720 &&
+                numerator == 30 && denominator == 1) {
+                if (subtype == MFVideoFormat_MJPG) mjpg720p30 = true;
+                if (subtype == MFVideoFormat_NV12) nv12720p30 = true;
+            }
+        }
+        wchar_t event[330]{};
+        (void)swprintf_s(event,
+            L"AvCamUpstreamMediaContract stream_id=%lu types_seen=%lu complete=%d "
+            L"mjpg_720p30=%d nv12_720p30=%d last_hr=0x%08lX "
+            L"upstream_identity=unknown chain_interop=NOT_VERIFIED",
+            static_cast<unsigned long>(streamId), inspected,
+            completed ? 1 : 0, mjpg720p30 ? 1 : 0,
+            nv12720p30 ? 1 : 0, static_cast<unsigned long>(last));
+        TraceRaw(event);
+    }
+}
+
 void AvCamRemoveQueue(const void* queue) {
     {
         std::lock_guard<std::mutex> lock(g_modesMutex);
