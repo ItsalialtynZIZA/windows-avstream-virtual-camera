@@ -80,6 +80,29 @@ if (Test-Path -LiteralPath $etl) {
             Write-Host ('AVCAM_MFT_QUEUE_EVENTS_OBSERVED=' + $formats)
             Write-Host ('AVCAM_MFT_REPLACEMENT_EVENTS_OBSERVED=' + $replaced)
             Write-Host ('AVCAM_MFT_PASSTHROUGH_EVENTS_OBSERVED=' + $passthrough)
+            # This event exists only after successful InitializeTransform of
+            # the experimental AvCam MFT. It reports the CONNECTED transform
+            # counts, not the identity or pin contract of the OEM Sonix DLL.
+            $topologyEvents = @($messages | Where-Object { $_ -match 'AvCamDeviceMftPinTopology' })
+            Write-Host ('AVCAM_DMFT_TOPOLOGY_EVENTS_OBSERVED=' + $topologyEvents.Count)
+            $validTopology = 0
+            $mismatched = 0
+            foreach ($event in $topologyEvents) {
+                $m = [regex]::Match($event, 'upstream_output=(\d+) avcam_input=(\d+) avcam_output=(\d+) identity=unknown')
+                if (-not $m.Success) { continue }
+                $validTopology++
+                $up = [int64]$m.Groups[1].Value
+                $inside = [int64]$m.Groups[2].Value
+                if ($up -ne $inside) { $mismatched++ }
+                Write-Host ('AVCAM_DMFT_CONNECTED_UPSTREAM_OUTPUT=' + $up)
+                Write-Host ('AVCAM_DMFT_LOCAL_INPUT_COUNT=' + $inside)
+                Write-Host ('AVCAM_DMFT_LOCAL_OUTPUT_COUNT=' + [int64]$m.Groups[3].Value)
+            }
+            Write-Host ('AVCAM_DMFT_TOPOLOGY_PARSED=' + $validTopology)
+            Write-Host ('AVCAM_DMFT_UPSTREAM_INPUT_COUNT_MISMATCH_EVENTS=' + $mismatched)
+            Write-Host 'AVCAM_DMFT_CONNECTED_UPSTREAM_IDENTITY=UNKNOWN'
+            Write-Host 'AVCAM_SONIX_PIN_INTEROP=NOT_VERIFIED'
+            Write-Host 'AVCAM_SONIX_CHAIN_INSTALL=BLOCKED'
             Write-Host 'NOTE: ETW summaries count sampled diagnostic EVENTS, not delivered video frames.'
             Write-Host 'EVIDENCE_LEVEL=DEVICE_MFT_ONLY'
             Write-Host 'No event above proves an individual Chrome or Deep Live Cam consumer.'
