@@ -3,6 +3,7 @@
 // Does not replace any frames, write frames to disk, register COM or edit drivers.
 // A separate PowerShell watchdog MUST bound ReadSample() in case a driver blocks.
 #define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #include <windows.h>
 #include <mfapi.h>
 #include <mfidl.h>
