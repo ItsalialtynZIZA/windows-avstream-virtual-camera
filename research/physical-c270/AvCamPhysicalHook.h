@@ -1,5 +1,6 @@
 #pragma once
 #include <mfidl.h>
+#include <mftransform.h>
 
 // Hook installed only into the adapted Microsoft sample Device MFT.
 // The ETW provider only observes transform state, formats, and fallback causes.
