@@ -95,11 +95,11 @@ enum class AdjacentMediaGate {
     FormatMatchOnly
 };
 
-// For the current MJPEG-only replacement path, the connected upstream and
-// downstream pins must both expose compatible MJPG 1280x720 at exactly 30 fps.
-// Numerical stream IDs need not be identical. This does NOT inspect frames,
-// establish Sonix COM identity, or authorize registration on a physical camera.
-constexpr AdjacentMediaGate CheckAdjacentMjpeg(
+// Support both exact 720p30 formats now handled by the OBS Bridge and
+// Device MFT: compressed MJPG and planar NV12. Mixing them is NOT a
+// conversion request. Real connected pin mapping and OEM initialization
+// remain mandatory before drawing any interoperability conclusion.
+constexpr AdjacentMediaGate CheckAdjacentVideo(
     const PinMediaEvidence& upstream,
     const PinMediaEvidence& downstream,
     bool mappingVerified) noexcept {
@@ -111,8 +111,9 @@ constexpr AdjacentMediaGate CheckAdjacentMjpeg(
         return AdjacentMediaGate::IncompleteEnumeration;
     if (!mappingVerified)
         return AdjacentMediaGate::MappingUnverified;
-    if (upstream.subtype != MediaSubtype::Mjpg ||
-        downstream.subtype != MediaSubtype::Mjpg)
+    if ((upstream.subtype != MediaSubtype::Mjpg &&
+         upstream.subtype != MediaSubtype::Nv12) ||
+        upstream.subtype != downstream.subtype)
         return AdjacentMediaGate::UnsupportedType;
     if (!Is720p30(upstream.width, upstream.height,
                    upstream.fpsNumerator, upstream.fpsDenominator) ||
@@ -120,6 +121,19 @@ constexpr AdjacentMediaGate CheckAdjacentMjpeg(
                    downstream.fpsNumerator, downstream.fpsDenominator))
         return AdjacentMediaGate::FrameFormatMismatch;
     return AdjacentMediaGate::FormatMatchOnly;
+}
+// Keep legacy MJPEG-only callers strict. This separate API cannot silently
+// approve an NV12 chain on behalf of an older MJPEG-only consumer.
+constexpr AdjacentMediaGate CheckAdjacentMjpeg(
+    const PinMediaEvidence& upstream,
+    const PinMediaEvidence& downstream,
+    bool mappingVerified) noexcept {
+    const auto status = CheckAdjacentVideo(upstream, downstream, mappingVerified);
+    if (status != AdjacentMediaGate::FormatMatchOnly)
+        return status;
+    return upstream.subtype == MediaSubtype::Mjpg
+        ? AdjacentMediaGate::FormatMatchOnly
+        : AdjacentMediaGate::UnsupportedType;
 }
 constexpr bool PermitsSonixChainInstall(AdjacentMediaGate) noexcept {
     return false;
