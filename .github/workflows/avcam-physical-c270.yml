@@ -866,6 +866,7 @@ jobs:
           Copy-Item research/physical-c270/AvCamSonixChainPreflight.ps1 $out
           Copy-Item research/physical-c270/AvCamSonixChainPlan.ps1 $out
           Copy-Item research/physical-c270/AvCamSonixChainTransaction.ps1 $out
+          Copy-Item research/physical-c270/AvCamSonixChainTrial.ps1 $out
           Copy-Item research/physical-c270/AvCamPhysicalCaptureEtw.ps1 $out
           Copy-Item build/physical-c270/Release/AvCamIntegratedCameraFormats.exe $out
           Copy-Item build/physical-c270/Release/AvCamIntegratedNativeCaptureSmoke.exe $out
@@ -889,6 +890,23 @@ jobs:
           if ($LASTEXITCODE -eq 0) { throw '13D3 installer accepted unapproved enable' }
           $global:LASTEXITCODE = 0
           Write-Host 'AVCAM_INTEGRATED_13D3_STATIC_GUARDS_PASS_NO_DEVICE_CHANGES'
+          # The chain-aware installer must be packaged, parse as PS 5.1 and
+          # pass an isolated selftest WITHOUT registering COM or editing HKLM.
+          $trial = Join-Path $out 'AvCamSonixChainTrial.ps1'
+          $trialTokens=$null; $trialErrors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            $trial,[ref]$trialTokens,[ref]$trialErrors) | Out-Null
+          if ($trialErrors.Count) { throw "Sonix chain trial parser errors: $trialErrors" }
+          $selfTest=@(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $trial -Action SelfTest 2>&1)
+          $selfExit=$LASTEXITCODE
+          $selfTest | ForEach-Object { Write-Host $_ }
+          if ($selfExit -ne 0 -or $selfTest -notcontains 'AVCAM_SONIX_CHAIN_TRIAL_SELFTEST_PASS') {
+            throw "Sonix chain trial selftest failed: $selfExit"
+          }
+          $blocked=@(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $trial -Action Install 2>&1)
+          if ($LASTEXITCODE -eq 0) { throw 'Sonix chain trial accepted install without risk opt-in' }
+          $global:LASTEXITCODE=0
+          Write-Host 'AVCAM_SONIX_CHAIN_TRIAL_PACKAGE_GUARDS_PASS_NO_OEM_CHANGES'
           & (Join-Path $out 'AvCamSonixComContract.exe') --selftest
           if ($LASTEXITCODE -ne 0) { throw 'Packaged Sonix COM diagnostic selftest failed' }
       - uses: actions/upload-artifact@v4
