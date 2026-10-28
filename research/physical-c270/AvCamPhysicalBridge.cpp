@@ -394,6 +394,8 @@ int wmain(int argc, wchar_t** argv) {
         return 0;
     }
     unsigned long long frames = 0;
+    unsigned long long mjpegFrames = 0;
+    unsigned long long nv12Frames = 0;
     unsigned long long reconnects = 0;
     // A mapping may exist even when OBS Virtual Camera failed to start.
     // Only the first *fresh* frame proves the camera producer is live.
@@ -446,21 +448,28 @@ int wmain(int argc, wchar_t** argv) {
                         source.LastErrorCode());
                 break;
             }
-            if (!AvCamUde::EncodeBgraToMjpeg(wic.Get(), bgra.data(),
+            // Format-independent publication: failure of JPEG encoding must
+            // not block a healthy NV12 pin, and vice versa. Both frames
+            // still derive from this exact OBS input and timestamp.
+            const bool mjpegPublished =
+                AvCamUde::EncodeBgraToMjpeg(wic.Get(), bgra.data(),
                     AVCAM_FRAME_WIDTH, AVCAM_FRAME_HEIGHT,
-                    AVCAM_FRAME_STRIDE_BGRA32, jpeg) ||
-                !Publish(mapping, jpeg, timestamp)) {
-                warnOccasionally("JPEG encoding or publication failed", ERROR_INVALID_DATA);
-                break;
-            }
+                    AVCAM_FRAME_STRIDE_BGRA32, jpeg) &&
+                Publish(mapping, jpeg, timestamp);
+            bool nv12Published = false;
             if (nv12Enabled) {
-                if (!avcam::mfcolor::Convert(
+                nv12Published = avcam::mfcolor::Convert(
                         bgra.data(), bgra.size(),
-                        nv12Pixels.data(), nv12Pixels.size()) ||
-                    !PublishNv12(nv12Mapping, nv12Pixels, timestamp)) {
-                    warnOccasionally("NV12 conversion or publication failed", ERROR_INVALID_DATA);
-                }
+                        nv12Pixels.data(), nv12Pixels.size()) &&
+                    PublishNv12(nv12Mapping, nv12Pixels, timestamp);
             }
+            if (mjpegPublished) ++mjpegFrames;
+            if (nv12Published) ++nv12Frames;
+            if (!mjpegPublished)
+                warnOccasionally("JPEG encoding or publication failed", ERROR_INVALID_DATA);
+            if (nv12Enabled && !nv12Published)
+                warnOccasionally("NV12 conversion or publication failed", ERROR_INVALID_DATA);
+            if (!mjpegPublished && !nv12Published) break;
             if (!sourcePublished) {
                 std::puts("OBS Virtual Camera is actively publishing frames to AvCam.");
                 sourcePublished = true;
@@ -468,8 +477,9 @@ int wmain(int argc, wchar_t** argv) {
             }
             ++frames;
             if ((frames % 900ull) == 0ull)
-                std::printf("FramesPublished=%llu; LastJpegBytes=%zu\n",
-                    frames, jpeg.size());
+                std::printf("FramesPublished=%llu; MjpegFrames=%llu; Nv12Frames=%llu; LastJpegBytes=%zu\n",
+                    frames, mjpegFrames, nv12Frames,
+                    mjpegPublished ? jpeg.size() : 0u);
         }
         source.Stop();
         // The camera MFT automatically rejects MJPEG after its timestamps
