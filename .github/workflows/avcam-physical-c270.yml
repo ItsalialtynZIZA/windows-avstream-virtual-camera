@@ -328,6 +328,16 @@ jobs:
           if (!$stagedMft.Contains('duplicate_stream_ids=1')) {
             throw 'Staged MFT is missing duplicate upstream stream ID rejection'
           }
+          foreach ($marker in @(
+            'AvCamConnectedPinsRejected unexpected_pin_count=1',
+            'AvCamConnectedPinsRejected successor_stream_id_mismatch=1',
+            'AvCamConnectedPinsValidated predecessor_outputs_match_successor_inputs=1'
+          )) {
+            if (!$stagedMft.Contains($marker)) {
+              throw "Staged MFT is missing actual connected pin validation: $marker"
+            }
+          }
+          Write-Host 'AVCAM_CONNECTED_PREDECESSOR_PIN_ID_GUARD_PASS'
           $stagedBasePin = Get-Content 'upstream/avstream/sampledevicemft/basepin.cpp' -Raw
           if (!$stagedBasePin.Contains('kMaxObservedTypesPerStream') -or
               !$stagedBasePin.Contains('AvCamUpstreamMediaTypeEnumerationRejected')) {
