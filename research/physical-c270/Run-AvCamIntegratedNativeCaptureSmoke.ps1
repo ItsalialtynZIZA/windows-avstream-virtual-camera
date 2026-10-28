@@ -27,10 +27,12 @@ function Invoke-AvCamBoundedProcess {
 
     $p = New-Object System.Diagnostics.Process
     $p.StartInfo = $startInfo
+    $started = $false
     try {
         if (-not $p.Start()) {
             throw "AVCAM_PROCESS_START_FAILED: $Executable"
         }
+        $started = $true
         $outTask = $p.StandardOutput.ReadToEndAsync()
         $errTask = $p.StandardError.ReadToEndAsync()
         $done = $p.WaitForExit($Seconds * 1000)
@@ -49,7 +51,7 @@ function Invoke-AvCamBoundedProcess {
         }
     }
     finally {
-        if ($p -and -not $p.HasExited) {
+        if ($started -and -not $p.HasExited) {
             try { $p.Kill() } catch {}
         }
         $p.Dispose()
