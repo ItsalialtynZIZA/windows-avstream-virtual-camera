@@ -75,3 +75,26 @@ PREFLIGHT_ONLY: original Integrated Camera USB device/registry untouched.
 The existing CLSID `{5A50829A-86DD-4D18-8685-891EEE643C24}` has been reported as the `SonixDeviceMFT.dll` COM class in a public security advisory: https://herolab.usd.de/en/security-advisories/usd-2023-0029/ . This is evidence of *likely Sonix processing*, **not** proof that the owner's current driver is vulnerable. Read the actual COM `InprocServer32` path, code signature, and registry ACL without changing them; if permissions are unsafe, prefer verified OEM/Windows Update remediation. Do not delete or rewrite OEM chain/registry/DLL.
 
 Future support for this notebook requires a separately designed **chain-aware**, reversible installer that preserves the exact original `REG_MULTI_SZ` chain, adds its own Device MFT only after compatible format/capture evidence, verifies appropriate ordering, enforces the OS chain length, and restores the exact original chain on rollback. Tests must prove correct interoperability with the OEM DMFT, real Chrome frame capture, and failure/rollback. The existing `AvCamIntegrated13D3Mft.ps1` is **not** chain-aware; do not use `-Enable` until a purpose-built implementation is reviewed. Selecting `OBS Virtual Camera` directly in Chrome remains the no-registry-change fallback.
+
+
+## 2026-10-29: Lenovo 82K1 camera OEM chain and ACL hardening
+
+- Hardware model confirmed: Lenovo IdeaPad Gaming 3 15IHU6 (82K1).
+- Sonix Integrated Camera driver: `10.13.22621.14`, provider Sonix, INF `oem144.inf`, 2023-09-13.
+- OEM COM class `{5A50829A-86DD-4D18-8685-891EEE643C24}` resolves to `C:\Windows\system32\SONiX\SonixDeviceMFT.dll` with a valid Microsoft Windows Hardware Compatibility Publisher signature.
+- The Windows 11 camera interface already contains the Sonix `CameraDeviceMftClsidChain`; no AvCam MFT was installed into this chain.
+- The owner saved the original Sonix COM registry values and discretionary ACLs to a dated local backup. Both `HKLM\SOFTWARE\Classes\CLSID\{5A50829A-86DD-4D18-8685-891EEE643C24}` and its `InprocServer32` had explicit `Allow / FullControl` ACEs for built-in Users (S-1-5-32-545).
+- The owner ran the targeted ACL hardening command successfully: `BACKUP_VERIFIED`, two `ACL_FIXED` markers, `SONIX_ACL_HARDENING_COMPLETE`. Follow-up read-only inspection showed only inherited `ReadKey` and `GENERIC_READ` for Users on both keys. This confirms the *identified explicit Users write ACEs* were removed; it is not a complete effective-access audit of all principals or inherited permissions.
+- Functionality of Windows Camera **after** hardening has not yet been reported; verify RAW capture before any later camera work.
+
+### Next safe build milestone: read-only OEM chain preflight
+
+`AvCamSonixChainPreflight.ps1` is a new diagnostic tool (not a driver or installer). It checks the single connected 13D3:56FF Integrated Camera; resolves the `VIDEO_CAMERA` interface by exact USB instance; checks the chain registry type and CLSID list; reads COM DLL locations/signatures and Sonix COM registry ACLs. It does **not** register COM, modify camera settings, write ACLs, or attach AvCam to the Sonix chain.
+
+To run from a local checkout of `dev/manual-vhci` in **64-bit Windows PowerShell**, use:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\research\physical-c270\AvCamSonixChainPreflight.ps1
+```
+
+`-SelfTest` exercises only syntactic chain validation and write-rights mask classification, without a connected camera. The existing `AvCamIntegrated13D3Mft.ps1` remains intentionally blocked for OEM chains; no supported chain-aware installation has been implemented or hardware validated yet. A read-only preflight result must never be labeled end-to-end camera compatibility or proof of origin/authenticity.
