@@ -51,8 +51,13 @@ function Assert-Admin {
 }
 function Get-Chain([Microsoft.Win32.RegistryKey]$Key) {
     if ($null -eq $Key) { throw 'Camera interface key missing' }
-    if ($Key.GetValueNames() -cnotcontains $ChainValue) {
-        throw 'Original OEM chain value missing'
+    # Windows registry value names are case-insensitive; a case-sensitive
+    # comparison incorrectly reported that the OEM chain was absent.
+    $names = @($Key.GetValueNames())
+    if ($names -notcontains $ChainValue) {
+        Write-Host "AVCAM_SONIX_INTERFACE_KEY=$($Key.Name)"
+        Write-Host "AVCAM_SONIX_VISIBLE_VALUES=$($names -join ';')"
+        throw 'Original OEM chain value missing in selected interface'
     }
     if ($Key.GetValueKind($ChainValue) -ne [Microsoft.Win32.RegistryValueKind]::MultiString) {
         throw 'Refusing chain registry type other than REG_MULTI_SZ'
