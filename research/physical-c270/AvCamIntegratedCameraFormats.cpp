@@ -131,6 +131,7 @@ int Inspect() {
         (void)source->Shutdown();
         return 6;
     }
+    std::wcout << L"AVCAM_MF_SOURCE_STREAM_COUNT=" << count << L"\n";
     bool mjpg1280 = false;
     unsigned total = 0;
     for (DWORD i = 0; i < count; ++i) {
@@ -139,6 +140,14 @@ int Inspect() {
         hr = presentation->GetStreamDescriptorByIndex(
             i, &selected, stream.GetAddressOf());
         if (FAILED(hr)) { PrintError(L"GetStreamDescriptorByIndex", hr); continue; }
+        // These IDs belong to the Media Foundation SOURCE presentation descriptor,
+        // not to the output pins of the Sonix OEM Device MFT.
+        DWORD sourceStreamId = 0;
+        const HRESULT idHr = stream->GetStreamIdentifier(&sourceStreamId);
+        std::wcout << L"AVCAM_SOURCE_STREAM=" << i
+                   << L" ID=" << (SUCCEEDED(idHr) ? sourceStreamId : 0)
+                   << L" ID_VALID=" << (SUCCEEDED(idHr) ? 1 : 0)
+                   << L" SELECTED=" << (selected ? 1 : 0) << L"\n";
         ComPtr<IMFMediaTypeHandler> handler;
         hr = stream->GetMediaTypeHandler(&handler);
         if (FAILED(hr)) { PrintError(L"GetMediaTypeHandler", hr); continue; }
@@ -171,6 +180,9 @@ int Inspect() {
     std::wcout << L"AVCAM_INTEGRATED_MF_TYPES=" << total << L"\n"
                << L"AVCAM_INTEGRATED_MJPEG_1280X720="
                << (mjpg1280 ? L"ADVERTISED" : L"NOT_ADVERTISED") << L"\n"
+               << L"AVCAM_SONIX_DMFT_OUTPUT_PIN_COUNT=UNKNOWN\n"
+               << L"AVCAM_DMFT_INPUT_PIN_COUNT_AFTER_INITIALIZE=UNKNOWN\n"
+               << L"AVCAM_DMFT_PIN_COUNT_MATCH=NOT_VERIFIED\n"
                << L"AVCAM_MFT_CHAIN_INTEROP=NOT_VERIFIED\n"
                << L"AVCAM_MF_TYPES_READ_ONLY_COMPLETE\n";
     return total ? 0 : 7;
