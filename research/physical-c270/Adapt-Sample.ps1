@@ -134,6 +134,28 @@ Replace-Once $mftImpl @'
 '@
 
 
+# Capture initialized transform topology without modifying stream routing.
+# The inherited Microsoft sample reads its predecessor's GetStreamCount
+# through the actual MF_DEVICEMFT_CONNECTED_FILTER_KSCONTROL pointer.
+# This telemetry cannot prove the predecessor is Sonix or validate media types.
+Replace-Once $mftImpl @'
+    if ( pcInputStreams )
+    {
+        delete[ ] ( pcInputStreams );
+    }
+'@ @'
+    AvCamTraceDeviceMftTopology(
+        static_cast<long>(hr),
+        static_cast<unsigned long>(inputStreams),
+        static_cast<unsigned long>(outputStreams),
+        static_cast<unsigned long>(m_InputPinCount),
+        static_cast<unsigned long>(m_OutputPinCount));
+    if ( pcInputStreams )
+    {
+        delete[ ] ( pcInputStreams );
+    }
+'@
+
 $common=Join-Path $base 'common.h'
 # Microsoft's reference relies on WPP-generated check macros. The CMake
 # standalone build runs without WPP, so enable upstream's documented
