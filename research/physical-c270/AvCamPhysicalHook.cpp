@@ -18,6 +18,7 @@
 #include "AvCamPhysicalHook.h"
 #include "AvCamMftBuildSafety.h"
 #include "AvCamPerClientRoutingPolicy.h"
+#include "AvCamDmftMediaContract.h"
 
 namespace {
 std::mutex g_modesMutex;
@@ -177,7 +178,13 @@ void AvCamTraceUpstreamMediaContract(IMFDeviceTransform* upstream,
         TraceRaw(L"AvCamUpstreamMediaContract invalid_stream_topology=1 upstream_identity=unknown");
         return;
     }
-    constexpr unsigned long kMaxTypesPerPin = 64;
+    const auto idsAudit = avcam::dmft::AuditStreamIds(outputIds, outputCount);
+    if (idsAudit != avcam::dmft::StreamIdAudit::Unique) {
+        TraceRaw(L"AvCamUpstreamMediaContract duplicate_or_invalid_stream_ids=1 upstream_identity=unknown chain_interop=NOT_VERIFIED");
+        return;
+    }
+    constexpr DWORD kMaxTypesPerPin =
+        static_cast<DWORD>(avcam::dmft::kMaxObservedTypesPerStream);
     for (unsigned long pin = 0; pin < outputCount; ++pin) {
         const DWORD streamId = static_cast<DWORD>(outputIds[pin]);
         unsigned long inspected = 0;
@@ -202,8 +209,7 @@ void AvCamTraceUpstreamMediaContract(IMFDeviceTransform* upstream,
                                              &width, &height)) &&
                 SUCCEEDED(MFGetAttributeRatio(type.Get(), MF_MT_FRAME_RATE,
                                               &numerator, &denominator)) &&
-                width == 1280 && height == 720 &&
-                numerator == 30 && denominator == 1) {
+                avcam::dmft::Is720p30(width, height, numerator, denominator)) {
                 if (subtype == MFVideoFormat_MJPG) mjpg720p30 = true;
                 if (subtype == MFVideoFormat_NV12) nv12720p30 = true;
             }
