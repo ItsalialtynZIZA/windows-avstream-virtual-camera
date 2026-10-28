@@ -433,6 +433,38 @@ jobs:
           & ./build/mock-fanout/Release/AvCamMfActivationLifetimeSmoke.exe $mfSourceDll
           if ($LASTEXITCODE -ne 0) { throw "Media Foundation activation/source lifetime regression failed: $LASTEXITCODE" }
           Write-Host 'AVCAM_MF_ACTIVATION_LIFETIME_WINDOWS_ACCEPTANCE_PASS'
+          # Time-bound the concurrency regression: a COM deadlock must fail
+          # CI rather than leave a Windows runner hung indefinitely.
+          $stress = (Resolve-Path './build/mock-fanout/Release/AvCamMfConcurrentShutdownSmoke.exe').Path
+          $si = [System.Diagnostics.ProcessStartInfo]::new()
+          $si.FileName = $stress
+          $si.Arguments = '"' + $mfSourceDll + '"'
+          $si.UseShellExecute = $false
+          $si.CreateNoWindow = $true
+          $si.RedirectStandardOutput = $true
+          $si.RedirectStandardError = $true
+          $proc = [System.Diagnostics.Process]::new()
+          $proc.StartInfo = $si
+          try {
+            if (-not $proc.Start()) { throw 'Could not start MF concurrent shutdown regression' }
+            $stdoutTask = $proc.StandardOutput.ReadToEndAsync()
+            $stderrTask = $proc.StandardError.ReadToEndAsync()
+            if (-not $proc.WaitForExit(25000)) {
+              $proc.Kill()
+              [void]$proc.WaitForExit(3000)
+              throw 'MF concurrent shutdown regression timeout / possible deadlock'
+            }
+            $stdout = $stdoutTask.GetAwaiter().GetResult()
+            $stderr = $stderrTask.GetAwaiter().GetResult()
+            Write-Host $stdout
+            if ($stderr) { Write-Warning $stderr }
+            if ($proc.ExitCode -ne 0 -or $stdout -notmatch 'AVCAM_MF_CONCURRENT_SHUTDOWN_NO_CAMERA_PASS') {
+              throw "MF concurrency regression failed: exit $($proc.ExitCode)"
+            }
+          } finally {
+            $proc.Dispose()
+          }
+          Write-Host 'AVCAM_MF_CONCURRENT_SHUTDOWN_WINDOWS_ACCEPTANCE_PASS'
           $pipeBridge = (Resolve-Path './build/mock-fanout/Release/AvCamMfObsPipeBridge.exe').Path
           & ./build/mock-fanout/Release/AvCamMfPipeSmoke.exe $pipeBridge
           if ($LASTEXITCODE -ne 0) { throw "OBS-only cross-session pipe process test failed: $LASTEXITCODE" }
