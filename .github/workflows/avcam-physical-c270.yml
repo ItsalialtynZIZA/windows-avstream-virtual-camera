@@ -772,6 +772,7 @@ jobs:
           Copy-Item research/physical-c270/AvCamSonixChainPreflight.ps1 $out
           Copy-Item research/physical-c270/AvCamSonixChainPlan.ps1 $out
           Copy-Item research/physical-c270/AvCamSonixChainTransaction.ps1 $out
+          Copy-Item research/physical-c270/AvCamPhysicalCaptureEtw.ps1 $out
           Copy-Item build/physical-c270/Release/AvCamIntegratedCameraFormats.exe $out
           Copy-Item build/physical-c270/Release/AvCamIntegratedNativeCaptureSmoke.exe $out
           Copy-Item build/physical-c270/Release/AvCamDmftComContract.exe $out
