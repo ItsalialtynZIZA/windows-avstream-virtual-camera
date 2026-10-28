@@ -165,6 +165,21 @@ jobs:
           }
           & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $path -WrapperSelfTest
           if ($LASTEXITCODE -ne 0) { throw 'Bounded wrapper process and exit-code regression failed' }
+      - name: Validate OEM-preserving Sonix chain planner (Windows PowerShell 5.1, read-only)
+        shell: powershell
+        run: |
+          $script = 'research/physical-c270/AvCamSonixChainPlan.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path $script).Path, [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count -ne 0) {
+            $parseErrors | ForEach-Object { Write-Host $_ }
+            throw 'Sonix chain planner has syntax errors'
+          }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -SelfTest
+          if ($LASTEXITCODE -ne 0) { throw 'Sonix chain planner selftest failed' }
+          Write-Host 'AVCAM_SONIX_CHAIN_PLAN_CI=PASS'
       - name: Test physical Logitech registry preflight without accessing protected subkeys
         shell: powershell
         run: |
@@ -641,6 +656,7 @@ jobs:
           Copy-Item build/physical-c270/Release/AvCamPhysicalBridge.exe $out
           Copy-Item research/physical-c270/AvCamIntegrated13D3Mft.ps1 $out
           Copy-Item research/physical-c270/AvCamSonixChainPreflight.ps1 $out
+          Copy-Item research/physical-c270/AvCamSonixChainPlan.ps1 $out
           Copy-Item build/physical-c270/Release/AvCamIntegratedCameraFormats.exe $out
           Copy-Item build/physical-c270/Release/AvCamIntegratedNativeCaptureSmoke.exe $out
           Copy-Item research/physical-c270/Run-AvCamIntegratedNativeCaptureSmoke.ps1 $out
