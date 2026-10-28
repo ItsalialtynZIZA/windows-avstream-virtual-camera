@@ -127,6 +127,11 @@ target_compile_features(AvCamDmftTopologyGateTest PRIVATE cxx_std_17)
 add_executable(AvCamDmftMediaContractTest ../AvCamDmftMediaContractTest.cpp)
 target_compile_features(AvCamDmftMediaContractTest PRIVATE cxx_std_17)
 
+# Explicit upstream/output -> downstream/input pin map simulation only.
+# No real OEM COM transform, camera or driver is accessed.
+add_executable(AvCamDmftConnectedPinMapTest ../AvCamDmftConnectedPinMapTest.cpp)
+target_compile_features(AvCamDmftConnectedPinMapTest PRIVATE cxx_std_17)
+
 add_executable(AvCamDmftComContract ../AvCamDmftComContract.cpp)
 target_compile_features(AvCamDmftComContract PRIVATE cxx_std_17)
 target_link_libraries(AvCamDmftComContract PRIVATE ole32)
