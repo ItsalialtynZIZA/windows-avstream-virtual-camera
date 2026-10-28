@@ -141,6 +141,19 @@ Replace-Once $mftImpl @'
             outputStreams,
             pcOutputStreams ),done );
 
+        // The predecessor is untrusted OEM code. Duplicate IDs would alias
+        // different camera pins and could corrupt an active connection.
+        // Count limits were already enforced above, before allocation.
+        if (avcam::dmft::AuditStreamIds(pcOutputStreams, outputStreams) !=
+                avcam::dmft::StreamIdAudit::Unique ||
+            (inputStreams > 0 &&
+             avcam::dmft::AuditStreamIds(pcInputStreams, inputStreams) !=
+                avcam::dmft::StreamIdAudit::Unique)) {
+            AvCamTrace(L"AvCamUpstreamTopologyRejected duplicate_stream_ids=1 chain_interop=NOT_VERIFIED");
+            hr = MF_E_INVALIDSTREAMNUMBER;
+            goto done;
+        }
+
         AvCamTraceUpstreamMediaContract(m_spSourceTransform.Get(),
                                         pcOutputStreams, outputStreams);
 '@
@@ -193,6 +206,38 @@ Replace-Once $mftImpl @'
     {
         delete[ ] ( pcInputStreams );
     }
+'@
+
+# Microsoft sample's input pin enumerates GetOutputAvailableType() with
+# an unbounded for-loop. A misbehaving OEM predecessor could keep returning
+# S_OK indefinitely and stall the Windows Camera Frame Server. Fail closed.
+$basePin=Join-Path $base 'basepin.cpp'
+$basePinText=[IO.File]::ReadAllText($basePin)
+$basePinText='#include "AvCamDmftMediaContract.h"' + [Environment]::NewLine +
+             '#include "AvCamPhysicalHook.h"' + [Environment]::NewLine + $basePinText
+[IO.File]::WriteAllText($basePin,$basePinText,[Text.UTF8Encoding]::new($false))
+Replace-Once $basePin @'
+    for (UINT iMediaType = 0; SUCCEEDED(hr) ; iMediaType++)
+'@ @'
+    for (UINT iMediaType = 0;
+         iMediaType < avcam::dmft::kMaxObservedTypesPerStream && SUCCEEDED(hr);
+         ++iMediaType)
+'@
+Replace-Once $basePin @'
+    if (hr == MF_E_NO_MORE_TYPES) {
+        hr = S_OK;
+    }
+    return hr;
+'@ @'
+    if (hr == MF_E_NO_MORE_TYPES) {
+        hr = S_OK;
+    } else if (hr == S_OK) {
+        // 64 successful types without a terminal MF_E_NO_MORE_TYPES is
+        // incomplete enumeration, not authorization to expose a pin.
+        AvCamTrace(L"AvCamUpstreamMediaTypeEnumerationRejected cap=64");
+        hr = MF_E_INVALIDMEDIATYPE;
+    }
+    return hr;
 '@
 
 $common=Join-Path $base 'common.h'
