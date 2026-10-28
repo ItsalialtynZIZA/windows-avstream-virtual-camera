@@ -4,7 +4,7 @@ param([Parameter(Mandatory=$true)][string]$SampleDir)
 $ErrorActionPreference='Stop'
 $base = (Resolve-Path $SampleDir).Path
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
-foreach ($name in @('AvCamPhysicalWire.h','AvCamPhysicalHook.h','AvCamMftBuildSafety.h','AvCamPerClientRoutingPolicy.h','AvCamPhysicalHook.cpp')) {
+foreach ($name in @('AvCamPhysicalWire.h','AvCamPhysicalHook.h','AvCamMftBuildSafety.h','AvCamPerClientRoutingPolicy.h','AvCamDmftMediaContract.h','AvCamPhysicalHook.cpp')) {
     Copy-Item -LiteralPath (Join-Path $here $name) -Destination (Join-Path $base $name) -Force
 }
 function Replace-Once([string]$path,[string]$before,[string]$after) {
