@@ -83,7 +83,7 @@ jobs:
       - name: Compile SetupAPI enumerator and strict identity test
         shell: pwsh
         run: |
-          cmake --build build/c270-identity --config Release --target AvCamEnumeratePhysicalC270 AvCamPhysicalEndpointAcceptanceTest AvCamIntegratedCameraFormats AvCamIntegratedNativeCaptureSmoke AvCamDmftComContract AvCamDmftTopologyGateTest AvCamDmftMediaContractTest AvCamDmftConnectedPinMapTest
+          cmake --build build/c270-identity --config Release --target AvCamEnumeratePhysicalC270 AvCamPhysicalEndpointAcceptanceTest AvCamIntegratedCameraFormats AvCamIntegratedNativeCaptureSmoke AvCamDmftComContract AvCamSonixComContract AvCamDmftTopologyGateTest AvCamDmftMediaContractTest AvCamDmftConnectedPinMapTest
           if ($LASTEXITCODE -ne 0) { throw 'C270 SetupAPI compilation failed' }
       - name: Run identity selftests without physical camera
         shell: pwsh
@@ -96,6 +96,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Native Integrated Camera MJPEG smoke selftest failed: $LASTEXITCODE" }
           & ./build/c270-identity/Release/AvCamDmftComContract.exe --selftest
           if ($LASTEXITCODE -ne 0) { throw "AvCam Device MFT COM contract selftest failed: $LASTEXITCODE" }
+          & ./build/c270-identity/Release/AvCamSonixComContract.exe --selftest
+          if ($LASTEXITCODE -ne 0) { throw "Signed Sonix OEM COM probe fail-closed selftest failed: $LASTEXITCODE" }
           & ./build/c270-identity/Release/AvCamDmftTopologyGateTest.exe
           if ($LASTEXITCODE -ne 0) { throw "AvCam topology evidence gate failed: $LASTEXITCODE" }
           & ./build/c270-identity/Release/AvCamDmftMediaContractTest.exe
@@ -804,6 +806,7 @@ jobs:
           Copy-Item build/physical-c270/Release/AvCamIntegratedCameraFormats.exe $out
           Copy-Item build/physical-c270/Release/AvCamIntegratedNativeCaptureSmoke.exe $out
           Copy-Item build/physical-c270/Release/AvCamDmftComContract.exe $out
+          Copy-Item build/physical-c270/Release/AvCamSonixComContract.exe $out
           Copy-Item research/physical-c270/Run-AvCamIntegratedNativeCaptureSmoke.ps1 $out
           Copy-Item research/physical-c270/INTEGRATED_13D3_REVERSE_LAB.md $out
           $dll = Join-Path $out 'AvCamDualCameraDeviceMft.dll'
@@ -822,6 +825,8 @@ jobs:
           if ($LASTEXITCODE -eq 0) { throw '13D3 installer accepted unapproved enable' }
           $global:LASTEXITCODE = 0
           Write-Host 'AVCAM_INTEGRATED_13D3_STATIC_GUARDS_PASS_NO_DEVICE_CHANGES'
+          & (Join-Path $out 'AvCamSonixComContract.exe') --selftest
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged Sonix COM diagnostic selftest failed' }
       - uses: actions/upload-artifact@v4
         with:
           name: AvCam-Integrated-13D3-Lab-x64
