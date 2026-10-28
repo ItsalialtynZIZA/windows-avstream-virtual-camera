@@ -32,6 +32,50 @@ static_assert(AuditStreamIds(static_cast<const std::uint32_t*>(nullptr), 1) ==
 static_assert(!PermitsSonixChainInstall(StreamIdAudit::Unique),
               "valid stream IDs never authorize OEM MFT installation");
 
+// Synthetic adjacent MFT evidence: IDs intentionally differ. This is
+// NOT evidence from the Lenovo Sonix camera or a running OEM chain.
+constexpr PinMediaEvidence upstream{
+    true, true, true, 17, MediaSubtype::Mjpg, 1280, 720, 30000, 1000
+};
+constexpr PinMediaEvidence downstream{
+    true, true, true, 44, MediaSubtype::Mjpg, 1280, 720, 30, 1
+};
+constexpr PinMediaEvidence missing{
+    false, true, true, 17, MediaSubtype::Mjpg, 1280, 720, 30, 1
+};
+constexpr PinMediaEvidence sourceOnly{
+    true, false, true, 17, MediaSubtype::Mjpg, 1280, 720, 30, 1
+};
+constexpr PinMediaEvidence truncated{
+    true, true, false, 17, MediaSubtype::Mjpg, 1280, 720, 30, 1
+};
+constexpr PinMediaEvidence nv12{
+    true, true, true, 17, MediaSubtype::Nv12, 1280, 720, 30, 1
+};
+constexpr PinMediaEvidence fractionalFps{
+    true, true, true, 17, MediaSubtype::Mjpg, 1280, 720, 30000, 1001
+};
+constexpr PinMediaEvidence wrongSize{
+    true, true, true, 17, MediaSubtype::Mjpg, 1920, 1080, 30, 1
+};
+static_assert(CheckAdjacentMjpeg(upstream, downstream, true) ==
+              AdjacentMediaGate::FormatMatchOnly);
+static_assert(CheckAdjacentMjpeg(missing, downstream, true) ==
+              AdjacentMediaGate::MissingEvidence);
+static_assert(CheckAdjacentMjpeg(sourceOnly, downstream, true) ==
+              AdjacentMediaGate::NotFromConnectedTransforms);
+static_assert(CheckAdjacentMjpeg(truncated, downstream, true) ==
+              AdjacentMediaGate::IncompleteEnumeration);
+static_assert(CheckAdjacentMjpeg(upstream, downstream, false) ==
+              AdjacentMediaGate::MappingUnverified);
+static_assert(CheckAdjacentMjpeg(nv12, downstream, true) ==
+              AdjacentMediaGate::UnsupportedType);
+static_assert(CheckAdjacentMjpeg(fractionalFps, downstream, true) ==
+              AdjacentMediaGate::FrameFormatMismatch);
+static_assert(CheckAdjacentMjpeg(wrongSize, downstream, true) ==
+              AdjacentMediaGate::FrameFormatMismatch);
+static_assert(!PermitsSonixChainInstall(AdjacentMediaGate::FormatMatchOnly));
+
 int main() {
     if (!IsExact30Fps(30000, 1000) ||
         IsExact30Fps(30000, 1001) ||
@@ -39,7 +83,10 @@ int main() {
         AuditStreamIds(duplicate.data(), duplicate.size()) != StreamIdAudit::Duplicate ||
         PermitsSonixChainInstall(StreamIdAudit::Unique)) return 1;
 
-    std::cout << "AVCAM_DMFT_EXACT_30_FPS_RATIONAL_PASS\n"
+    std::cout << "AVCAM_DMFT_ADJACENT_MJPEG_FORMAT_MATCH_SIMULATION_PASS\n"
+                 "AVCAM_DMFT_ADJACENT_PIN_MAPPING_REQUIRED_PASS\n"
+                 "AVCAM_DMFT_ADJACENT_OEM_UNVERIFIED_INSTALL_BLOCKED_PASS\n"
+                 "AVCAM_DMFT_EXACT_30_FPS_RATIONAL_PASS\n"
                  "AVCAM_DMFT_DISTINCT_STREAM_IDS_PASS\n"
                  "AVCAM_DMFT_DUPLICATE_STREAM_IDS_REJECTED_PASS\n"
                  "AVCAM_DMFT_STREAM_COUNT_BOUND_PASS\n"
