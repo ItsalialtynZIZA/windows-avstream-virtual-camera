@@ -128,3 +128,12 @@ The old 5.1 PowerShell wrapper printed `AVCAM_NATIVE_CAPTURE_FAILED exitcode=` *
 The new `AvCamSonixChainPlan.ps1` is a **read-only, standalone planner** for the observed `REG_MULTI_SZ` chain `[Sonix]`. It calculates the candidate `[Sonix, AvCam]`, preserving Sonix nearest DevProxy, plus an exact original-chain rollback requirement. It intentionally rejects nonmatching OEM values, duplicates, old Windows builds and incompatible chain shapes. No `-Enable` option exists; it never installs COM DLLs or edits the camera. `AVCAM_SONIX_CHAIN_INSTALL=BLOCKED` remains the decision until the pin counts, required COM interfaces, media-type negotiation, source Frame Server behavior and rollback are actually verified. Microsoft's documented chain-capacity support is not proof of interoperability.
 
 No frame-authenticity or biometric/liveness compatibility claims are made.
+
+
+## 2026-10-29: transactional chain registration foundation, no OEM changes
+
+The sandbox-only `AvCamSonixChainTransaction.ps1` implements and verifies the critical install/restore transaction flow without touching the camera or system registry. It **does not offer any production install switch**.
+
+The test creates one uniquely named `HKEY_CURRENT_USER\Software\AvCam\SonixChainTransactionTest\<GUID>` key, initializes a simulated OEM `REG_MULTI_SZ` list, writes a durable JSON record of the exact original list before installing the simulated `[Sonix, AvCam]` list, and restores the original only if the current value still equals the expected simulated candidate. It also checks idempotent restore, recovery after injected post-write failure, refusal to overwrite a concurrently modified chain, and rejection of an unexpected registry value type. The isolated test key and temporary JSON records are removed at the end.
+
+This adds real rollback logic and guards to the codebase, but **does not** prove that the Sonix DLL and AvCam DLL agree on pin topology or can initialize together under Windows Camera Frame Server. Current real-device installation remains blocked. A future reviewed installer must add production-specific backups, a crash recovery path, code-signature validation, accurate device paths, signed COM registration, and native hardware acceptance before any camera change. No user action required on Lenovo for this milestone.
