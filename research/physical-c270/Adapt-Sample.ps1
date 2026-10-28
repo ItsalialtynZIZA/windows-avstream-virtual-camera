@@ -85,7 +85,8 @@ Replace-Once $helpers @'
 # actual camera pipeline calling IMFDeviceTransform::InitializeTransform.
 $mftImpl = Join-Path $base 'multipinmft.cpp'
 $mftContent = [IO.File]::ReadAllText($mftImpl)
-$mftContent = '#include "AvCamPhysicalHook.h"' + [Environment]::NewLine + $mftContent
+$mftContent = '#include "AvCamDmftMediaContract.h"' + [Environment]::NewLine +
+              '#include "AvCamPhysicalHook.h"' + [Environment]::NewLine + $mftContent
 [IO.File]::WriteAllText($mftImpl,$mftContent,[Text.UTF8Encoding]::new($false))
 Replace-Once $mftImpl @'
 STDMETHODIMP CMultipinMft::InitializeTransform ( 
@@ -105,6 +106,28 @@ STDMETHODIMP CMultipinMft::InitializeTransform (
     AvCamTrace(avcamInitEvent);
 '@
 
+
+# Guard the connected predecessor's reported counts BEFORE the Microsoft
+# sample allocates arrays or creates pins. Zero input pins is valid for DevProxy,
+# but no output pins or more than 32 of either kind is not a supported test.
+# The guard is independent of whether the predecessor is Sonix.
+Replace-Once $mftImpl @'
+    DMFTCHECKHR_GOTO( m_spSourceTransform->GetStreamCount( &inputStreams, &outputStreams ), done );
+
+    spFilterUnk = nullptr;
+'@ @'
+    DMFTCHECKHR_GOTO( m_spSourceTransform->GetStreamCount( &inputStreams, &outputStreams ), done );
+
+    // Fail closed on malformed/extreme topology before allocating arrays.
+    if (avcam::dmft::CheckUpstreamPinCounts(inputStreams, outputStreams) !=
+        avcam::dmft::UpstreamCountGate::BoundedForEnumeration) {
+        AvCamTrace(L"AvCamUpstreamTopologyRejected invalid_pin_count=1 upstream_identity=unknown");
+        hr = E_INVALIDARG;
+        goto done;
+    }
+
+    spFilterUnk = nullptr;
+'@
 
 # Capture media-type evidence from the ACTUAL predecessor's output stream IDs.
 # This is an observation only: it cannot determine whether that predecessor
