@@ -45,8 +45,14 @@ if ($VirtualOutput) {
     # Ask only for the existing private driver's GET_STATS method; do not
     # submit synthetic frames or open physical/OBS capture sources.
     $transportReport = @(& $feederPath --check-transport)
-    if ($LASTEXITCODE -ne 0 -or
-        $transportReport -notmatch '^AVCAM_TRANSPORT_READINESS=RESPONSIVE ') {
+    # PowerShell's -notmatch returns EVERY nonmatching element for arrays.
+    # That incorrectly rejects a successful probe if it prints any extra
+    # diagnostic lines. Require exactly one positive readiness marker.
+    $transportExit = $LASTEXITCODE
+    $readyLines = @($transportReport | Where-Object {
+        $_ -match '^AVCAM_TRANSPORT_READINESS=RESPONSIVE(?:\s|$)'
+    })
+    if ($transportExit -ne 0 -or $readyLines.Count -ne 1) {
         $transportReport | ForEach-Object { Write-Host $_ }
         throw 'AvCam private driver transport failed read-only handshake. No frames were submitted and no drivers were changed.'
     }
