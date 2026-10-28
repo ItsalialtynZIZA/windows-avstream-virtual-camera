@@ -65,7 +65,7 @@ jobs:
       - name: Compile SetupAPI enumerator and strict identity test
         shell: pwsh
         run: |
-          cmake --build build/c270-identity --config Release --target AvCamEnumeratePhysicalC270 AvCamPhysicalEndpointAcceptanceTest AvCamIntegratedCameraFormats
+          cmake --build build/c270-identity --config Release --target AvCamEnumeratePhysicalC270 AvCamPhysicalEndpointAcceptanceTest AvCamIntegratedCameraFormats AvCamIntegratedNativeCaptureSmoke
           if ($LASTEXITCODE -ne 0) { throw 'C270 SetupAPI compilation failed' }
       - name: Run identity selftests without physical camera
         shell: pwsh
@@ -74,6 +74,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Physical endpoint contract test failed: $LASTEXITCODE" }
           & ./build/c270-identity/Release/AvCamIntegratedCameraFormats.exe --selftest
           if ($LASTEXITCODE -ne 0) { throw "Integrated Media Foundation type audit selftest failed: $LASTEXITCODE" }
+          & ./build/c270-identity/Release/AvCamIntegratedNativeCaptureSmoke.exe --selftest
+          if ($LASTEXITCODE -ne 0) { throw "Native Integrated Camera MJPEG smoke selftest failed: $LASTEXITCODE" }
           & ./build/c270-identity/Release/AvCamEnumeratePhysicalC270.exe
           if ($LASTEXITCODE -ne 0) { throw "Read-only camera enumeration failed: $LASTEXITCODE" }
       - name: Publish read-only C270 PnP diagnostic separately
@@ -626,6 +628,8 @@ jobs:
           Copy-Item research/physical-c270/AvCamIntegrated13D3Mft.ps1 $out
           Copy-Item research/physical-c270/AvCamSonixChainPreflight.ps1 $out
           Copy-Item build/physical-c270/Release/AvCamIntegratedCameraFormats.exe $out
+          Copy-Item build/physical-c270/Release/AvCamIntegratedNativeCaptureSmoke.exe $out
+          Copy-Item research/physical-c270/Run-AvCamIntegratedNativeCaptureSmoke.ps1 $out
           Copy-Item research/physical-c270/INTEGRATED_13D3_REVERSE_LAB.md $out
           $dll = Join-Path $out 'AvCamDualCameraDeviceMft.dll'
           $sha = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
