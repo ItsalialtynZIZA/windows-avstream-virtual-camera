@@ -14,6 +14,7 @@
 #include <cstring>
 #include <vector>
 #include "AvCamPhysicalWire.h"
+#include "mf-source/AvCamMfColor.h"
 #include "../../feeder/src/ObsSharedMemorySource.h"
 #include "../udecx/tools/AvCamUdeMjpegEncoder.h"
 #include "../../shared/VirtualCameraProtocol.h"
@@ -43,7 +44,8 @@ struct Mapping {
 bool CreateSharedMapping(Mapping& map,
                          const wchar_t* mappingName = AvCamPhysical::kMappingName,
                          const wchar_t* mutexName = L"Global\\AvCamPhysicalPublisherLockV1",
-                         bool localDiagnostic = false) {
+                         bool localDiagnostic = false,
+                         DWORD mappingBytes = AvCamPhysical::kTotalBytes) {
     // An abandoned publisher must be replaceable without restarting the
     // Windows Camera Frame Server, which can retain a shared mapping handle.
     // A named mutex prevents two live publishers from writing concurrently.
@@ -68,7 +70,7 @@ bool CreateSharedMapping(Mapping& map,
     SECURITY_ATTRIBUTES sa{sizeof(sa), sd, FALSE};
     map.handle = CreateFileMappingW(INVALID_HANDLE_VALUE,
         localDiagnostic ? nullptr : &sa,
-        PAGE_READWRITE, 0, AvCamPhysical::kTotalBytes,
+        PAGE_READWRITE, 0, mappingBytes,
         mappingName);
     const DWORD result = GetLastError();
     LocalFree(sd);
@@ -82,12 +84,12 @@ bool CreateSharedMapping(Mapping& map,
         std::puts("Reusing retained AvCam camera mapping after publisher restart.");
     }
     map.view = static_cast<BYTE*>(MapViewOfFile(map.handle, FILE_MAP_WRITE,
-        0, 0, AvCamPhysical::kTotalBytes));
+        0, 0, mappingBytes));
     if (!map.view) {
         std::printf("MapViewOfFile failed: %lu\n", GetLastError());
         return false;
     }
-    ZeroMemory(map.view, AvCamPhysical::kTotalBytes);
+    ZeroMemory(map.view, mappingBytes);
     return true;
 }
 bool Publish(Mapping& mapping, const std::vector<unsigned char>& jpeg,
@@ -104,6 +106,25 @@ bool Publish(Mapping& mapping, const std::vector<unsigned char>& jpeg,
     memcpy(mapping.view + sizeof(*h), jpeg.data(), jpeg.size());
     MemoryBarrier();
     InterlockedIncrement(&h->sequence); // even, complete
+    return true;
+}
+// A second, format-distinct mapping is optional for old JPEG-only clients.
+// The header is committed atomically with the same odd/even sequence logic.
+bool PublishNv12(Mapping& mapping, const std::vector<std::uint8_t>& pixels,
+                 std::uint64_t timestamp) {
+    if (!mapping.view || pixels.size() != AvCamPhysical::kNv12PayloadBytes)
+        return false;
+    auto* h = reinterpret_cast<AvCamPhysical::FrameHeader*>(mapping.view);
+    InterlockedIncrement(&h->sequence);
+    h->magic = AvCamPhysical::kNv12Magic;
+    h->version = AvCamPhysical::kVersion;
+    h->width = AvCamPhysical::kWidth;
+    h->height = AvCamPhysical::kHeight;
+    h->length = AvCamPhysical::kNv12PayloadBytes;
+    h->timestamp = timestamp;
+    memcpy(mapping.view + sizeof(*h), pixels.data(), pixels.size());
+    MemoryBarrier();
+    InterlockedIncrement(&h->sequence);
     return true;
 }
 }
@@ -209,6 +230,21 @@ int wmain(int argc, wchar_t** argv) {
             CoUninitialize();
         return 12;
     }
+    // Independent NV12 path for hosts whose active Device MFT pin type
+    // is uncompressed NV12 rather than MJPEG. Diagnostic mappings remain
+    // local and cannot accidentally feed a production MFT.
+    Mapping nv12Mapping;
+    bool nv12Enabled = false;
+    if (!redTest && !obsTest) {
+        nv12Enabled = CreateSharedMapping(
+            nv12Mapping, AvCamPhysical::kNv12MappingName,
+            L"Global\\AvCamPhysicalNv12PublisherLockV1", false,
+            AvCamPhysical::kNv12TotalBytes);
+        if (!nv12Enabled)
+            std::puts("NV12 transport unavailable; MJPEG transport remains active.");
+    }
+    std::vector<std::uint8_t> nv12Pixels(
+        nv12Enabled ? AvCamPhysical::kNv12PayloadBytes : 0u);
     std::vector<unsigned char> bgra(AVCAM_FRAME_BYTES_BGRA32);
     std::vector<unsigned char> jpeg;
     if (redTest) {
@@ -372,6 +408,14 @@ int wmain(int argc, wchar_t** argv) {
                 !Publish(mapping, jpeg, timestamp)) {
                 warnOccasionally("JPEG encoding or publication failed", ERROR_INVALID_DATA);
                 break;
+            }
+            if (nv12Enabled) {
+                if (!avcam::mfcolor::Convert(
+                        bgra.data(), bgra.size(),
+                        nv12Pixels.data(), nv12Pixels.size()) ||
+                    !PublishNv12(nv12Mapping, nv12Pixels, timestamp)) {
+                    warnOccasionally("NV12 conversion or publication failed", ERROR_INVALID_DATA);
+                }
             }
             if (!sourcePublished) {
                 std::puts("OBS Virtual Camera is actively publishing frames to AvCam.");
