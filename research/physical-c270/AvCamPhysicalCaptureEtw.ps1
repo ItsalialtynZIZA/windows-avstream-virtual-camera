@@ -76,6 +76,16 @@ if (Test-Path -LiteralPath $etl) {
             $formats = @($messages | Where-Object { $_ -match 'AvCamQueueNegotiated|QueueFormat' }).Count
             $replaced = @($messages | Where-Object { $_ -match 'SampleReplaced' }).Count
             $passthrough = @($messages | Where-Object { $_ -match 'SampleSkipped|AvCamMultiAppSafePassThrough' }).Count
+            # Pin audit evidence originates inside InitializeTransform.
+            # It does not prove the predecessor is Sonix or the Chrome path.
+            $pinsVerified = @($messages | Where-Object {
+                $_ -match 'AvCamConnectedPinsValidated'
+            }).Count
+            $pinsRejected = @($messages | Where-Object {
+                $_ -match 'AvCamConnectedPinsRejected'
+            }).Count
+            Write-Host ('AVCAM_MFT_CONNECTED_INPUT_PINS_VALIDATED_EVENTS=' + $pinsVerified)
+            Write-Host ('AVCAM_MFT_CONNECTED_INPUT_PINS_REJECTED_EVENTS=' + $pinsRejected)
             Write-Host ('AVCAM_MFT_INITIALIZED_OBSERVED=' + $initialized)
             Write-Host ('AVCAM_MFT_QUEUE_EVENTS_OBSERVED=' + $formats)
             Write-Host ('AVCAM_MFT_REPLACEMENT_EVENTS_OBSERVED=' + $replaced)
