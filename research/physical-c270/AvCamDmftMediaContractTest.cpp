@@ -10,6 +10,19 @@ constexpr std::array<std::uint32_t, 3> distinct{{0u, 27u, 0xFFFFFFFFu}};
 constexpr std::array<std::uint32_t, 3> duplicate{{0u, 27u, 0u}};
 constexpr std::array<std::uint32_t, 33> tooMany{};
 
+static_assert(CheckUpstreamPinCounts(0, 1) ==
+              UpstreamCountGate::BoundedForEnumeration, "valid source counts");
+static_assert(CheckUpstreamPinCounts(32, 32) ==
+              UpstreamCountGate::BoundedForEnumeration, "bounded maximum");
+static_assert(CheckUpstreamPinCounts(33, 1) ==
+              UpstreamCountGate::InputOutOfRange, "untrusted input overflow");
+static_assert(CheckUpstreamPinCounts(0, 0) ==
+              UpstreamCountGate::MissingOutput, "zero output must fail");
+static_assert(CheckUpstreamPinCounts(0, 33) ==
+              UpstreamCountGate::OutputOutOfRange, "untrusted output overflow");
+static_assert(CheckUpstreamPinCounts(0xFFFFFFFFu, 0xFFFFFFFFu) !=
+              UpstreamCountGate::BoundedForEnumeration,
+              "malformed counts never trigger unbounded allocation");
 static_assert(IsExact30Fps(30, 1), "30/1 should match");
 static_assert(IsExact30Fps(30000, 1000), "equivalent rational should match");
 static_assert(IsExact30Fps(60000, 2000), "equivalent rational should match");
@@ -83,6 +96,7 @@ int main() {
         AuditStreamIds(duplicate.data(), duplicate.size()) != StreamIdAudit::Duplicate ||
         PermitsSonixChainInstall(StreamIdAudit::Unique)) return 1;
 
+    std::cout << "AVCAM_DMFT_UPSTREAM_PIN_COUNTS_BOUNDED_BEFORE_ALLOC_PASS\n"
     std::cout << "AVCAM_DMFT_ADJACENT_MJPEG_FORMAT_MATCH_SIMULATION_PASS\n"
                  "AVCAM_DMFT_ADJACENT_PIN_MAPPING_REQUIRED_PASS\n"
                  "AVCAM_DMFT_ADJACENT_OEM_UNVERIFIED_INSTALL_BLOCKED_PASS\n"
