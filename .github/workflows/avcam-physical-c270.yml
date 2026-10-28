@@ -133,6 +133,20 @@ jobs:
             }
           }
           Write-Host 'AVCAM_MFT_ROUTING_POLICY_AND_HOOK_STAGED=PASS'
+      - name: Self-test Sonix OEM chain preflight (Windows PowerShell 5.1, camera-free)
+        shell: powershell
+        run: |
+          $script = (Resolve-Path 'research/physical-c270/AvCamSonixChainPreflight.ps1').Path
+          $tokens = $null
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            $script, [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count -ne 0) {
+            $parseErrors | ForEach-Object { Write-Host $_ }
+            throw 'Sonix preflight contains PowerShell syntax errors'
+          }
+          & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $script -SelfTest
+          if ($LASTEXITCODE -ne 0) { throw 'Sonix preflight selftest failed' }
       - name: Test physical Logitech registry preflight without accessing protected subkeys
         shell: powershell
         run: |
