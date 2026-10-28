@@ -666,12 +666,21 @@ jobs:
             $p.Dispose()
           }
 
-      - name: Windows bridge retained-mapping restart selftest
+      - name: Windows bridge retained mapping and NV12 payload selftest
         shell: powershell
         run: |
-          & ./build/physical-c270/Release/AvCamPhysicalBridge.exe --self-test
-          if ($LASTEXITCODE -ne 0) { throw "Bridge mapping restart selftest failed with $LASTEXITCODE" }
+          $output = @(& ./build/physical-c270/Release/AvCamPhysicalBridge.exe --self-test 2>&1)
+          $code = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($code -ne 0) { throw "Bridge dual-format transport selftest failed with $code" }
+          foreach ($marker in @('AVCAM_BRIDGE_MAPPING_RESTART_SELFTEST_PASSED',
+                                'AVCAM_NV12_TRANSPORT_LOCAL_SELFTEST_PASS')) {
+            if ($output -notmatch [regex]::Escape($marker)) {
+              throw "Bridge selftest marker missing: $marker"
+            }
+          }
           Write-Host 'AVCAM_C270_BRIDGE_RESTART_SELFTEST_CI_PASSED'
+          Write-Host 'AVCAM_NV12_TRANSPORT_CI_PASSED'
       - name: Bounded solid-red MJPEG publisher without webcam, OBS, or MFT
         shell: powershell
         run: |
