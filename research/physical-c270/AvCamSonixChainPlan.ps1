@@ -8,6 +8,10 @@ $ErrorActionPreference = 'Stop'
 $sonix = '{5A50829A-86DD-4D18-8685-891EEE643C24}'
 $avcam = '{1DE4C92F-A801-45BB-9D5A-74723A8EF460}'
 $category = '{E5323777-F976-4F5B-9B55-B94699C46E44}'
+# Device-wide output was explicitly chosen for the distinct Lenovo camera.
+# Deep-Live-Cam must use the separate Logitech C270 as its RAW source.
+$sourceVidPid = 'VID_046D&PID_0825'
+$outputVidPid = 'VID_13D3&PID_56FF'
 
 function New-AvCamChainPlan {
     param([string[]]$Chain, [int]$Build, [string]$OEM, [string]$Extension)
@@ -36,13 +40,18 @@ function New-AvCamChainPlan {
         Rollback = $original
         MayModifyRegistry = $false
         PinInteropVerified = $false
+        Scope = 'DeviceWide'
+        SourceVidPid = $sourceVidPid
+        OutputVidPid = $outputVidPid
     }
 }
 if ($SelfTest) {
     $ok = New-AvCamChainPlan -Chain ([string[]]@($sonix)) -Build 26300 -OEM $sonix -Extension $avcam
     if ($ok.Candidate.Count -ne 2 -or $ok.Candidate[0] -cne $sonix -or
         $ok.Candidate[1] -cne $avcam -or $ok.Rollback[0] -cne $sonix -or
-        $ok.MayModifyRegistry -or $ok.PinInteropVerified) {
+        $ok.MayModifyRegistry -or $ok.PinInteropVerified -or
+        $ok.Scope -cne 'DeviceWide' -or
+        $ok.SourceVidPid -ceq $ok.OutputVidPid) {
         throw 'Valid plan invariant failed'
     }
     $cases = [System.Collections.Generic.List[string[]]]::new()
@@ -80,6 +89,16 @@ $camera = @(Get-PnpDevice -PresentOnly | Where-Object {
     $_.InstanceId -match '(?i)^USB\\VID_13D3&PID_56FF&MI_00\\'
 })
 if ($camera.Count -ne 1) { throw 'Expected exactly one healthy Integrated Camera 13D3:56FF' }
+$source = @(Get-PnpDevice -PresentOnly | Where-Object {
+    $_.Class -eq 'Camera' -and $_.Status -eq 'OK' -and
+    $_.InstanceId -match '(?i)^USB\\VID_046D&PID_0825(&MI_00)?\\'
+})
+if ($source.Count -ne 1) {
+    throw 'Expected exactly one healthy external Logitech C270 RAW source; no device changes made'
+}
+if ($source[0].InstanceId -eq $camera[0].InstanceId) {
+    throw 'RAW source and processed output must be different physical cameras'
+}
 
 $root = [Microsoft.Win32.RegistryKey]::OpenBaseKey(
     [Microsoft.Win32.RegistryHive]::LocalMachine,
@@ -128,6 +147,9 @@ try {
     finally { $key.Dispose() }
 
     $plan = New-AvCamChainPlan -Chain $originalChain -Build $build -OEM $sonix -Extension $avcam
+    Write-Host 'AVCAM_OUTPUT_SCOPE=DEVICE_WIDE_ALL_CONSUMERS'
+    Write-Host "AVCAM_RAW_SOURCE_DEVICE=$sourceVidPid"
+    Write-Host "AVCAM_PROCESSED_OUTPUT_DEVICE=$outputVidPid"
     Write-Host "AVCAM_SONIX_PLAN_OS_BUILD=$build"
     Write-Host "AVCAM_SONIX_PLAN_ORIGINAL_COUNT=$($plan.Original.Count)"
     Write-Host "AVCAM_SONIX_PLAN_ORIGINAL_0=$($plan.Original[0])"
