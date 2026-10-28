@@ -267,7 +267,20 @@ jobs:
             if (!$hook.Contains($marker)) { throw "Missing MFT event: $marker" }
           }
           if (!$adapt.Contains('AvCamDeviceMftInitialize')) { throw 'Missing Device MFT initialization event' }
-          foreach ($marker in @('AvCamQueueNegotiated','AvCamDeviceMftInitialize','EVIDENCE_LEVEL=DEVICE_MFT_ONLY')) {
+          if (!$adapt.Contains('AvCamDeviceMftPinTopology')) { throw 'Missing connected Device MFT topology event injection' }
+          $stagedMft = Get-Content 'upstream/avstream/sampledevicemft/multipinmft.cpp' -Raw
+          if (!$stagedMft.Contains('AvCamDeviceMftPinTopology')) {
+            throw 'Adapted Device MFT implementation lacks the stream topology event'
+          }
+          foreach ($marker in @(
+            'AvCamQueueNegotiated',
+            'AvCamDeviceMftInitialize',
+            'AvCamDeviceMftPinTopology',
+            'AVCAM_DMFT_CONNECTED_UPSTREAM_IDENTITY=UNKNOWN',
+            'AVCAM_SONIX_PIN_INTEROP=NOT_VERIFIED',
+            'AVCAM_SONIX_CHAIN_INSTALL=BLOCKED',
+            'EVIDENCE_LEVEL=DEVICE_MFT_ONLY'
+          )) {
             if (!$capture.Contains($marker)) { throw "Trace parser lacks event/contract: $marker" }
           }
           if (!$safety.Contains('#error "Unscoped OBS replacement is prohibited')) {
