@@ -170,6 +170,22 @@ Replace-Once $mftImpl @'
     m_InputPinCount =  ULONG ( m_InPins.size() );
     m_OutputPinCount = ULONG ( m_OutPins.size() );
 
+    // The Microsoft sample must build exactly one successor input pin
+    // for each connected predecessor output. IDs are opaque, not indices.
+    if (m_InputPinCount != outputStreams || m_OutputPinCount == 0) {
+        AvCamTrace(L"AvCamConnectedPinsRejected unexpected_pin_count=1");
+        hr = MF_E_INVALIDSTREAMNUMBER;
+        goto done;
+    }
+    for (DWORD i = 0; i < outputStreams; ++i) {
+        if (!m_InPins[i] || m_InPins[i]->streamId() != pcOutputStreams[i]) {
+            AvCamTrace(L"AvCamConnectedPinsRejected successor_stream_id_mismatch=1");
+            hr = MF_E_INVALIDSTREAMNUMBER;
+            goto done;
+        }
+    }
+    AvCamTrace(L"AvCamConnectedPinsValidated predecessor_outputs_match_successor_inputs=1");
+
     // Observational event only: upstream identity is unverified.
     // For a valid initialized pipeline the upstream output stream count
     // should agree with this MFT input pin count.
