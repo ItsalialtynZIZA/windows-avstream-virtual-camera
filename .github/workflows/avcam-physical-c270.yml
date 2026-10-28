@@ -351,6 +351,8 @@ jobs:
             'AVCAM_DMFT_CONNECTED_UPSTREAM_IDENTITY=UNKNOWN',
             'AVCAM_SONIX_PIN_INTEROP=NOT_VERIFIED',
             'AVCAM_SONIX_CHAIN_INSTALL=BLOCKED',
+            'AVCAM_MFT_CONNECTED_INPUT_PINS_VALIDATED_EVENTS',
+            'AVCAM_MFT_CONNECTED_INPUT_PINS_REJECTED_EVENTS',
             'EVIDENCE_LEVEL=DEVICE_MFT_ONLY'
           )) {
             if (!$capture.Contains($marker)) { throw "Trace parser lacks event/contract: $marker" }
