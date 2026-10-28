@@ -106,6 +106,22 @@ STDMETHODIMP CMultipinMft::InitializeTransform (
 '@
 
 
+# Capture media-type evidence from the ACTUAL predecessor's output stream IDs.
+# This is an observation only: it cannot determine whether that predecessor
+# is Sonix, or certify device-wide installation compatibility.
+Replace-Once $mftImpl @'
+        DMFTCHECKHR_GOTO( m_spSourceTransform->GetStreamIDs( inputStreams, pcInputStreams,
+            outputStreams,
+            pcOutputStreams ),done );
+'@ @'
+        DMFTCHECKHR_GOTO( m_spSourceTransform->GetStreamIDs( inputStreams, pcInputStreams,
+            outputStreams,
+            pcOutputStreams ),done );
+
+        AvCamTraceUpstreamMediaContract(m_spSourceTransform.Get(),
+                                        pcOutputStreams, outputStreams);
+'@
+
 # The upstream reference MFT gets the previous transform's output stream
 # count from the actual MF_DEVICEMFT_CONNECTED_FILTER_KSCONTROL object inside
 # InitializeTransform. Observe that count AND our resulting pin topology.
