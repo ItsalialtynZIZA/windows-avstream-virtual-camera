@@ -189,6 +189,50 @@ int wmain(int argc, wchar_t** argv) {
         CloseHandle(retainedReader);
         if (!published) return 27;
         std::puts("AVCAM_BRIDGE_MAPPING_RESTART_SELFTEST_PASSED");
+
+        // Validate the second uncompressed-format wire path end to end:
+        // BGRA -> NV12 -> versioned section -> byte-identical reader.
+        // Use a per-process LOCAL section, never the real camera mapping.
+        wchar_t nv12Name[96]{}, mutexName[96]{};
+        (void)swprintf_s(nv12Name,
+            L"Local\\AvCamNv12TransportSelfTest_%lu", GetCurrentProcessId());
+        (void)swprintf_s(mutexName,
+            L"Local\\AvCamNv12TransportSelfTestLock_%lu", GetCurrentProcessId());
+        Mapping nv12Local;
+        if (!CreateSharedMapping(nv12Local, nv12Name, mutexName, true,
+                                 AvCamPhysical::kNv12TotalBytes)) return 40;
+        std::vector<std::uint8_t> bgraSelf(avcam::mfcolor::BgraBytes);
+        for (std::size_t i = 0; i < bgraSelf.size(); i += 4) {
+            bgraSelf[i] = 33; bgraSelf[i + 1] = 71;
+            bgraSelf[i + 2] = 204; bgraSelf[i + 3] = 255;
+        }
+        std::vector<std::uint8_t> pixels(avcam::mfcolor::Nv12Bytes);
+        if (!avcam::mfcolor::Convert(
+                bgraSelf.data(), bgraSelf.size(),
+                pixels.data(), pixels.size())) return 41;
+        if (!PublishNv12(nv12Local, pixels,
+                         GetTickCount64() * 10000ull)) return 42;
+
+        HANDLE readHandle = OpenFileMappingW(FILE_MAP_READ, FALSE, nv12Name);
+        if (!readHandle) return 43;
+        const auto* bytes = static_cast<const BYTE*>(MapViewOfFile(
+            readHandle, FILE_MAP_READ, 0, 0,
+            AvCamPhysical::kNv12TotalBytes));
+        if (!bytes) { CloseHandle(readHandle); return 44; }
+        const auto* h = reinterpret_cast<const AvCamPhysical::FrameHeader*>(bytes);
+        const bool headerOk = h->magic == AvCamPhysical::kNv12Magic &&
+            h->version == AvCamPhysical::kVersion &&
+            h->width == 1280 && h->height == 720 &&
+            h->length == AvCamPhysical::kNv12PayloadBytes &&
+            (h->sequence & 1) == 0 &&
+            h->timestamp <= GetTickCount64() * 10000ull &&
+            (GetTickCount64() * 10000ull - h->timestamp) <= 20000000ull;
+        const bool bytesOk = headerOk &&
+            std::memcmp(bytes + sizeof(*h), pixels.data(), pixels.size()) == 0;
+        UnmapViewOfFile(bytes);
+        CloseHandle(readHandle);
+        if (!bytesOk) return 45;
+        std::puts("AVCAM_NV12_TRANSPORT_LOCAL_SELFTEST_PASS camera_modified=0");
         return 0;
     }
     // Optional staged-start diagnostic: start Deep Live Cam against the
