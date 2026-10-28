@@ -5,6 +5,11 @@
 // The ETW provider only observes transform state, formats, and fallback causes.
 // It does not log frame pixels, biometric data, or camera image content.
 void AvCamTrace(const wchar_t* message);
+// Log only upstream and own Device MFT pin counts; never log frames, paths or client IDs.
+// Upstream may be DevProxy OR an OEM DMFT; identity remains unverified.
+void AvCamTraceDeviceMftTopology(long result, unsigned long upstreamInput,
+                                 unsigned long upstreamOutput,
+                                 unsigned long ownInput, unsigned long ownOutput);
 // Nonmatching formats and unavailable OBS data pass through unchanged.
 void AvCamSetQueueFormat(const void* queue, IMFMediaType* input, IMFMediaType* output);
 void AvCamRemoveQueue(const void* queue);
