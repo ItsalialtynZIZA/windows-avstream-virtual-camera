@@ -9,6 +9,11 @@ endif()
 set(sample "${MICROSOFT_DMFT_DIR}")
 set(base "${CMAKE_CURRENT_SOURCE_DIR}")
 
+# Read-only native media-type inspection; no camera acquisition in CI.
+add_executable(AvCamIntegratedCameraFormats AvCamIntegratedCameraFormats.cpp)
+target_compile_features(AvCamIntegratedCameraFormats PRIVATE cxx_std_17)
+target_link_libraries(AvCamIntegratedCameraFormats PRIVATE mfplat mf mfuuid ole32)
+
 add_executable(AvCamPhysicalBridge
   AvCamPhysicalBridge.cpp
   ../udecx/tools/AvCamUdeMjpegEncoder.cpp
