@@ -152,7 +152,7 @@ Write-Host "Existing CameraDeviceMftClsid: $existing"
 Write-Host "Existing CameraDeviceMftClsidChain: $chain"
 if (-not $Enable -and -not $Disable) {
     Write-Host 'PREFLIGHT_ONLY: original Integrated Camera USB device/registry untouched.'
-    Write-Host 'Run -Enable to opt into the reversible User-Mode Device MFT experiment.'
+    Write-Host 'Run -Enable -DualCameraLab (administrator) ONLY after RAW camera and OBS MJPEG baselines pass.'
     Write-Host 'Run -Disable to remove ONLY the AvCam Device MFT.'
     return
 }
