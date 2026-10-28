@@ -65,6 +65,15 @@ constexpr PinMediaEvidence truncated{
 constexpr PinMediaEvidence nv12{
     true, true, true, 17, MediaSubtype::Nv12, 1280, 720, 30, 1
 };
+constexpr PinMediaEvidence nv12Downstream{
+    true, true, true, 44, MediaSubtype::Nv12, 1280, 720, 30000, 1000
+};
+constexpr PinMediaEvidence nv12WrongRate{
+    true, true, true, 44, MediaSubtype::Nv12, 1280, 720, 60000, 1001
+};
+constexpr PinMediaEvidence invalidSubtype{
+    true, true, true, 44, MediaSubtype::Unknown, 1280, 720, 30, 1
+};
 constexpr PinMediaEvidence fractionalFps{
     true, true, true, 17, MediaSubtype::Mjpg, 1280, 720, 30000, 1001
 };
@@ -83,6 +92,32 @@ static_assert(CheckAdjacentMjpeg(upstream, downstream, false) ==
               AdjacentMediaGate::MappingUnverified);
 static_assert(CheckAdjacentMjpeg(nv12, downstream, true) ==
               AdjacentMediaGate::UnsupportedType);
+static_assert(CheckAdjacentMjpeg(nv12, nv12Downstream, true) ==
+              AdjacentMediaGate::UnsupportedType,
+              "legacy MJPEG-only test must not authorize NV12");
+static_assert(CheckAdjacentVideo(nv12, nv12Downstream, true) ==
+              AdjacentMediaGate::FormatMatchOnly,
+              "matching NV12 720p30 is supported by the dual-format hook");
+static_assert(CheckAdjacentVideo(upstream, downstream, true) ==
+              AdjacentMediaGate::FormatMatchOnly,
+              "MJPEG 720p30 must remain supported");
+static_assert(CheckAdjacentVideo(nv12, downstream, true) ==
+              AdjacentMediaGate::UnsupportedType,
+              "NV12 and MJPEG are never silently cross-converted");
+static_assert(CheckAdjacentVideo(upstream, nv12Downstream, true) ==
+              AdjacentMediaGate::UnsupportedType,
+              "reverse mixed formats must also fail");
+static_assert(CheckAdjacentVideo(nv12, nv12WrongRate, true) ==
+              AdjacentMediaGate::FrameFormatMismatch,
+              "29.97 vs 30 fps must fail");
+static_assert(CheckAdjacentVideo(nv12, nv12Downstream, false) ==
+              AdjacentMediaGate::MappingUnverified,
+              "matching types alone never prove connected pins");
+static_assert(CheckAdjacentVideo(nv12, invalidSubtype, true) ==
+              AdjacentMediaGate::UnsupportedType);
+static_assert(!PermitsSonixChainInstall(
+                  CheckAdjacentVideo(nv12, nv12Downstream, true)),
+              "NV12 format match never authorizes OEM installation");
 static_assert(CheckAdjacentMjpeg(fractionalFps, downstream, true) ==
               AdjacentMediaGate::FrameFormatMismatch);
 static_assert(CheckAdjacentMjpeg(wrongSize, downstream, true) ==
@@ -98,6 +133,8 @@ int main() {
 
     std::cout << "AVCAM_DMFT_UPSTREAM_PIN_COUNTS_BOUNDED_BEFORE_ALLOC_PASS\n"
                  "AVCAM_DMFT_ADJACENT_MJPEG_FORMAT_MATCH_SIMULATION_PASS\n"
+                 "AVCAM_DMFT_ADJACENT_NV12_FORMAT_MATCH_SIMULATION_PASS\n"
+                 "AVCAM_DMFT_ADJACENT_MIXED_FORMAT_REJECTED_PASS\n"
                  "AVCAM_DMFT_ADJACENT_PIN_MAPPING_REQUIRED_PASS\n"
                  "AVCAM_DMFT_ADJACENT_OEM_UNVERIFIED_INSTALL_BLOCKED_PASS\n"
                  "AVCAM_DMFT_EXACT_30_FPS_RATIONAL_PASS\n"
