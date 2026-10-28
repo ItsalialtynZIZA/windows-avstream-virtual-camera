@@ -124,6 +124,65 @@ bool RegisterRootDevice(const GUID& classGuid)
     std::wcout << L"AVCAM_ROOT_DEVICE_REGISTERED " << kRootHardwareId << L"\n";
     return true;
 }
+// Remove only a uniquely identified root-enumerated AvCam camera.
+// Never touch a physical webcam, OEM Sonix chain, or unrelated Camera device.
+bool RemoveRootDevice(const GUID& classGuid)
+{
+    HDEVINFO devices = SetupDiGetClassDevsW(&classGuid, nullptr, nullptr, 0);
+    if (devices == INVALID_HANDLE_VALUE) return false;
+
+    DWORD matches = 0;
+    SP_DEVINFO_DATA selected{};
+    selected.cbSize = sizeof(selected);
+    for (DWORD index = 0;; ++index) {
+        SP_DEVINFO_DATA item{};
+        item.cbSize = sizeof(item);
+        if (!SetupDiEnumDeviceInfo(devices, index, &item)) {
+            if (GetLastError() != ERROR_NO_MORE_ITEMS) {
+                SetupDiDestroyDeviceInfoList(devices);
+                return false;
+            }
+            break;
+        }
+        wchar_t instance[512]{};
+        if (!SetupDiGetDeviceInstanceIdW(devices, &item, instance,
+                                          _countof(instance), nullptr))
+            continue;
+        constexpr wchar_t prefix[] = L"ROOT\\AVCAMVIRTUALCAMERA\\";
+        if (_wcsnicmp(instance, prefix, _countof(prefix) - 1) != 0)
+            continue;
+        wchar_t ids[1024]{};
+        DWORD type = 0;
+        DWORD bytes = 0;
+        if (!SetupDiGetDeviceRegistryPropertyW(
+                devices, &item, SPDRP_HARDWAREID, &type,
+                reinterpret_cast<PBYTE>(ids), sizeof(ids), &bytes))
+            continue;
+        if (type == REG_MULTI_SZ && bytes % sizeof(wchar_t) == 0 &&
+            HasMatchingHardwareId(ids, bytes / sizeof(wchar_t))) {
+            selected = item;
+            ++matches;
+        }
+    }
+    if (matches == 0) {
+        SetupDiDestroyDeviceInfoList(devices);
+        std::wcout << L"AVCAM_ROOT_DEVICE_ALREADY_ABSENT\n";
+        return true;
+    }
+    if (matches != 1) {
+        std::wcerr << L"AVCAM_ROOT_DEVICE_AMBIGUOUS count=" << matches << L"\n";
+        SetupDiDestroyDeviceInfoList(devices);
+        return false;
+    }
+    const bool removed =
+        SetupDiCallClassInstaller(DIF_REMOVE, devices, &selected) != FALSE;
+    if (!removed)
+        std::wcerr << L"AVCAM_ROOT_REMOVE_FAILED win32=" << GetLastError() << L"\n";
+    SetupDiDestroyDeviceInfoList(devices);
+    if (removed)
+        std::wcout << L"AVCAM_ROOT_DEVICE_REMOVE_REQUESTED\n";
+    return removed;
+}
 } // namespace
 
 int wmain(int argc, wchar_t** argv)
@@ -139,8 +198,9 @@ int wmain(int argc, wchar_t** argv)
         std::wcout << L"AVCAM_ROOT_INSTALLER_SELFTEST_PASS no_device_changes=1\n";
         return 0;
     }
-    if (argc != 3 || wcscmp(argv[1], L"install") != 0) {
-        std::wcerr << L"Usage: AvCamRootInstall.exe install <absolute-or-relative-path-to-AvCam.inf>\n"
+    if (argc != 3 ||
+        (wcscmp(argv[1], L"install") != 0 && wcscmp(argv[1], L"remove") != 0)) {
+        std::wcerr << L"Usage: AvCamRootInstall.exe install|remove <absolute-or-relative-path-to-AvCam.inf>\n"
                    << L"Use an elevated PowerShell on a dedicated Windows test system. Does not alter signing policy.\n";
         return 2;
     }
@@ -158,6 +218,10 @@ int wmain(int argc, wchar_t** argv)
             static_cast<DWORD>(_countof(className)), nullptr)) {
         std::wcerr << L"SetupDiGetINFClass failed: " << GetLastError() << L"\n";
         return 1;
+    }
+
+    if (wcscmp(argv[1], L"remove") == 0) {
+        return RemoveRootDevice(classGuid) ? 0 : 1;
     }
 
     bool exists = false;
