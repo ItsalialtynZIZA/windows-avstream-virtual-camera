@@ -98,3 +98,16 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\research\physical-c270
 ```
 
 `-SelfTest` exercises only syntactic chain validation and write-rights mask classification, without a connected camera. The existing `AvCamIntegrated13D3Mft.ps1` remains intentionally blocked for OEM chains; no supported chain-aware installation has been implemented or hardware validated yet. A read-only preflight result must never be labeled end-to-end camera compatibility or proof of origin/authenticity.
+
+
+## 2026-10-29: Actual native MJPEG type confirmed; physical capture next
+
+Owner ran the verified, non-installing `AvCamIntegratedCameraFormats.exe --inspect` on Windows 11 build 26300, Lenovo 82K1. `AVCAM_INTEGRATED_MJPEG_1280X720=ADVERTISED`: single Integrated Camera source, 27 native types; `MJPG 1280x720 @30/1` and `NV12 1280x720 @30/1` are both advertised. No AvCam DLL was attached to Sonix. `AVCAM_MFT_CHAIN_INTEROP=NOT_VERIFIED`.
+
+The additional `AvCamIntegratedNativeCaptureSmoke.exe` validates actual 30 native JPEG samples from the OEM **real camera** pipeline at 1280x720@30; the wrapper `Run-AvCamIntegratedNativeCaptureSmoke.ps1` stops only its test process after 30 seconds. It saves no frames or identifiable images and does not enable AvCam processing. Run only when Windows Camera, OBS capture, Chrome video tabs, and Deep-Live-Cam are closed. From the current `AvCam-Integrated-13D3-Lab-x64` artifact extracted to `C:\AvCam-Integrated-Lab`:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "C:\AvCam-Integrated-Lab\Run-AvCamIntegratedNativeCaptureSmoke.ps1"
+```
+
+A successful run prints `AVCAM_CAPTURE_NEGOTIATED=MJPG_1280X720_30`, `AVCAM_INTEGRATED_NATIVE_MJPEG_CAPTURE_PASS`, and `AVCAM_BOUNDED_NATIVE_CAPTURE_COMPLETE`. This checks normal genuine video from the OEM Sonix chain, not interoperability with a second MFT or the Chrome-selected type. Windows CI only compiles/selftests without opening a camera.
