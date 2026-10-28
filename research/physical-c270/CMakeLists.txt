@@ -10,6 +10,10 @@ set(sample "${MICROSOFT_DMFT_DIR}")
 set(base "${CMAKE_CURRENT_SOURCE_DIR}")
 
 # Read-only native media-type inspection; no camera acquisition in CI.
+add_executable(AvCamDmftComContract AvCamDmftComContract.cpp)
+target_compile_features(AvCamDmftComContract PRIVATE cxx_std_17)
+target_link_libraries(AvCamDmftComContract PRIVATE ole32)
+
 add_executable(AvCamIntegratedNativeCaptureSmoke AvCamIntegratedNativeCaptureSmoke.cpp)
 target_compile_features(AvCamIntegratedNativeCaptureSmoke PRIVATE cxx_std_17)
 target_link_libraries(AvCamIntegratedNativeCaptureSmoke PRIVATE mfplat mf mfreadwrite mfuuid ole32)
