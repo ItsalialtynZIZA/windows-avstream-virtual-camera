@@ -83,6 +83,23 @@ if (Test-Path -LiteralPath $etl) {
             # This event exists only after successful InitializeTransform of
             # the experimental AvCam MFT. It reports the CONNECTED transform
             # counts, not the identity or pin contract of the OEM Sonix DLL.
+            # The media contract is read from the connected transform's
+            # output stream IDs, NOT from the source presentation descriptor.
+            $mediaEvents = @($messages | Where-Object { $_ -match 'AvCamUpstreamMediaContract' })
+            Write-Host ('AVCAM_UPSTREAM_MEDIA_CONTRACT_EVENTS_OBSERVED=' + $mediaEvents.Count)
+            $completeMediaPins = 0
+            $mjpgMediaPins = 0
+            foreach ($event in $mediaEvents) {
+                $m = [regex]::Match($event, 'stream_id=(\d+) types_seen=(\d+) complete=(\d) mjpg_720p30=(\d) nv12_720p30=(\d)')
+                if (-not $m.Success) { continue }
+                Write-Host ('AVCAM_UPSTREAM_MEDIA_STREAM_ID=' + $m.Groups[1].Value)
+                Write-Host ('AVCAM_UPSTREAM_MEDIA_TYPES_SEEN=' + $m.Groups[2].Value)
+                if ($m.Groups[3].Value -eq '1') { $completeMediaPins++ }
+                if ($m.Groups[4].Value -eq '1') { $mjpgMediaPins++ }
+            }
+            Write-Host ('AVCAM_UPSTREAM_MEDIA_COMPLETE_PINS=' + $completeMediaPins)
+            Write-Host ('AVCAM_UPSTREAM_MEDIA_MJPG_720P30_PINS=' + $mjpgMediaPins)
+            Write-Host 'AVCAM_UPSTREAM_MEDIA_OEM_IDENTITY=UNKNOWN'
             $topologyEvents = @($messages | Where-Object { $_ -match 'AvCamDeviceMftPinTopology' })
             Write-Host ('AVCAM_DMFT_TOPOLOGY_EVENTS_OBSERVED=' + $topologyEvents.Count)
             $validTopology = 0
