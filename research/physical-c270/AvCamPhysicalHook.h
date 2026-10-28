@@ -10,6 +10,12 @@ void AvCamTrace(const wchar_t* message);
 void AvCamTraceDeviceMftTopology(long result, unsigned long upstreamInput,
                                  unsigned long upstreamOutput,
                                  unsigned long ownInput, unsigned long ownOutput);
+// Enumerate ONLY advertised types on the actual connected upstream transform.
+// Never logs pixels, activates a camera, or asserts that upstream is Sonix.
+// Called only after the reference MFT obtained upstream stream IDs.
+void AvCamTraceUpstreamMediaContract(IMFDeviceTransform* upstream,
+                                     const unsigned long* outputIds,
+                                     unsigned long outputCount);
 // Nonmatching formats and unavailable OBS data pass through unchanged.
 void AvCamSetQueueFormat(const void* queue, IMFMediaType* input, IMFMediaType* output);
 void AvCamRemoveQueue(const void* queue);
