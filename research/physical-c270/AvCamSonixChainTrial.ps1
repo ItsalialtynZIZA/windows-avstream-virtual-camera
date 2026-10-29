@@ -1,6 +1,7 @@
-# Experimental two-camera Device MFT chain trial for the owner's Lenovo 82K1.
-# Default is read-only; Install requires elevation, an explicit switch and a
-# typed confirmation. Rollback works even if camera PnP/FrameServer is broken.
+# Experimental pass-through-first Device MFT chain trial for Lenovo 82K1.
+# No OBS substitution is enabled: validate actual Sonix->AvCam chaining first.
+# Install requires elevation and typed confirmation. Rollback can work even if
+# the camera PnP/FrameServer fails. Never touches the USB driver.
 # Never changes USB drivers, Sonix COM registration, or camera-facing names.
 [CmdletBinding()]
 param(
@@ -17,7 +18,7 @@ $Category = '{E5323777-F976-4F5B-9B55-B94699C46E44}'
 $ChainValue = 'CameraDeviceMftClsidChain'
 $RootPath = "SYSTEM\CurrentControlSet\Control\DeviceClasses\$Category"
 $Folder = Join-Path $env:ProgramFiles 'AvCamSonixChainTrial'
-$Dll = Join-Path $Folder 'AvCamDualCameraDeviceMft.dll'
+$Dll = Join-Path $Folder 'AvCamSonixPassThroughDmft.dll'
 $StateFile = Join-Path $Folder 'oem-chain-rollback.json'
 $Original = [string[]]@($Sonix)
 $Candidate = [string[]]@($Sonix,$AvCam)
@@ -162,17 +163,30 @@ function Find-Lenovo([Microsoft.Win32.RegistryKey]$Root) {
     return $path
 }
 function Verify-Package {
-    $source=Join-Path $PSScriptRoot 'AvCamDualCameraDeviceMft.dll'
-    $manifest=Join-Path $PSScriptRoot 'LAB_SHA256SUMS.txt'
+    $source=Join-Path $PSScriptRoot 'AvCamPhysicalDeviceMft.dll'
+    $manifest=Join-Path $PSScriptRoot 'PASS_THROUGH_SHA256SUMS.txt'
     if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or
         -not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
-        throw 'Extract complete AvCam-Integrated-13D3-Lab-x64 artifact first'
+        throw 'Extract the full 13D3 lab including the signed pass-through DMFT and manifest first'
     }
     $line=(Get-Content -LiteralPath $manifest -TotalCount 1)
     $expected=($line -split '\s+')[0]
     if ($expected -notmatch '^[0-9a-fA-F]{64}$') { throw 'Invalid SHA256 manifest' }
     $actual=(Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash
     if ($actual -ine $expected) { throw 'Device MFT DLL SHA256 mismatch' }
+    # A class factory test is not a pin-compatibility test, but it catches
+    # broken builds before any COM registration or OEM chain writes.
+    $probe=Join-Path $PSScriptRoot 'AvCamDmftComContract.exe'
+    if (-not (Test-Path -LiteralPath $probe -PathType Leaf)) {
+        throw 'AvCamDmftComContract.exe missing; refuse installing unchecked DLL'
+    }
+    $result=@(& $probe --inspect-dll $source)
+    if ($LASTEXITCODE -ne 0 -or
+        $result -notcontains 'AVCAM_DMFT_REQUIRED_COM_INTERFACES=PASS') {
+        $result | ForEach-Object { Write-Host $_ }
+        throw 'Pass-through Device MFT COM interface contract failed'
+    }
+    Write-Host 'AVCAM_PASS_THROUGH_DLL_CONTRACT_PASS'
     return $actual
 }
 function Save-State([string]$Path,[string]$Hash) {
@@ -269,6 +283,7 @@ function Invoke-SelfTest {
         Assert-InterfacePath "$RootPath\##?#USB#VID_046D&PID_0825#SAMPLE#$Category\#GLOBAL\Device Parameters"
     } catch { $rejected=$true }
     if (-not $rejected) { throw 'Unrelated camera interface accepted' }
+    if ($Dll -notlike '*AvCamSonixPassThroughDmft.dll') { throw 'Expected the isolated pass-through trial DLL name' }
     Write-Host 'AVCAM_SONIX_CHAIN_TRIAL_SELFTEST_PASS'
     Write-Host 'AVCAM_SONIX_CHAIN_TRIAL_OEM_REGISTRY_UNTOUCHED'
 }
@@ -299,6 +314,7 @@ if ($Action -eq 'Status') {
             }
         } finally { $key.Dispose() }
         Write-Host "AVCAM_SONIX_ROLLBACK_RECORD_PRESENT=$(Test-Path -LiteralPath $StateFile)"
+        Write-Host 'AVCAM_SONIX_TRIAL_MODE=PASSTHROUGH_ONLY'
         Write-Host 'AVCAM_SONIX_STATUS_READ_ONLY_COMPLETE'
     } finally { $root.Dispose() }
     return
@@ -327,17 +343,18 @@ try {
 
     Write-Host "AVCAM_SONIX_ORIGINAL=$Sonix"
     Write-Host "AVCAM_SONIX_CANDIDATE=$Sonix,$AvCam"
-    Write-Warning 'EXPERIMENTAL: modifies the original Integrated Camera OEM MFT chain.'
+    Write-Warning 'EXPERIMENTAL: appends an AvCam PASS-THROUGH MFT to the OEM chain.'
+    Write-Warning 'OBS replacement remains DISABLED until Sonix pin interoperability is proven.'
     Write-Warning 'A failed MFT may prevent Windows Camera and Chrome from opening Integrated Camera.'
     Write-Warning 'Close all camera clients before installation; reboot is required afterward.'
     Write-Warning 'To recover, use this script elevated with -Action Rollback, then reboot.'
-    $answer=Read-Host 'Type INSTALL_AVCAM_AFTER_SONIX to accept this hardware trial'
-    if ($answer -cne 'INSTALL_AVCAM_AFTER_SONIX') {
+    $answer=Read-Host 'Type INSTALL_AVCAM_PASSTHROUGH_ONLY to accept this hardware trial'
+    if ($answer -cne 'INSTALL_AVCAM_PASSTHROUGH_ONLY') {
         Write-Host 'AVCAM_SONIX_CHAIN_INSTALL_CANCELLED'
         return
     }
     New-Item -ItemType Directory -Force -Path $Folder | Out-Null
-    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AvCamDualCameraDeviceMft.dll') -Destination $Dll
+    Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'AvCamPhysicalDeviceMft.dll') -Destination $Dll
     if ((Get-FileHash -LiteralPath $Dll -Algorithm SHA256).Hash -ine $hash) {
         throw 'Copied Device MFT hash mismatch'
     }
@@ -360,7 +377,8 @@ try {
             throw 'Chain verification failed'
         }
     } finally { $key.Dispose() }
-    Write-Host 'AVCAM_SONIX_CHAIN_TRIAL_INSTALLED'
+    Write-Host 'AVCAM_SONIX_PASSTHROUGH_TRIAL_INSTALLED'
+    Write-Host 'AVCAM_OBS_FRAME_REPLACEMENT=DISABLED'
     Write-Host 'AVCAM_SONIX_PIN_INTEROP=NOT_YET_VERIFIED'
     Write-Warning 'Restart Windows before the first camera test.'
 } catch {
