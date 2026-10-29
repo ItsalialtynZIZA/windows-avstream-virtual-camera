@@ -4,7 +4,7 @@
 [CmdletBinding()]
 param(
     [ValidateRange(10,120)][int]$Seconds = 30,
-    [ValidateSet('WindowsCamera','DeepLiveCam','ChromeWebRTC')][string]$Target = 'WindowsCamera'
+    [ValidateSet('WindowsCamera','DeepLiveCam','ChromeWebRTC','IntegratedChrome')][string]$Target = 'WindowsCamera'
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -24,7 +24,11 @@ try {
     & $logman start $session -p $provider 0xFFFFFFFF 5 -o $etl -ets | Out-Host
     if ($LASTEXITCODE -ne 0) { throw "logman could not start session, code $LASTEXITCODE" }
     $started = $true
-    if ($Target -eq 'DeepLiveCam') {
+    if ($Target -eq 'IntegratedChrome') {
+        Write-Host 'TRACE_STARTED: Open Chrome WebRTC, select ORIGINAL Lenovo Integrated Camera and view REAL sensor video.'
+        Write-Host 'The first Sonix trial is PASS-THROUGH: OBS replacement is intentionally disabled.'
+        Write-Host 'If Chrome is black or hangs, close Chrome, invoke SonixChainTrial -Action Rollback and reboot.'
+    } elseif ($Target -eq 'DeepLiveCam') {
         Write-Host 'TRACE_STARTED: Launch Deep Live Cam NOW; attempt to start the physical Logitech C270 once. Note the exact error.'
         Write-Host 'Do not open Chrome or Windows Camera during the reproduction.'
     } elseif ($Target -eq 'ChromeWebRTC') {
@@ -110,12 +114,12 @@ if (Test-Path -LiteralPath $etl) {
             Write-Host ('AVCAM_UPSTREAM_MEDIA_COMPLETE_PINS=' + $completeMediaPins)
             Write-Host ('AVCAM_UPSTREAM_MEDIA_MJPG_720P30_PINS=' + $mjpgMediaPins)
             Write-Host 'AVCAM_UPSTREAM_MEDIA_OEM_IDENTITY=UNKNOWN'
-            $topologyEvents = @($messages | Where-Object { $_ -match 'AvCamDeviceMftPinTopology' })
+            $topologyEvents = @($messages | Where-Object { $_ -match 'AvCamDmftTopology|AvCamDeviceMftPinTopology' })
             Write-Host ('AVCAM_DMFT_TOPOLOGY_EVENTS_OBSERVED=' + $topologyEvents.Count)
             $validTopology = 0
             $mismatched = 0
             foreach ($event in $topologyEvents) {
-                $m = [regex]::Match($event, 'upstream_output=(\d+) avcam_input=(\d+) avcam_output=(\d+) identity=unknown')
+                $m = [regex]::Match($event, 'upstream_output=(\d+) avcam_input=(\d+) avcam_output=(\d+)(?:\s+count_match=([01]))?\s+(?:upstream_)?identity=unknown')
                 if (-not $m.Success) { continue }
                 $validTopology++
                 $up = [int64]$m.Groups[1].Value
@@ -129,6 +133,7 @@ if (Test-Path -LiteralPath $etl) {
             Write-Host ('AVCAM_DMFT_UPSTREAM_INPUT_COUNT_MISMATCH_EVENTS=' + $mismatched)
             Write-Host 'AVCAM_DMFT_CONNECTED_UPSTREAM_IDENTITY=UNKNOWN'
             Write-Host 'AVCAM_SONIX_PIN_INTEROP=NOT_VERIFIED'
+            Write-Host 'AVCAM_SONIX_PASS_THROUGH_VIDEO_CHECK=REQUIRED'
             Write-Host 'AVCAM_SONIX_CHAIN_INSTALL=BLOCKED'
             Write-Host 'NOTE: ETW summaries count sampled diagnostic EVENTS, not delivered video frames.'
             Write-Host 'EVIDENCE_LEVEL=DEVICE_MFT_ONLY'
