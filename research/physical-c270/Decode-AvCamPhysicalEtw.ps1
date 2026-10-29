@@ -13,6 +13,7 @@ Write-Host ('AVCAM_ETL_EVENT_COUNT=' + $events.Count)
 $messages = @()
 foreach ($event in $events) {
     $parts = [System.Collections.Generic.List[string]]::new()
+    $xml = $null
     try {
         $xml = [xml]$event.ToXml()
         foreach ($node in $xml.SelectNodes('//*[local-name()="EventData"]/*[local-name()="Data"]')) {
@@ -57,7 +58,7 @@ Write-Host 'AVCAM_ETL_READ_ONLY_COMPLETE'
                 continue
             }
             try {
-                $raw = New-Object byte[] ($hex.Length / 2)
+                $raw = New-Object -TypeName byte[] -ArgumentList ([int]($hex.Length / 2))
                 for ($i = 0; $i -lt $raw.Length; ++$i) {
                     $raw[$i] = [Convert]::ToByte($hex.Substring($i * 2, 2), 16)
                 }
