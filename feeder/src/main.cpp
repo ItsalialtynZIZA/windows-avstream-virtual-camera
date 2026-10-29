@@ -19,6 +19,7 @@
 #include "AvCamIpcFrameSource.h"
 #include "AvCamVirtualReadiness.h"
 #include "DirectShowFrameSource.h"
+#include "ObsSharedMemorySource.h"
 #include "TestPatternFrameSource.h"
 #include "VirtualCameraProtocol.h"
 
@@ -130,6 +131,7 @@ void PrintUsage()
         << L"  AvCamFeeder.exe --source test\n"
         << L"  AvCamFeeder.exe --source obs [--device-name \"OBS Virtual Camera\"]\n"
         << L"  AvCamFeeder.exe --source obs-dshow [--device-name \"OBS Virtual Camera\"]\n"
+        << L"  AvCamFeeder.exe --source obs-shmem (OBS native shared memory; no MF/DirectShow enumeration)\n"
         << L"  AvCamFeeder.exe --source avcam-ipc-obs\n"
         << L"  AvCamFeeder.exe --source avcam-ipc-output\n"
         << L"  AvCamFeeder.exe --source avcam-ipc-raw\n"
@@ -216,6 +218,7 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
 
     if (options.source != L"test" && options.source != L"obs" &&
         options.source != L"obs-dshow" &&
+        options.source != L"obs-shmem" &&
         options.source != L"avcam-ipc-obs" &&
         options.source != L"avcam-ipc-output" &&
         options.source != L"avcam-ipc-raw")
@@ -230,6 +233,11 @@ bool ParseOptions(int argc, wchar_t* argv[], Options& options)
 
 std::unique_ptr<IFrameSource> CreateFrameSource(const Options& options)
 {
+    // OBS virtual camera uses a per-session memory queue. It need not be
+    // present in Media Foundation enumeration and this source never opens
+    // any physical Logitech or Integrated Camera device.
+    if (options.source == L"obs-shmem")
+        return std::make_unique<ObsSharedMemorySource>();
     if (options.source == L"avcam-ipc-obs")
         return std::make_unique<AvCamIpcFrameSource>(
             AvCamIpcFrameSource::Mode::ObsOnly);
@@ -625,7 +633,7 @@ int wmain(int argc, wchar_t* argv[])
     {
         if (options.source == L"test")
         {
-            std::wcerr << L"Specify --source obs-dshow or --source obs.\n";
+            std::wcerr << L"Specify --source obs-shmem, obs-dshow or obs.\n";
             return 2;
         }
         if (!source->Start())
@@ -633,7 +641,8 @@ int wmain(int argc, wchar_t* argv[])
             std::wcerr << L"OBS_CHECK source_open=failed\n";
             return 4;
         }
-        const bool ipcSource = options.source == L"avcam-ipc-obs" ||
+        const bool ipcSource = options.source == L"obs-shmem" ||
+                               options.source == L"avcam-ipc-obs" ||
                                options.source == L"avcam-ipc-output" ||
                                options.source == L"avcam-ipc-raw";
         std::uint64_t frames = 0, changed = 0, failures = 0, totalFailures = 0;
