@@ -552,7 +552,7 @@ jobs:
           $virtualCameraCode = $LASTEXITCODE
           $virtualCameraReport | ForEach-Object { Write-Host $_ }
           if ($virtualCameraCode -ne 6 -or
-              $virtualCameraReport -notcontains 'AVCAM_VIRTUAL_CAMERA_READINESS=ABSENT ks_sinks=0 mf_name_matches=0') {
+              $virtualCameraReport -notcontains 'AVCAM_VIRTUAL_CAMERA_READINESS=ABSENT ks_sinks=0 mf_root_matches=0 mf_name_matches=0') {
             throw "Fresh Windows runner unexpectedly enumerates a separate AvCam virtual camera: $virtualCameraCode"
           }
           Write-Host 'AVCAM_VIRTUAL_CAMERA_MF_READONLY_PREFLIGHT_PASS'
