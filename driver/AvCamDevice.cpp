@@ -1,6 +1,7 @@
 #include "AvCamCommon.h"
 #include "AvCamDevice.h"
 #include "AvCamFilter.h"
+#include "AvCamFrameStore.h"
 
 namespace
 {
@@ -20,7 +21,28 @@ NTSTATUS AvCamDeviceStart(
     UNREFERENCED_PARAMETER(Irp);
     UNREFERENCED_PARAMETER(TranslatedResourceList);
     UNREFERENCED_PARAMETER(UntranslatedResourceList);
-    return STATUS_SUCCESS;
+
+    // The producer's private GET_STATS works even without a frame store,
+    // but SUBMIT_FRAME fails with STATUS_DEVICE_NOT_READY. Initialize the
+    // bounded three-slot frame store before AVStream enables the device.
+    // Return allocation failures instead of silently claiming a live camera.
+    return AvCamFrameStoreInitialize();
+}
+
+// Device PnP teardown must release the nonpaged frame allocations. Shutdown
+// is idempotent: Remove can follow Stop without double freeing the store.
+void AvCamDeviceStop(_In_ PKSDEVICE Device, _In_ PIRP Irp)
+{
+    UNREFERENCED_PARAMETER(Device);
+    UNREFERENCED_PARAMETER(Irp);
+    AvCamFrameStoreShutdown();
+}
+
+void AvCamDeviceRemove(_In_ PKSDEVICE Device, _In_ PIRP Irp)
+{
+    UNREFERENCED_PARAMETER(Device);
+    UNREFERENCED_PARAMETER(Irp);
+    AvCamFrameStoreShutdown();
 }
 } // namespace
 
@@ -28,18 +50,18 @@ const KSDEVICE_DISPATCH g_AvCamDeviceDispatch =
 {
     AvCamDeviceAdd,
     AvCamDeviceStart,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr,
-    nullptr
+    nullptr,                 // PostStart
+    nullptr,                 // QueryStop
+    nullptr,                 // CancelStop
+    AvCamDeviceStop,         // Stop
+    nullptr,                 // QueryRemove
+    nullptr,                 // CancelRemove
+    AvCamDeviceRemove,       // Remove
+    nullptr,                 // QueryCapabilities
+    nullptr,                 // SurpriseRemoval
+    nullptr,                 // QueryPower
+    nullptr,                 // SetPower
+    nullptr                  // QueryInterface
 };
 
 static const KSFILTER_DESCRIPTOR* g_AvCamFilterDescriptors[] =
