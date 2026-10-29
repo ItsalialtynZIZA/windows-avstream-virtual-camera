@@ -10,6 +10,10 @@ constexpr std::array<std::uint32_t, 3> distinct{{0u, 27u, 0xFFFFFFFFu}};
 constexpr std::array<std::uint32_t, 3> duplicate{{0u, 27u, 0u}};
 constexpr std::array<std::uint32_t, 33> tooMany{};
 
+static_assert(kMaxObservedTypesPerStream > 64,
+              "Observed Logitech stream lists exceed old 64-type guard");
+static_assert(kMaxObservedTypesPerStream == 512,
+              "Maximum type enumeration must remain finite and reviewed");
 static_assert(CheckUpstreamPinCounts(0, 1) ==
               UpstreamCountGate::BoundedForEnumeration, "valid source counts");
 static_assert(CheckUpstreamPinCounts(32, 32) ==
