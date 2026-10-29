@@ -68,6 +68,25 @@ jobs:
           if (!$protocol.Contains('0x7b28304f, 0x6b89, 0x4df0')) { throw 'Private sink GUID mismatch in shared protocol' }
           Write-Host 'AVCAM_KS_INTERFACE_REGISTRATION_CONTRACT_PASS'
 
+      - name: Validate AvCam frame-store PnP lifecycle
+        shell: pwsh
+        run: |
+          $device = Get-Content driver/AvCamDevice.cpp -Raw
+          $store = Get-Content driver/AvCamFrameStore.cpp -Raw
+          if ($device -notmatch 'return\s+AvCamFrameStoreInitialize\(\)') {
+            throw 'AVStream PnP Start does not initialize the frame store'
+          }
+          if ($device -notmatch 'AvCamDeviceStop[\s\S]*?AvCamFrameStoreShutdown\(\)') {
+            throw 'AVStream PnP Stop does not free the frame store'
+          }
+          if ($device -notmatch 'AvCamDeviceRemove[\s\S]*?AvCamFrameStoreShutdown\(\)') {
+            throw 'AVStream PnP Remove does not free the frame store'
+          }
+          if ($store -notmatch 'STATUS_DEVICE_NOT_READY') {
+            throw 'Missing no-store frame submit rejection guard'
+          }
+          Write-Host 'AVCAM_FRAME_STORE_PNP_LIFECYCLE_CONTRACT_PASS'
+
       - name: Add x64 MSBuild to PATH
         uses: microsoft/setup-msbuild@v2
         with:
