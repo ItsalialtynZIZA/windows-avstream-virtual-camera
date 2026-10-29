@@ -128,11 +128,17 @@ DEFINE_KSAUTOMATION_TABLE(g_AvCamFilterAutomation)
 };
 } // namespace
 
+// AVStream publishes filter-factory device interfaces for the categories
+// declared here. The INF already registers the private frame-sink class,
+// but without this category the feeder's SetupAPI enumeration finds no
+// GUID_DEVINTERFACE_AVCAM_FRAME_SINK even when the PnP device is healthy.
+// This GUID belongs exclusively to our separately labelled virtual camera.
 static const GUID g_AvCamFilterCategories[] =
 {
     STATICGUIDOF(KSCATEGORY_VIDEO_CAMERA),
     STATICGUIDOF(KSCATEGORY_VIDEO),
-    STATICGUIDOF(KSCATEGORY_CAPTURE)
+    STATICGUIDOF(KSCATEGORY_CAPTURE),
+    GUID_DEVINTERFACE_AVCAM_FRAME_SINK
 };
 
 const KSFILTER_DESCRIPTOR g_AvCamFilterDescriptor =
