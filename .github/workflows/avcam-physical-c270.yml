@@ -313,6 +313,20 @@ jobs:
           # a temporary ETW trace session and writes only trace output files.
           Write-Host 'AVCAM_PHYSICAL_C270_ETW_CAPTURE_PARSE_PASSED'
 
+      - name: Validate exact integrated camera whitelist on synthetic Windows PnP data
+        shell: powershell
+        run: |
+          $installer = 'research/physical-c270/AvCamDualCameraMft.ps1'
+          $tokens = $null
+          $parseErrors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile(
+            (Resolve-Path $installer).Path, [ref]$tokens, [ref]$parseErrors)
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Host $_ }
+            throw 'Dual-camera physical source gate syntax failed'
+          }
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File research/physical-c270/DualCameraSourceWhitelistTest.ps1
+          if ($LASTEXITCODE -ne 0) { throw 'Dual-camera source whitelist synthetic test failed' }
       - name: Verify MFT diagnostic event contract and fail-closed policy
         shell: powershell
         run: |
