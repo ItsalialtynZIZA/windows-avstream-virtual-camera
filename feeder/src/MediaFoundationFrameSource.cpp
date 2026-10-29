@@ -110,9 +110,9 @@ bool CopyRgb32BufferTopDown(
     return valid;
 }
 
-std::vector<std::wstring> EnumerateVideoSourceNamesInternal()
+std::vector<MediaFoundationVideoSourceInfo> EnumerateVideoSourcesInternal()
 {
-    std::vector<std::wstring> names;
+    std::vector<MediaFoundationVideoSourceInfo> result;
 
     ComPtr<IMFAttributes> attributes;
     if (FAILED(MFCreateAttributes(&attributes, 1)) ||
@@ -120,52 +120,67 @@ std::vector<std::wstring> EnumerateVideoSourceNamesInternal()
             MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE,
             MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_GUID)))
     {
-        return names;
+        return result;
     }
 
     IMFActivate** devices = nullptr;
     UINT32 deviceCount = 0;
     if (FAILED(MFEnumDeviceSources(attributes.Get(), &devices, &deviceCount)))
     {
-        return names;
+        return result;
     }
 
     for (UINT32 index = 0; index < deviceCount; ++index)
     {
+        MediaFoundationVideoSourceInfo entry;
         WCHAR* friendlyName = nullptr;
         UINT32 nameLength = 0;
         if (SUCCEEDED(devices[index]->GetAllocatedString(
                 MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME,
-                &friendlyName,
-                &nameLength)) &&
-            friendlyName != nullptr)
+                &friendlyName, &nameLength)) && friendlyName != nullptr)
         {
-            names.emplace_back(friendlyName, nameLength);
-            CoTaskMemFree(friendlyName);
+            entry.friendlyName.assign(friendlyName, nameLength);
         }
+        CoTaskMemFree(friendlyName);
+
+        WCHAR* symbolicLink = nullptr;
+        UINT32 linkLength = 0;
+        if (SUCCEEDED(devices[index]->GetAllocatedString(
+                MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK,
+                &symbolicLink, &linkLength)) && symbolicLink != nullptr)
+        {
+            entry.symbolicLink.assign(symbolicLink, linkLength);
+        }
+        CoTaskMemFree(symbolicLink);
+
+        if (!entry.friendlyName.empty()) result.emplace_back(std::move(entry));
     }
 
     for (UINT32 index = 0; index < deviceCount; ++index)
     {
-        if (devices[index] != nullptr)
-        {
-            devices[index]->Release();
-        }
+        if (devices[index] != nullptr) devices[index]->Release();
     }
     CoTaskMemFree(devices);
-    return names;
+    return result;
 }
 } // namespace
 
+std::vector<MediaFoundationVideoSourceInfo>
+EnumerateMediaFoundationVideoSourceDetails()
+{
+    if (FAILED(MFStartup(MF_VERSION, MFSTARTUP_FULL))) return {};
+
+    auto sources = EnumerateVideoSourcesInternal();
+    MFShutdown();
+    return sources;
+}
+
 std::vector<std::wstring> EnumerateMediaFoundationVideoSources()
 {
-    if (FAILED(MFStartup(MF_VERSION, MFSTARTUP_FULL)))
-    {
-        return {};
-    }
-
-    auto names = EnumerateVideoSourceNamesInternal();
-    MFShutdown();
+    const auto sources = EnumerateMediaFoundationVideoSourceDetails();
+    std::vector<std::wstring> names;
+    names.reserve(sources.size());
+    for (const auto& source : sources) names.push_back(source.friendlyName);
     return names;
 }
 
