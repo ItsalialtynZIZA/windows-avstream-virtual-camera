@@ -158,8 +158,24 @@ if (-not $Enable -and -not $Disable) {
 Test-Administrator
 if ([Environment]::OSVersion.Version.Build -lt 22000) { throw 'Windows 11 required.' }
 if (-not [Environment]::Is64BitProcess) { throw '64-bit PowerShell required.' }
-$other = @(Get-PnpDevice -PresentOnly | Where-Object { $_.InstanceId -like 'USB\VID_2B7E&PID_B685*' -and $_.Class -eq 'Camera' -and $_.Status -eq 'OK' })
-if ($other.Count -ne 1) { throw 'Separate built-in USB camera not found. No changes made.' }
+# Strict whitelist of validated independent built-in source camera models.
+# Never count ROOT/SWD virtual cameras or the original Logitech output.
+$sourceCameraPrefixes = @(
+    'USB\VID_2B7E&PID_B685&MI_00\',
+    'USB\VID_13D3&PID_56FF&MI_00\'
+)
+$other = @(Get-PnpDevice -PresentOnly | Where-Object {
+    $camera = $_
+    $camera.Status -eq 'OK' -and $camera.Class -eq 'Camera' -and
+    @($sourceCameraPrefixes | Where-Object {
+        $camera.InstanceId.StartsWith($_, [StringComparison]::OrdinalIgnoreCase)
+    }).Count -eq 1
+})
+if ($other.Count -ne 1) {
+    throw "Expected exactly one supported independent built-in USB camera (2B7E:B685 or 13D3:56FF); found $($other.Count). No changes made."
+}
+Write-Host "Independent built-in RAW source: $($other[0].FriendlyName) [$($other[0].InstanceId)]"
+Write-Warning 'Confirm OBS / Deep Live Cam opens this built-in camera, NEVER the Logitech C270 output.'
 if ($key.GetValue('CameraPostProcessingPluginCLSID', $null)) { throw 'Existing camera effect detected. No changes made.' }
 $required = @('AvCamDualCameraDeviceMft.dll','LAB_SHA256SUMS.txt')
 foreach ($file in $required) {
