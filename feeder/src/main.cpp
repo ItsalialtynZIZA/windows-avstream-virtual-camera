@@ -461,6 +461,9 @@ WinHandle FindAvCamFilter(std::vector<std::byte>& probePacket)
 
         if (candidate.value == INVALID_HANDLE_VALUE)
         {
+            const DWORD error = GetLastError();
+            std::wcerr << L"AVCAM_FILTER_OPEN_FAILED win32=" << error
+                       << L" (private AvCam sink)\n";
             continue;
         }
 
@@ -470,6 +473,8 @@ WinHandle FindAvCamFilter(std::vector<std::byte>& probePacket)
             std::wcout << L"Accepted by AVStream filter: " << filterPath << L"\n";
             return candidate;
         }
+        std::wcerr << L"AVCAM_FRAME_SUBMIT_FAILED win32=" << errorCode
+                   << L" (private AvCam sink, no other cameras tried)\n";
     }
 
     return {};
