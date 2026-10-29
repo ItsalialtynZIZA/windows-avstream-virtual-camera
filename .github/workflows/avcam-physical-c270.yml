@@ -56,6 +56,12 @@ jobs:
             research/physical-c270/AvCamDmftConnectedPinMapTest.cpp \
             -o /tmp/avcam-dmft-connected-pin-map
           /tmp/avcam-dmft-connected-pin-map
+      - name: Verify OBS 720p to VGA conversion without camera
+        run: |
+          c++ -std=c++17 -Wall -Wextra -Werror -Iresearch/physical-c270 \\
+            research/physical-c270/AvCamVgaFrameConvertTest.cpp \\
+            -o /tmp/avcam-vga-convert
+          /tmp/avcam-vga-convert
       - name: Verify unscoped MFT replacement is rejected by the compiler
         run: |
           echo '#include "AvCamMftBuildSafety.h"' > /tmp/avcam-safe-mft.cpp
@@ -153,7 +159,7 @@ jobs:
           # The Device MFT hook includes the routing policy. Ensure the
           # adapted upstream build uses the exact tested policy, not a stale
           # header from an older checkout.
-          foreach ($name in @('AvCamPerClientRoutingPolicy.h','AvCamDmftMediaContract.h','AvCamPhysicalHook.cpp')) {
+          foreach ($name in @('AvCamPerClientRoutingPolicy.h','AvCamDmftMediaContract.h','AvCamVgaFrameConvert.h','AvCamPhysicalHook.cpp')) {
             $src = Join-Path 'research/physical-c270' $name
             $dst = Join-Path 'upstream/avstream/sampledevicemft' $name
             if (!(Test-Path -LiteralPath $dst -PathType Leaf)) {
