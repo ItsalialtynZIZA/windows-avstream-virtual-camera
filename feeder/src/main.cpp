@@ -251,6 +251,20 @@ std::unique_ptr<IFrameSource> CreateFrameSource(const Options& options)
     return std::make_unique<TestPatternFrameSource>();
 }
 
+// The MF friendly name is not a stable camera identity. AVStream devices
+// may be enumerated with the generic name "AvStream Media Device".
+// Match the root-enumerated AvCam PnP instance in its video symbolic link.
+bool IsAvCamRootMediaSource(const std::wstring& symbolicLink)
+{
+    std::wstring id = symbolicLink;
+    for (auto& ch : id)
+    {
+        if (ch >= L'A' && ch <= L'Z')
+            ch = static_cast<wchar_t>(ch - L'A' + L'a');
+    }
+    return id.find(L"root#avcamvirtualcamera#") != std::wstring::npos;
+}
+
 std::vector<std::wstring> FindDevicePaths(const GUID& interfaceGuid)
 {
     std::vector<std::wstring> paths;
@@ -518,18 +532,24 @@ int wmain(int argc, wchar_t* argv[])
     if (options.checkVirtualCamera)
     {
         const auto sinkInterfaces = FindDevicePaths(GUID_DEVINTERFACE_AVCAM_FRAME_SINK);
-        const auto cameraNames = EnumerateMediaFoundationVideoSources();
+        const auto cameras = EnumerateMediaFoundationVideoSourceDetails();
         std::size_t mfNameMatches = 0;
-        for (const auto& name : cameraNames)
+        std::size_t mfRootMatches = 0;
+        for (const auto& camera : cameras)
         {
-            if (_wcsicmp(name.c_str(), L"AvCam Virtual Camera") == 0)
+            if (_wcsicmp(camera.friendlyName.c_str(),
+                         L"AvCam Virtual Camera") == 0)
                 ++mfNameMatches;
+            if (IsAvCamRootMediaSource(camera.symbolicLink))
+                ++mfRootMatches;
         }
+        // Strict root symbolic-link identity, NOT a generic friendly name.
         const auto ready = avcam::readiness::Evaluate(
-            sinkInterfaces.size(), mfNameMatches);
+            sinkInterfaces.size(), mfRootMatches);
         std::wcout << L"AVCAM_VIRTUAL_CAMERA_READINESS="
                    << avcam::readiness::Label(ready)
                    << L" ks_sinks=" << sinkInterfaces.size()
+                   << L" mf_root_matches=" << mfRootMatches
                    << L" mf_name_matches=" << mfNameMatches << L"\n";
         // Enumeration does NOT activate or validate a camera output stream.
         return avcam::readiness::ExitCode(ready);
@@ -584,11 +604,16 @@ int wmain(int argc, wchar_t* argv[])
 
     if (options.listSources)
     {
-        const auto sources = EnumerateMediaFoundationVideoSources();
+        const auto sources = EnumerateMediaFoundationVideoSourceDetails();
         std::wcout << L"Media Foundation video sources (" << sources.size() << L"):\n";
         for (std::size_t index = 0; index < sources.size(); ++index)
         {
-            std::wcout << L"  [" << index << L"] " << sources[index] << L"\n";
+            const bool root = IsAvCamRootMediaSource(sources[index].symbolicLink);
+            std::wcout << L"  [" << index << L"] " << sources[index].friendlyName
+                       << L" avcam_root=" << (root ? 1 : 0) << L"\n";
+            if (root || sources[index].friendlyName == L"AvStream Media Device")
+                std::wcout << L"      symbolic_link=" << sources[index].symbolicLink
+                           << L"\n";
         }
         return 0;
     }
