@@ -58,8 +58,8 @@ jobs:
           /tmp/avcam-dmft-connected-pin-map
       - name: Verify OBS 720p to VGA conversion without camera
         run: |
-          c++ -std=c++17 -Wall -Wextra -Werror -Iresearch/physical-c270 \\
-            research/physical-c270/AvCamVgaFrameConvertTest.cpp \\
+          c++ -std=c++17 -Wall -Wextra -Werror -Iresearch/physical-c270 \
+            research/physical-c270/AvCamVgaFrameConvertTest.cpp \
             -o /tmp/avcam-vga-convert
           /tmp/avcam-vga-convert
       - name: Verify unscoped MFT replacement is rejected by the compiler
