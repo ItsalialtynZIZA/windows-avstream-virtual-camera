@@ -861,6 +861,9 @@ jobs:
           $out = 'artifacts/AvCam-Integrated-13D3-Lab-x64'
           New-Item -ItemType Directory -Force -Path $out | Out-Null
           Copy-Item build/physical-c270-lab/Release/AvCamDualCameraDeviceMft.dll $out
+          # Production-default MFT always forwards real Sonix pixels untouched.
+          # This is the ONLY binary accepted for the first Sonix pin trial.
+          Copy-Item build/physical-c270/Release/AvCamPhysicalDeviceMft.dll $out
           Copy-Item build/physical-c270/Release/AvCamPhysicalBridge.exe $out
           Copy-Item research/physical-c270/AvCamIntegrated13D3Mft.ps1 $out
           Copy-Item research/physical-c270/AvCamSonixChainPreflight.ps1 $out
@@ -877,6 +880,9 @@ jobs:
           $dll = Join-Path $out 'AvCamDualCameraDeviceMft.dll'
           $sha = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
           "$sha  AvCamDualCameraDeviceMft.dll" | Set-Content -Path (Join-Path $out 'LAB_SHA256SUMS.txt') -Encoding ascii
+          $passDll = Join-Path $out 'AvCamPhysicalDeviceMft.dll'
+          $passSha = (Get-FileHash -LiteralPath $passDll -Algorithm SHA256).Hash
+          "$passSha  AvCamPhysicalDeviceMft.dll" | Set-Content -Path (Join-Path $out 'PASS_THROUGH_SHA256SUMS.txt') -Encoding ascii
           $script = Join-Path $out 'AvCamIntegrated13D3Mft.ps1'
           $content = Get-Content -LiteralPath $script -Raw
           $tokens = $null; $errors = $null
@@ -897,6 +903,13 @@ jobs:
           [System.Management.Automation.Language.Parser]::ParseFile(
             $trial,[ref]$trialTokens,[ref]$trialErrors) | Out-Null
           if ($trialErrors.Count) { throw "Sonix chain trial parser errors: $trialErrors" }
+          $trialContent=Get-Content -LiteralPath $trial -Raw
+          foreach ($expected in @('AvCamPhysicalDeviceMft.dll','PASS_THROUGH_SHA256SUMS.txt','AVCAM_OBS_FRAME_REPLACEMENT=DISABLED','INSTALL_AVCAM_PASSTHROUGH_ONLY')) {
+            if (!$trialContent.Contains($expected)) { throw "First-trial pass-through guard missing: $expected" }
+          }
+          if ($trialContent.Contains("Copy-Item -LiteralPath (Join-Path `$PSScriptRoot 'AvCamDualCameraDeviceMft.dll')")) {
+            throw 'First-trial installer still copies OBS-replacing Device MFT'
+          }
           $selfTest=@(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $trial -Action SelfTest 2>&1)
           $selfExit=$LASTEXITCODE
           $selfTest | ForEach-Object { Write-Host $_ }
