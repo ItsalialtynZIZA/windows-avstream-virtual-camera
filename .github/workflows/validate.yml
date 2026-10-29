@@ -60,9 +60,20 @@ jobs:
           $filter = Get-Content driver/AvCamFilter.cpp -Raw
           $inf = Get-Content driver/AvCam.inf -Raw
           $protocol = Get-Content shared/VirtualCameraProtocol.h -Raw
-          foreach ($category in @('KSCATEGORY_VIDEO_CAMERA','KSCATEGORY_VIDEO','KSCATEGORY_CAPTURE','GUID_DEVINTERFACE_AVCAM_FRAME_SINK')) {
+          # The MF-only profile intentionally omits DirectShow-facing
+          # KSCATEGORY_CAPTURE/VIDEO to avoid breaking legacy enumeration.
+          foreach ($category in @('KSCATEGORY_VIDEO_CAMERA','GUID_DEVINTERFACE_AVCAM_FRAME_SINK')) {
             if (!$filter.Contains($category)) { throw "Missing KS filter category: $category" }
           }
+          foreach ($category in @('KSCATEGORY_VIDEO', 'KSCATEGORY_CAPTURE')) {
+            if ($filter -match ('(?m)^\s*STATICGUIDOF\(' + $category + '\)')) {
+              throw "Legacy DirectShow filter category must not be published: $category"
+            }
+            if ($inf -match ('(?m)^\s*AddInterface\s*=\s*%' + $category + '%')) {
+              throw "Legacy DirectShow INF category must not be published: $category"
+            }
+          }
+          if ($inf -notmatch '(?m)^AddInterface\s*=\s*%KSCATEGORY_VIDEO_CAMERA%') { throw 'MF video camera category missing from INF' }
           if ($inf -notmatch '(?m)^AddInterface\s*=\s*%AVCAM_FRAME_SINK%') { throw 'Private sink interface missing from INF' }
           if ($inf -notmatch '(?m)^AVCAM_FRAME_SINK\s*=\s*"\{7B28304F-6B89-4DF0-9E54-B048F4A16213\}"') { throw 'Private sink GUID mismatch in INF' }
           if (!$protocol.Contains('0x7b28304f, 0x6b89, 0x4df0')) { throw 'Private sink GUID mismatch in shared protocol' }
