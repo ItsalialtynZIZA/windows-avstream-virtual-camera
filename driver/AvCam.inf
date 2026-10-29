@@ -3,7 +3,7 @@ Signature   = "$WINDOWS NT$"
 Class       = Camera
 ClassGuid   = {ca3e7ab9-b4c3-4ae6-8251-579ef933890f}
 Provider    = %ProviderName%
-DriverVer   = 10/29/2026,0.2.0.2
+DriverVer   = 10/29/2026,0.2.0.3
 CatalogFile = AvCam.cat
 PnpLockdown = 1
 
@@ -31,9 +31,10 @@ CopyFiles = AvCam.CopyFiles
 AddService = AvCam,0x00000002,AvCam.Service
 
 [AvCam.Install.Interfaces]
+; MF-first compatibility: do not advertise the experimental filter via the
+; legacy DirectShow KSCATEGORY_CAPTURE or KSCATEGORY_VIDEO registrations.
+; VIDEO_CAMERA still serves MF/FrameServer; private sink serves AvCamFeeder.
 AddInterface = %KSCATEGORY_VIDEO_CAMERA%,"GLOBAL",AvCam.CaptureInterface
-AddInterface = %KSCATEGORY_CAPTURE%,"GLOBAL",AvCam.CaptureInterface
-AddInterface = %KSCATEGORY_VIDEO%,"GLOBAL",AvCam.CaptureInterface
 AddInterface = %AVCAM_FRAME_SINK%,"GLOBAL",AvCam.CaptureInterface
 
 [AvCam.CaptureInterface]
@@ -60,6 +61,4 @@ DeviceName              = "AvCam Virtual Camera"
 DiskName                = "AvCam Virtual Camera Installation Media"
 ProxyVCap.CLSID         = "{17CCA71B-ECD7-11D0-B908-00A0C9223196}"
 KSCATEGORY_VIDEO_CAMERA = "{E5323777-F976-4F5B-9B55-B94699C46E44}"
-KSCATEGORY_CAPTURE      = "{65E8773D-8F56-11D0-A3B9-00A0C9223196}"
-KSCATEGORY_VIDEO        = "{6994AD05-93EF-11D0-A3CC-00A0C9223196}"
 AVCAM_FRAME_SINK         = "{7B28304F-6B89-4DF0-9E54-B048F4A16213}"
