@@ -37,8 +37,8 @@ int main() {
     assert(out[3] == source[kSrcWidth * kSrcHeight + kCropLeft + 1]);
     assert(out[kYuy2Bytes - 4] == source[((kHeight - 1) * kSrcHeight / kHeight) * kSrcWidth +
             kCropLeft + ((kWidth - 2) * kCropWidth / kWidth)]);
-    std::cout << "AVCAM_OBS_VGA_NV12_CROP_PASS\\n"
-                 "AVCAM_OBS_VGA_YUY2_PACK_PASS\\n"
-                 "AVCAM_OBS_VGA_MALFORMED_INPUT_REJECT_PASS\\n";
+    std::cout << "AVCAM_OBS_VGA_NV12_CROP_PASS\n"
+                 "AVCAM_OBS_VGA_YUY2_PACK_PASS\n"
+                 "AVCAM_OBS_VGA_MALFORMED_INPUT_REJECT_PASS\n";
     return 0;
 }
