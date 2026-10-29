@@ -29,32 +29,14 @@ foreach ($event in $events) {
     } catch {
         Write-Warning ('XML decode failed for event ' + $event.RecordId)
     }
-    # EventWriteString from a manifestless ETW provider may be emitted by
-    # Get-WinEvent as ProcessingErrorData/ErrorCode=15003, with raw UTF-16LE
-    # bytes in EventPayload rather than decoded EventData properties.
-    # Only decode bounded diagnostic text, never video or user media.
+    # Windows logs manifestless EventWriteString events as raw UTF-16LE
+    # EventPayload and ProcessingErrorData/ErrorCode 15003.
     if ($parts.Count -eq 0 -and $null -ne $xml) {
-        $payloadNodes = $xml.SelectNodes('//*[local-name()="ProcessingErrorData"]/*[local-name()="EventPayload"]')
-        foreach ($node in $payloadNodes) {
+        $nodes = $xml.SelectNodes('//*[local-name()="ProcessingErrorData"]/*[local-name()="EventPayload"]')
+        foreach ($node in $nodes) {
             $hex = ([string]$node.InnerText).Trim()
             if ($hex.Length -eq 0 -or $hex.Length -gt 131072 -or
-                $hex.Length % 4 -ne 0 -or $hex -cnotmatch '^[0-9A-Fa-f]+
-    if ($parts.Count -eq 0 -and -not [string]::IsNullOrWhiteSpace($event.Message)) {
-        $parts.Add($event.Message)
-    }
-    $message = ($parts -join ' | ')
-    $messages += $message
-    Write-Host ('ETW {0} ID={1} PID={2} MESSAGE={3}' -f
-        $event.TimeCreated.ToString('HH:mm:ss.fff'), $event.Id, $event.ProcessId, $message)
-    if ($parts.Count -eq 0) {
-        Write-Host ('EVENT_XML=' + $event.ToXml())
-    }
-}
-Write-Host ('MFT_INITIALIZE_OBSERVED=' + (@($messages | Where-Object { $_ -match 'InitializeTransform called' }).Count -gt 0))
-Write-Host ('MFT_QUEUE_FORMAT_EVENTS=' + @($messages | Where-Object { $_ -match 'QueueFormat' }).Count)
-Write-Host ('MFT_SAMPLE_REPLACED_EVENTS=' + @($messages | Where-Object { $_ -match 'SampleReplaced' }).Count)
-Write-Host 'AVCAM_ETL_READ_ONLY_COMPLETE'
-) {
+                $hex.Length % 4 -ne 0 -or $hex -match '[^0-9A-Fa-f]') {
                 continue
             }
             try {
@@ -67,7 +49,7 @@ Write-Host 'AVCAM_ETL_READ_ONLY_COMPLETE'
                     $parts.Add($decoded)
                 }
             } catch {
-                Write-Warning ('Raw diagnostic ETW payload decoding failed for event ' + $event.RecordId)
+                Write-Warning ('ETW diagnostic decoding failed at event ' + $event.RecordId)
             }
         }
     }
@@ -87,7 +69,7 @@ Write-Host 'AVCAM_ETL_READ_ONLY_COMPLETE'
         Write-Host ('EVENT_XML=' + $event.ToXml())
     }
 }
-Write-Host ('MFT_INITIALIZE_OBSERVED=' + (@($messages | Where-Object { $_ -match 'InitializeTransform called' }).Count -gt 0))
+Write-Host ('MFT_INITIALIZE_OBSERVED=' + (@($messages | Where-Object { $_ -match 'AvCamDeviceMftInitialize|InitializeTransform called' }).Count -gt 0))
 Write-Host ('MFT_QUEUE_FORMAT_EVENTS=' + @($messages | Where-Object { $_ -match 'QueueFormat' }).Count)
 Write-Host ('MFT_SAMPLE_REPLACED_EVENTS=' + @($messages | Where-Object { $_ -match 'SampleReplaced' }).Count)
 Write-Host 'AVCAM_ETL_READ_ONLY_COMPLETE'
