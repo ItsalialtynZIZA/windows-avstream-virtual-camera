@@ -128,16 +128,16 @@ DEFINE_KSAUTOMATION_TABLE(g_AvCamFilterAutomation)
 };
 } // namespace
 
-// AVStream publishes filter-factory device interfaces for the categories
-// declared here. The INF already registers the private frame-sink class,
-// but without this category the feeder's SetupAPI enumeration finds no
-// GUID_DEVINTERFACE_AVCAM_FRAME_SINK even when the PnP device is healthy.
-// This GUID belongs exclusively to our separately labelled virtual camera.
+// Modern MF/FrameServer camera path + our explicit producer transport.
+// The optional legacy KSCATEGORY_VIDEO and KSCATEGORY_CAPTURE entries are
+// deliberately NOT exposed: they advertise this experimental RGB32-only
+// root filter to DirectShow/KSProxy enumerators. Some legacy applications
+// abort enumeration of *all* physical cameras on a failing virtual moniker.
+// Keep VIDEO_CAMERA for Media Foundation, and the private sink for OBS feeder.
+// This is an MF-first compatibility profile, not full DirectShow support.
 static const GUID g_AvCamFilterCategories[] =
 {
     STATICGUIDOF(KSCATEGORY_VIDEO_CAMERA),
-    STATICGUIDOF(KSCATEGORY_VIDEO),
-    STATICGUIDOF(KSCATEGORY_CAPTURE),
     GUID_DEVINTERFACE_AVCAM_FRAME_SINK
 };
 
