@@ -877,6 +877,7 @@ jobs:
           Copy-Item build/physical-c270/Release/AvCamSonixComContract.exe $out
           Copy-Item research/physical-c270/Run-AvCamIntegratedNativeCaptureSmoke.ps1 $out
           Copy-Item research/physical-c270/INTEGRATED_13D3_REVERSE_LAB.md $out
+          Copy-Item research/physical-c270/SONIX_PASS_THROUGH_FIRST_TRIAL.md $out
           $dll = Join-Path $out 'AvCamDualCameraDeviceMft.dll'
           $sha = (Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash
           "$sha  AvCamDualCameraDeviceMft.dll" | Set-Content -Path (Join-Path $out 'LAB_SHA256SUMS.txt') -Encoding ascii
