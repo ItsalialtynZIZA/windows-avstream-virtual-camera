@@ -64,6 +64,109 @@ if (Test-Path -LiteralPath $etl) {
             if ($values.Count -gt 0 -and ($values -join '').Trim()) {
                 return ($values -join ' ')
             }
+            # Manifestless EventWriteString often reaches Get-WinEvent with
+            # ProcessingErrorData (15003) and UTF-16LE hex EventPayload.
+            # Decode only bounded diagnostic strings; never camera pixels.
+            try {
+                $xml = [xml]$record.ToXml()
+                $nodes = $xml.SelectNodes('//*[local-name()="ProcessingErrorData"]/*[local-name()="EventPayload"]')
+                foreach ($node in $nodes) {
+                    $hex = ([string]$node.InnerText).Trim()
+                    if ($hex.Length -eq 0 -or $hex.Length -gt 131072 -or
+                        $hex.Length % 4 -ne 0 -or $hex -cnotmatch '^[0-9A-Fa-f]+
+        $messages = @($records | ForEach-Object { Get-AvCamEtwText $_ })
+        for ($i = 0; $i -lt [Math]::Min(80, $records.Count); ++$i) {
+            Write-Host ('ETW {0} {1}' -f $records[$i].TimeCreated.ToString('HH:mm:ss'),$messages[$i])
+        }
+        if ($records.Count -eq 0) {
+            Write-Warning 'No AvCam MFT events observed. This does not prove that Device MFT was never activated: the host may use a different capture pipeline or tracing may have failed.'
+            Write-Host 'DIAGNOSIS=NO_MFT_EVENTS_OBSERVED'
+            Write-Host 'Keep the ETL file for further analysis.'
+        } else {
+            $initialized = @($messages | Where-Object { $_ -match 'AvCamDeviceMftInitialize|InitializeTransform called' }).Count -gt 0
+            $formats = @($messages | Where-Object { $_ -match 'AvCamQueueNegotiated|QueueFormat' }).Count
+            $replaced = @($messages | Where-Object { $_ -match 'SampleReplaced' }).Count
+            $passthrough = @($messages | Where-Object { $_ -match 'SampleSkipped|AvCamMultiAppSafePassThrough' }).Count
+            # Pin audit evidence originates inside InitializeTransform.
+            # It does not prove the predecessor is Sonix or the Chrome path.
+            $pinsVerified = @($messages | Where-Object {
+                $_ -match 'AvCamConnectedPinsValidated'
+            }).Count
+            $pinsRejected = @($messages | Where-Object {
+                $_ -match 'AvCamConnectedPinsRejected'
+            }).Count
+            Write-Host ('AVCAM_MFT_CONNECTED_INPUT_PINS_VALIDATED_EVENTS=' + $pinsVerified)
+            Write-Host ('AVCAM_MFT_CONNECTED_INPUT_PINS_REJECTED_EVENTS=' + $pinsRejected)
+            Write-Host ('AVCAM_MFT_INITIALIZED_OBSERVED=' + $initialized)
+            Write-Host ('AVCAM_MFT_QUEUE_EVENTS_OBSERVED=' + $formats)
+            Write-Host ('AVCAM_MFT_REPLACEMENT_EVENTS_OBSERVED=' + $replaced)
+            Write-Host ('AVCAM_MFT_PASSTHROUGH_EVENTS_OBSERVED=' + $passthrough)
+            # This event exists only after successful InitializeTransform of
+            # the experimental AvCam MFT. It reports the CONNECTED transform
+            # counts, not the identity or pin contract of the OEM Sonix DLL.
+            # The media contract is read from the connected transform's
+            # output stream IDs, NOT from the source presentation descriptor.
+            $mediaEvents = @($messages | Where-Object { $_ -match 'AvCamUpstreamMediaContract' })
+            Write-Host ('AVCAM_UPSTREAM_MEDIA_CONTRACT_EVENTS_OBSERVED=' + $mediaEvents.Count)
+            $completeMediaPins = 0
+            $mjpgMediaPins = 0
+            foreach ($event in $mediaEvents) {
+                $m = [regex]::Match($event, 'stream_id=(\d+) types_seen=(\d+) complete=(\d) mjpg_720p30=(\d) nv12_720p30=(\d)')
+                if (-not $m.Success) { continue }
+                Write-Host ('AVCAM_UPSTREAM_MEDIA_STREAM_ID=' + $m.Groups[1].Value)
+                Write-Host ('AVCAM_UPSTREAM_MEDIA_TYPES_SEEN=' + $m.Groups[2].Value)
+                if ($m.Groups[3].Value -eq '1') { $completeMediaPins++ }
+                if ($m.Groups[4].Value -eq '1') { $mjpgMediaPins++ }
+            }
+            Write-Host ('AVCAM_UPSTREAM_MEDIA_COMPLETE_PINS=' + $completeMediaPins)
+            Write-Host ('AVCAM_UPSTREAM_MEDIA_MJPG_720P30_PINS=' + $mjpgMediaPins)
+            Write-Host 'AVCAM_UPSTREAM_MEDIA_OEM_IDENTITY=UNKNOWN'
+            $topologyEvents = @($messages | Where-Object { $_ -match 'AvCamDmftTopology|AvCamDeviceMftPinTopology' })
+            Write-Host ('AVCAM_DMFT_TOPOLOGY_EVENTS_OBSERVED=' + $topologyEvents.Count)
+            $validTopology = 0
+            $mismatched = 0
+            foreach ($event in $topologyEvents) {
+                $m = [regex]::Match($event, 'upstream_output=(\d+) avcam_input=(\d+) avcam_output=(\d+)(?:\s+count_match=([01]))?\s+(?:upstream_)?identity=unknown')
+                if (-not $m.Success) { continue }
+                $validTopology++
+                $up = [int64]$m.Groups[1].Value
+                $inside = [int64]$m.Groups[2].Value
+                if ($up -ne $inside) { $mismatched++ }
+                Write-Host ('AVCAM_DMFT_CONNECTED_UPSTREAM_OUTPUT=' + $up)
+                Write-Host ('AVCAM_DMFT_LOCAL_INPUT_COUNT=' + $inside)
+                Write-Host ('AVCAM_DMFT_LOCAL_OUTPUT_COUNT=' + [int64]$m.Groups[3].Value)
+            }
+            Write-Host ('AVCAM_DMFT_TOPOLOGY_PARSED=' + $validTopology)
+            Write-Host ('AVCAM_DMFT_UPSTREAM_INPUT_COUNT_MISMATCH_EVENTS=' + $mismatched)
+            Write-Host 'AVCAM_DMFT_CONNECTED_UPSTREAM_IDENTITY=UNKNOWN'
+            Write-Host 'AVCAM_SONIX_PIN_INTEROP=NOT_VERIFIED'
+            Write-Host 'AVCAM_SONIX_PASS_THROUGH_VIDEO_CHECK=REQUIRED'
+            Write-Host 'AVCAM_SONIX_CHAIN_INSTALL=BLOCKED'
+            Write-Host 'NOTE: ETW summaries count sampled diagnostic EVENTS, not delivered video frames.'
+            Write-Host 'EVIDENCE_LEVEL=DEVICE_MFT_ONLY'
+            Write-Host 'No event above proves an individual Chrome or Deep Live Cam consumer.'
+            Write-Host 'Note: observed ETW events are not a complete frame count.'
+        }
+    } catch {
+        Write-Warning ('Windows could not decode ETW payloads: ' + $_.Exception.Message)
+        Write-Host 'The ETL was still saved for inspection.'
+    }
+}
+Write-Host ('ETW_TARGET=' + $Target)
+Write-Host 'ETW_TRACE_FINISHED_CAMERA_UNCHANGED'
+) {
+                        continue
+                    }
+                    $raw = New-Object -TypeName byte[] -ArgumentList ([int]($hex.Length / 2))
+                    for ($i = 0; $i -lt $raw.Length; ++$i) {
+                        $raw[$i] = [Convert]::ToByte($hex.Substring($i * 2, 2), 16)
+                    }
+                    $decoded = [Text.Encoding]::Unicode.GetString($raw).TrimEnd([char]0)
+                    if (-not [string]::IsNullOrWhiteSpace($decoded)) { return $decoded }
+                }
+            } catch {
+                Write-Warning ('Could not decode ETW diagnostic event ' + $record.RecordId)
+            }
             if ($record.Message) { return [string]$record.Message }
             return ''
         }
