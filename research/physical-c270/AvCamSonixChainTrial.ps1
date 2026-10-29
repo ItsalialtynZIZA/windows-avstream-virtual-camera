@@ -167,7 +167,7 @@ function Verify-Package {
     $manifest=Join-Path $PSScriptRoot 'PASS_THROUGH_SHA256SUMS.txt'
     if (-not (Test-Path -LiteralPath $source -PathType Leaf) -or
         -not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
-        throw 'Extract the full 13D3 lab including the signed pass-through DMFT and manifest first'
+        throw 'Extract the full 13D3 lab including the hash-verified pass-through DMFT and manifest first'
     }
     $line=(Get-Content -LiteralPath $manifest -TotalCount 1)
     $expected=($line -split '\s+')[0]
