@@ -9,6 +9,14 @@
 #include <string>
 #include <vector>
 
+struct MediaFoundationVideoSourceInfo
+{
+    std::wstring friendlyName;
+    std::wstring symbolicLink;
+};
+
+std::vector<MediaFoundationVideoSourceInfo>
+EnumerateMediaFoundationVideoSourceDetails();
 std::vector<std::wstring> EnumerateMediaFoundationVideoSources();
 
 class MediaFoundationFrameSource final : public IFrameSource
