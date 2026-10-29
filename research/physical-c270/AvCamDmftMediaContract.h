@@ -7,7 +7,11 @@
 
 namespace avcam::dmft {
 constexpr std::size_t kMaxObservedStreams = 32;
-constexpr std::uint32_t kMaxObservedTypesPerStream = 64;
+// Real USB camera stacks can expose more than 64 types on one capture pin.
+// Bound enumeration to 512 to avoid an unbounded third-party COM loop while
+// preserving formats beyond the first 64 (observed on Logitech C270).
+// If a device still exceeds this cap, installation remains fail-closed.
+constexpr std::uint32_t kMaxObservedTypesPerStream = 512;
 
 // Video frame-rate attributes are rational numbers; 30000/1000 is exactly
 // 30 fps, but 30000/1001 is not. 64-bit multiplication avoids overflow.
