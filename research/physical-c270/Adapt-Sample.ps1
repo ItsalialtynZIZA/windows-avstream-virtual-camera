@@ -248,9 +248,9 @@ Replace-Once $basePin @'
     if (hr == MF_E_NO_MORE_TYPES) {
         hr = S_OK;
     } else if (hr == S_OK) {
-        // 64 successful types without a terminal MF_E_NO_MORE_TYPES is
+        // 512 successful types without a terminal MF_E_NO_MORE_TYPES is
         // incomplete enumeration, not authorization to expose a pin.
-        AvCamTrace(L"AvCamUpstreamMediaTypeEnumerationRejected cap=64");
+        AvCamTrace(L"AvCamUpstreamMediaTypeEnumerationRejected cap=512");
         hr = MF_E_INVALIDMEDIATYPE;
     }
     return hr;
