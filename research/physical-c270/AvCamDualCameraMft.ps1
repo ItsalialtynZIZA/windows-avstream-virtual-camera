@@ -162,7 +162,8 @@ if (-not [Environment]::Is64BitProcess) { throw '64-bit PowerShell required.' }
 # Never count ROOT/SWD virtual cameras or the original Logitech output.
 $sourceCameraPrefixes = @(
     'USB\VID_2B7E&PID_B685&MI_00\',
-    'USB\VID_13D3&PID_56FF&MI_00\'
+    'USB\VID_13D3&PID_56FF&MI_00\',
+    'USB\VID_13D3&PID_56A8&MI_00\'
 )
 $other = @(Get-PnpDevice -PresentOnly | Where-Object {
     $camera = $_
@@ -172,7 +173,7 @@ $other = @(Get-PnpDevice -PresentOnly | Where-Object {
     }).Count -eq 1
 })
 if ($other.Count -ne 1) {
-    throw "Expected exactly one supported independent built-in USB camera (2B7E:B685 or 13D3:56FF); found $($other.Count). No changes made."
+    throw "Expected exactly one supported independent built-in USB camera (2B7E:B685, 13D3:56FF, or 13D3:56A8); found $($other.Count). No changes made."
 }
 Write-Host "Independent built-in RAW source: $($other[0].FriendlyName) [$($other[0].InstanceId)]"
 Write-Warning 'Confirm OBS / Deep Live Cam opens this built-in camera, NEVER the Logitech C270 output.'
