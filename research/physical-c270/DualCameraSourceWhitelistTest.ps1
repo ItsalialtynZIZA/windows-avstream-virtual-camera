@@ -25,10 +25,15 @@ function Check($name, $items, $expected) {
 }
 $logitech = New-Camera 'USB\VID_046D&PID_0825&MI_00\A'
 $integrated13D3 = New-Camera 'USB\VID_13D3&PID_56FF&MI_00\B'
+$integratedAsus = New-Camera 'USB\VID_13D3&PID_56A8&MI_00\D'
 $integrated2B7E = New-Camera 'USB\VID_2B7E&PID_B685&MI_00\C'
 $virtual = New-Camera 'ROOT\AVCAMVIRTUALCAMERA\0000'
 Check '13D3_INTEGRATED_ACCEPTED' @($logitech,$integrated13D3,$virtual) $true
+Check '13D3_ASUS_X571LI_ACCEPTED' @($logitech,$integratedAsus,$virtual) $true
 Check '2B7E_INTEGRATED_ACCEPTED' @($logitech,$integrated2B7E) $true
+Check 'ASUS_DUPLICATE_SOURCE_REJECTED' @($logitech,$integrated13D3,$integratedAsus) $false
+Check 'ASUS_SOURCE_OFFLINE_REJECTED' @($logitech,(New-Camera $integratedAsus.InstanceId 'Error')) $false
+Check 'ASUS_WRONG_INTERFACE_REJECTED' @($logitech,(New-Camera 'USB\VID_13D3&PID_56A8&MI_02\D')) $false
 Check 'LOGITECH_ALONE_REJECTED' @($logitech) $false
 Check 'VIRTUAL_ALONE_REJECTED' @($logitech,$virtual) $false
 Check 'DUPLICATE_SOURCE_REJECTED' @($logitech,$integrated2B7E,$integrated13D3) $false
