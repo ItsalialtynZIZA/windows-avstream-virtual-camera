@@ -1,6 +1,9 @@
 // Adaptation hook for the Microsoft sample Device MFT.
 // Copy only fresh, 1280x720 MJPG frames. Otherwise preserve real capture.
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <mfapi.h>
 #include <mfidl.h>
@@ -125,7 +128,7 @@ bool MatchedOutput(IMFMediaType* input, IMFMediaType* output,
         UINT32 value = 0;
         if (SUCCEEDED(type->GetUINT32(MF_MT_DEFAULT_STRIDE, &value))) {
             const auto signedStride = static_cast<std::int32_t>(value);
-            if (signedStride == std::numeric_limits<std::int32_t>::min())
+            if (signedStride == (std::numeric_limits<std::int32_t>::min)())
                 return false;
             if (std::size_t(signedStride < 0 ? -signedStride : signedStride)
                 != stride) return false;
