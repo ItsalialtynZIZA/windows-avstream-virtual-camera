@@ -233,6 +233,59 @@ bool ReadFreshNv12(std::vector<unsigned char>& dest) {
     MemoryBarrier();
     return header->sequence == before && (header->sequence & 1) == 0;
 }
+bool EncodeJpegBgr24(const std::vector<std::uint8_t>& bgr,
+                     std::uint32_t width, std::uint32_t height,
+                     std::vector<unsigned char>& jpeg) {
+    // WIC JPEG accepts packed 24bpp BGR. Only invoked in an isolated v2
+    // lab build when the negotiated subtype is MJPG at non-720p dimensions.
+    if (width < 2 || height < 2 ||
+        width > avcam::adaptive::kMaxWidth ||
+        height > avcam::adaptive::kMaxHeight ||
+        bgr.size() != std::size_t(width) * height * 3) return false;
+    Microsoft::WRL::ComPtr<IWICImagingFactory> factory;
+    Microsoft::WRL::ComPtr<IWICBitmapEncoder> encoder;
+    Microsoft::WRL::ComPtr<IWICBitmapFrameEncode> frame;
+    Microsoft::WRL::ComPtr<IPropertyBag2> options;
+    Microsoft::WRL::ComPtr<IStream> stream;
+    if (FAILED(CoCreateInstance(CLSID_WICImagingFactory, nullptr,
+                                CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory))) ||
+        FAILED(CreateStreamOnHGlobal(nullptr, TRUE, &stream)) ||
+        FAILED(factory->CreateEncoder(GUID_ContainerFormatJpeg, nullptr, &encoder)) ||
+        FAILED(encoder->Initialize(stream.Get(), WICBitmapEncoderNoCache)) ||
+        FAILED(encoder->CreateNewFrame(&frame, &options)) ||
+        FAILED(frame->Initialize(options.Get())) ||
+        FAILED(frame->SetSize(width, height)))
+        return false;
+    WICPixelFormatGUID pixelFormat = GUID_WICPixelFormat24bppBGR;
+    if (FAILED(frame->SetPixelFormat(&pixelFormat)) ||
+        pixelFormat != GUID_WICPixelFormat24bppBGR ||
+        FAILED(frame->WritePixels(height, width * 3,
+                                  static_cast<UINT>(bgr.size()),
+                                  const_cast<BYTE*>(bgr.data()))) ||
+        FAILED(frame->Commit()) || FAILED(encoder->Commit()))
+        return false;
+    STATSTG stat{};
+    if (FAILED(stream->Stat(&stat, STATFLAG_NONAME)) ||
+        stat.cbSize.QuadPart < 32u ||
+        stat.cbSize.QuadPart > AvCamPhysical::kCapacity)
+        return false;
+    HGLOBAL storage = nullptr;
+    if (FAILED(GetHGlobalFromStream(stream.Get(), &storage)) || !storage)
+        return false;
+    const auto bytes = static_cast<std::size_t>(stat.cbSize.QuadPart);
+    if (GlobalSize(storage) < bytes) return false;
+    const void* data = GlobalLock(storage);
+    if (!data) return false;
+    std::vector<unsigned char> converted(bytes);
+    memcpy(converted.data(), data, bytes);
+    GlobalUnlock(storage);
+    if (converted[0] != 0xff || converted[1] != 0xd8 ||
+        converted[bytes - 2] != 0xff || converted[bytes - 1] != 0xd9)
+        return false;
+    jpeg.swap(converted);
+    return true;
+}
+
 } // namespace
 
 void AvCamSetQueueFormat(const void* queue, IMFMediaType* input,
