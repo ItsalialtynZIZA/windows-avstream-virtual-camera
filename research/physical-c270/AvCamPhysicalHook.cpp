@@ -11,7 +11,10 @@
 #include <mutex>
 #include <atomic>
 #include <evntprov.h>
-#include <unordered_set>
+#include <unordered_map>
+#include <limits>
+#include <wincodec.h>
+#include <objidl.h>
 #include <vector>
 #include <cstring>
 #include "AvCamPhysicalWire.h"
@@ -20,13 +23,16 @@
 #include "AvCamPerClientRoutingPolicy.h"
 #include "AvCamDmftMediaContract.h"
 #include "AvCamVgaFrameConvert.h"
+#include "AvCamAdaptiveFrameConvert.h"
 
 namespace {
 std::mutex g_modesMutex;
-std::unordered_set<const void*> g_mjpegQueues;
-std::unordered_set<const void*> g_nv12Queues;
-std::unordered_set<const void*> g_nv12VgaQueues;
-std::unordered_set<const void*> g_yuy2VgaQueues;
+struct QueueMode {
+    avcam::adaptive::Spec target{};
+    bool jpeg = false;
+    bool originalJpeg720p = false;
+};
+std::unordered_map<const void*, QueueMode> g_queueModes;
 std::mutex g_mapMutex;
 HANDLE g_mapping = nullptr;
 const unsigned char* g_view = nullptr;
@@ -71,38 +77,71 @@ void TraceMediaType(const wchar_t* path, IMFMediaType* input,
 }
 
 
-bool IsMjpeg1280(IMFMediaType* type) {
-    if (!type) return false;
-    GUID subtype{};
-    UINT32 width = 0, height = 0;
-    return SUCCEEDED(type->GetGUID(MF_MT_SUBTYPE, &subtype)) &&
-        subtype == MFVideoFormat_MJPG &&
-        SUCCEEDED(MFGetAttributeSize(type, MF_MT_FRAME_SIZE, &width, &height)) &&
-        width == AvCamPhysical::kWidth &&
-        height == AvCamPhysical::kHeight;
-}
-
-bool IsNv12720(IMFMediaType* type) {
-    if (!type) return false;
-    GUID subtype{};
-    UINT32 width = 0, height = 0;
-    return SUCCEEDED(type->GetGUID(MF_MT_SUBTYPE, &subtype)) &&
-        subtype == MFVideoFormat_NV12 &&
-        SUCCEEDED(MFGetAttributeSize(type, MF_MT_FRAME_SIZE, &width, &height)) &&
-        width == AvCamPhysical::kWidth &&
-        height == AvCamPhysical::kHeight;
-}
-
-// The Chrome VGA fallback is opt-in and only touches the laboratory Device
-// MFT. Preserve the original physical sample on any unsupported format.
-bool IsVgaSubtype(IMFMediaType* type, const GUID& subtype) {
-    if (!type) return false;
-    GUID actual{};
-    UINT32 width = 0, height = 0;
-    return SUCCEEDED(type->GetGUID(MF_MT_SUBTYPE, &actual)) &&
-        actual == subtype &&
-        SUCCEEDED(MFGetAttributeSize(type, MF_MT_FRAME_SIZE, &width, &height)) &&
-        width == avcam::vga::kWidth && height == avcam::vga::kHeight;
+bool MatchedOutput(IMFMediaType* input, IMFMediaType* output,
+                   QueueMode& mode) {
+    if (!input || !output) return false;
+    GUID inGuid{}, outGuid{};
+    UINT32 inW=0, inH=0, outW=0, outH=0;
+    if (FAILED(input->GetGUID(MF_MT_SUBTYPE, &inGuid)) ||
+        FAILED(output->GetGUID(MF_MT_SUBTYPE, &outGuid)) ||
+        inGuid != outGuid ||
+        FAILED(MFGetAttributeSize(input, MF_MT_FRAME_SIZE, &inW, &inH)) ||
+        FAILED(MFGetAttributeSize(output, MF_MT_FRAME_SIZE, &outW, &outH)) ||
+        inW != outW || inH != outH) return false;
+    auto& spec = mode.target;
+    spec.width = outW;
+    spec.height = outH;
+    mode.jpeg = outGuid == MFVideoFormat_MJPG;
+    if (mode.jpeg) spec.format = avcam::adaptive::Format::Bgr24;
+    else if (outGuid == MFVideoFormat_NV12)
+        spec.format = avcam::adaptive::Format::Nv12;
+    else if (outGuid == MFVideoFormat_I420)
+        spec.format = avcam::adaptive::Format::I420;
+    else if (outGuid == MFVideoFormat_YUY2)
+        spec.format = avcam::adaptive::Format::Yuy2;
+    else if (outGuid == MFVideoFormat_UYVY)
+        spec.format = avcam::adaptive::Format::Uyvy;
+    else if (outGuid == MFVideoFormat_RGB24)
+        spec.format = avcam::adaptive::Format::Bgr24;
+    else if (outGuid == MFVideoFormat_RGB32)
+        spec.format = avcam::adaptive::Format::Bgr32;
+    else return false;
+    std::size_t expected = 0;
+    if (!avcam::adaptive::RequiredBytes(spec, expected)) return false;
+    mode.originalJpeg720p =
+        mode.jpeg && outW == AvCamPhysical::kWidth &&
+        outH == AvCamPhysical::kHeight;
+    if (mode.jpeg) return true;
+    // Reject padded/custom strides we cannot satisfy safely. A mismatched
+    // packed layout would appear distorted even though the subtype matches.
+    const std::size_t stride = (spec.format == avcam::adaptive::Format::Bgr32)
+        ? std::size_t(outW) * 4 :
+        (spec.format == avcam::adaptive::Format::Bgr24) ? std::size_t(outW) * 3 :
+        (spec.format == avcam::adaptive::Format::Yuy2 ||
+         spec.format == avcam::adaptive::Format::Uyvy) ? std::size_t(outW) * 2 :
+        std::size_t(outW);
+    UINT32 inStrideBits = 0, outStrideBits = 0;
+    for (IMFMediaType* type : {input, output}) {
+        UINT32 value = 0;
+        if (SUCCEEDED(type->GetUINT32(MF_MT_DEFAULT_STRIDE, &value))) {
+            const auto signedStride = static_cast<std::int32_t>(value);
+            if (signedStride == std::numeric_limits<std::int32_t>::min())
+                return false;
+            if (std::size_t(signedStride < 0 ? -signedStride : signedStride)
+                != stride) return false;
+            if (type == input) inStrideBits = value;
+            else outStrideBits = value;
+        }
+    }
+    if (inStrideBits && outStrideBits && inStrideBits != outStrideBits)
+        return false;
+    if (spec.format == avcam::adaptive::Format::Bgr24 ||
+        spec.format == avcam::adaptive::Format::Bgr32) {
+        // MF RGB generally uses negative stride for bottom-up DIB storage.
+        spec.bottomUp = static_cast<std::int32_t>(outStrideBits ?
+            outStrideBits : inStrideBits) < 0;
+    }
+    return true;
 }
 
 bool EnsureMap() {
@@ -198,35 +237,20 @@ bool ReadFreshNv12(std::vector<unsigned char>& dest) {
 
 void AvCamSetQueueFormat(const void* queue, IMFMediaType* input,
                          IMFMediaType* output) {
-    const bool mjpegEnabled = IsMjpeg1280(input) && IsMjpeg1280(output);
-    const bool nv12Enabled = IsNv12720(input) && IsNv12720(output);
-    const bool nv12VgaEnabled =
-        IsVgaSubtype(input, MFVideoFormat_NV12) &&
-        IsVgaSubtype(output, MFVideoFormat_NV12);
-    const bool yuy2VgaEnabled =
-        IsVgaSubtype(input, MFVideoFormat_YUY2) &&
-        IsVgaSubtype(output, MFVideoFormat_YUY2);
+    QueueMode mode{};
+    const bool supported = MatchedOutput(input, output, mode);
     {
         std::lock_guard<std::mutex> lock(g_modesMutex);
-        g_mjpegQueues.erase(queue);
-        g_nv12Queues.erase(queue);
-        g_nv12VgaQueues.erase(queue);
-        g_yuy2VgaQueues.erase(queue);
-        if (nv12VgaEnabled) g_nv12VgaQueues.insert(queue);
-        if (yuy2VgaEnabled) g_yuy2VgaQueues.insert(queue);
-        if (mjpegEnabled) g_mjpegQueues.insert(queue);
-        if (nv12Enabled) g_nv12Queues.insert(queue);
+        g_queueModes.erase(queue);
+        if (supported) g_queueModes.emplace(queue, mode);
     }
-    TraceMediaType(L"QueueFormat", input, output,
-                   mjpegEnabled || nv12Enabled || nv12VgaEnabled || yuy2VgaEnabled);
-    // Queue pointers identify MFT-internal streams, NOT browser processes.
-    // Never log pixels or mistake the FrameServer PID for a consumer PID.
+    TraceMediaType(L"QueueFormat", input, output, supported);
     wchar_t event[256]{};
     (void)swprintf_s(event,
-        L"AvCamQueueNegotiated queue=%p pid=%lu mjpeg1280=%d nv12_720p=%d nv12_vga=%d yuy2_vga=%d shared_device=1",
-        queue, GetCurrentProcessId(), mjpegEnabled ? 1 : 0,
-        nv12Enabled ? 1 : 0, nv12VgaEnabled ? 1 : 0,
-        yuy2VgaEnabled ? 1 : 0);
+        L"AvCamQueueNegotiated queue=%p pid=%lu adaptive=%d format=%d width=%u height=%u shared_device=1",
+        queue, GetCurrentProcessId(), supported ? 1 : 0,
+        supported ? static_cast<int>(mode.target.format) : -1,
+        mode.target.width, mode.target.height);
     TraceRaw(event);
 }
 void AvCamTrace(const wchar_t* message) {
@@ -314,10 +338,7 @@ void AvCamTraceUpstreamMediaContract(IMFDeviceTransform* upstream,
 void AvCamRemoveQueue(const void* queue) {
     {
         std::lock_guard<std::mutex> lock(g_modesMutex);
-        g_mjpegQueues.erase(queue);
-        g_nv12Queues.erase(queue);
-        g_nv12VgaQueues.erase(queue);
-        g_yuy2VgaQueues.erase(queue);
+        g_queueModes.erase(queue);
     }
     wchar_t event[160]{};
     (void)swprintf_s(event, L"AvCamQueueRemoved queue=%p pid=%lu",
@@ -360,40 +381,42 @@ bool AvCamReplaceMjpegSample(const void* queue, IMFSample* original,
     return false;
 #else
     const auto checks = ++g_sampleChecks;
-    enum class FrameMode { PassThrough, Mjpeg, Nv12, Nv12Vga, Yuy2Vga };
-    FrameMode mode = FrameMode::PassThrough;
+    QueueMode mode{};
+    bool supported = false;
     {
         std::lock_guard<std::mutex> lock(g_modesMutex);
-        if (g_mjpegQueues.find(queue) != g_mjpegQueues.end())
-            mode = FrameMode::Mjpeg;
-        else if (g_nv12Queues.find(queue) != g_nv12Queues.end())
-            mode = FrameMode::Nv12;
-        else if (g_nv12VgaQueues.find(queue) != g_nv12VgaQueues.end())
-            mode = FrameMode::Nv12Vga;
-        else if (g_yuy2VgaQueues.find(queue) != g_yuy2VgaQueues.end())
-            mode = FrameMode::Yuy2Vga;
+        const auto it = g_queueModes.find(queue);
+        if (it != g_queueModes.end()) {
+            mode = it->second;
+            supported = true;
+        }
     }
-    if (mode == FrameMode::PassThrough) {
+    if (!supported) {
         if (checks <= 3 || checks % 300 == 0)
             TraceRaw(L"SampleSkipped: negotiated media type unsupported");
         return false;
     }
     std::vector<unsigned char> pixels;
-    const bool fresh = mode == FrameMode::Mjpeg
+    const bool fresh = mode.originalJpeg720p
         ? ReadFreshJpeg(pixels) : ReadFreshNv12(pixels);
     if (!fresh) {
         if (checks <= 3 || checks % 300 == 0)
             TraceRaw(L"SampleSkipped: OBS frame missing, invalid or stale");
         return false;
     }
-    if (mode == FrameMode::Nv12Vga || mode == FrameMode::Yuy2Vga) {
-        std::vector<unsigned char> converted;
-        const auto target = mode == FrameMode::Nv12Vga
-            ? avcam::vga::Format::Nv12 : avcam::vga::Format::Yuy2;
-        if (!avcam::vga::ConvertFrom720pNv12(
-                pixels.data(), pixels.size(), target, converted))
+    if (!mode.originalJpeg720p) {
+        std::vector<std::uint8_t> converted;
+        if (!avcam::adaptive::Convert(pixels.data(), pixels.size(),
+                                     mode.target, converted))
             return false;
         pixels.swap(converted);
+        if (mode.jpeg) {
+            std::vector<unsigned char> jpeg;
+            if (!EncodeJpegBgr24(pixels, mode.target.width,
+                                 mode.target.height, jpeg))
+                return false;
+            pixels.swap(jpeg);
+        }
     }
     Microsoft::WRL::ComPtr<IMFSample> result;
     Microsoft::WRL::ComPtr<IMFMediaBuffer> buffer;
@@ -427,7 +450,7 @@ bool AvCamReplaceMjpegSample(const void* queue, IMFSample* original,
     *replacement = result.Detach();
     const auto replacements = ++g_replaceSuccess;
     if (replacements <= 3 || replacements % 300 == 0)
-        TraceRaw(L"SampleReplaced: fresh OBS MJPEG, NV12 or VGA frame supplied to Device MFT");
+        TraceRaw(L"SampleReplaced: fresh OBS frame supplied in negotiated adaptive format");
     return true;
 #endif // AVCAM_DUAL_CAMERA_LAB_MFT
 }
