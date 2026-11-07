@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - dev/manual-vhci
+      - feat/avcam-format-compat-v2
     paths:
       - 'research/physical-c270/**'
       - '.github/workflows/avcam-physical-c270.yml'
@@ -62,6 +63,12 @@ jobs:
             research/physical-c270/AvCamVgaFrameConvertTest.cpp \
             -o /tmp/avcam-vga-convert
           /tmp/avcam-vga-convert
+      - name: Verify v2 flexible raw-format conversion (camera-free)
+        run: |
+          c++ -std=c++17 -O2 -Wall -Wextra -Werror -Iresearch/physical-c270 \
+            research/physical-c270/AvCamAdaptiveFrameConvertTest.cpp \
+            -o /tmp/avcam-adaptive-format-convert
+          /tmp/avcam-adaptive-format-convert
       - name: Verify unscoped MFT replacement is rejected by the compiler
         run: |
           echo '#include "AvCamMftBuildSafety.h"' > /tmp/avcam-safe-mft.cpp
@@ -159,7 +166,7 @@ jobs:
           # The Device MFT hook includes the routing policy. Ensure the
           # adapted upstream build uses the exact tested policy, not a stale
           # header from an older checkout.
-          foreach ($name in @('AvCamPerClientRoutingPolicy.h','AvCamDmftMediaContract.h','AvCamVgaFrameConvert.h','AvCamPhysicalHook.cpp')) {
+          foreach ($name in @('AvCamPerClientRoutingPolicy.h','AvCamDmftMediaContract.h','AvCamVgaFrameConvert.h','AvCamAdaptiveFrameConvert.h','AvCamPhysicalHook.cpp')) {
             $src = Join-Path 'research/physical-c270' $name
             $dst = Join-Path 'upstream/avstream/sampledevicemft' $name
             if (!(Test-Path -LiteralPath $dst -PathType Leaf)) {
@@ -839,7 +846,7 @@ jobs:
           Write-Host 'AVCAM_DUAL_CAMERA_LAB_FAIL_CLOSED_PASS'
       - uses: actions/upload-artifact@v4
         with:
-          name: AvCam-Dual-Camera-Lab-x64
+          name: ${{ github.ref_name == 'feat/avcam-format-compat-v2' && 'AvCam-Format-Compat-v2-Lab-x64' || 'AvCam-Dual-Camera-Lab-x64' }}
           path: artifacts/AvCam-Dual-Camera-Lab-x64/
           if-no-files-found: error
 
