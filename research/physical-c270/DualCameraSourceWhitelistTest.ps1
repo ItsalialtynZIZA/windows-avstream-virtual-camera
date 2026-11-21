@@ -26,12 +26,20 @@ function Check($name, $items, $expected) {
 $logitech = New-Camera 'USB\VID_046D&PID_0825&MI_00\A'
 $integrated13D3 = New-Camera 'USB\VID_13D3&PID_56FF&MI_00\B'
 $integrated2B7E = New-Camera 'USB\VID_2B7E&PID_B685&MI_00\C'
+$integrated5986 = New-Camera 'USB\VID_5986&PID_212B&MI_00\6&6482ABB&0&0000'
+$unavailable04F2 = New-Camera 'USB\VID_04F2&PID_B7B9&MI_00\6&261941B5&0&0000' 'Unknown'
 $virtual = New-Camera 'ROOT\AVCAMVIRTUALCAMERA\0000'
 Check '13D3_INTEGRATED_ACCEPTED' @($logitech,$integrated13D3,$virtual) $true
 Check '2B7E_INTEGRATED_ACCEPTED' @($logitech,$integrated2B7E) $true
+Check '5986_INTEGRATED_ACCEPTED' @($logitech,$integrated5986) $true
+Check '5986_WITH_UNAVAILABLE_04F2_ACCEPTED' @($logitech,$integrated5986,$unavailable04F2) $true
+Check 'UNKNOWN_04F2_ALONE_REJECTED' @($logitech,$unavailable04F2) $false
+Check '5986_WRONG_INTERFACE_REJECTED' @($logitech,(New-Camera 'USB\VID_5986&PID_212B&MI_02\X')) $false
+Check '5986_NOT_PRESENT_REJECTED' @($logitech,(New-Camera $integrated5986.InstanceId 'Unknown')) $false
 Check 'LOGITECH_ALONE_REJECTED' @($logitech) $false
 Check 'VIRTUAL_ALONE_REJECTED' @($logitech,$virtual) $false
 Check 'DUPLICATE_SOURCE_REJECTED' @($logitech,$integrated2B7E,$integrated13D3) $false
+Check '5986_AND_13D3_DUPLICATE_REJECTED' @($logitech,$integrated5986,$integrated13D3) $false
 Check 'OFFLINE_SOURCE_REJECTED' @($logitech,(New-Camera $integrated13D3.InstanceId 'Error')) $false
 Check 'UNSUPPORTED_SOURCE_REJECTED' @($logitech,(New-Camera 'USB\VID_9999&PID_9999&MI_00\X')) $false
 Check 'WRONG_INTERFACE_REJECTED' @($logitech,(New-Camera 'USB\VID_13D3&PID_56FF&MI_02\B')) $false
