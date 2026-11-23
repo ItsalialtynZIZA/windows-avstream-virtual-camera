@@ -27,11 +27,16 @@ $logitech = New-Camera 'USB\VID_046D&PID_0825&MI_00\A'
 $integrated13D3 = New-Camera 'USB\VID_13D3&PID_56FF&MI_00\B'
 $integrated2B7E = New-Camera 'USB\VID_2B7E&PID_B685&MI_00\C'
 $integrated5986 = New-Camera 'USB\VID_5986&PID_212B&MI_00\6&6482ABB&0&0000'
+$integrated174F = New-Camera 'USB\VID_174F&PID_244C&MI_00\6&29ECD27F&0&0000'
 $unavailable04F2 = New-Camera 'USB\VID_04F2&PID_B7B9&MI_00\6&261941B5&0&0000' 'Unknown'
 $virtual = New-Camera 'ROOT\AVCAMVIRTUALCAMERA\0000'
 Check '13D3_INTEGRATED_ACCEPTED' @($logitech,$integrated13D3,$virtual) $true
 Check '2B7E_INTEGRATED_ACCEPTED' @($logitech,$integrated2B7E) $true
 Check '5986_INTEGRATED_ACCEPTED' @($logitech,$integrated5986) $true
+Check '174F_INTEGRATED_ACCEPTED' @($logitech,$integrated174F) $true
+Check '174F_UNKNOWN_REJECTED' @($logitech,(New-Camera $integrated174F.InstanceId 'Unknown')) $false
+Check '174F_WRONG_INTERFACE_REJECTED' @($logitech,(New-Camera 'USB\VID_174F&PID_244C&MI_02\X')) $false
+Check '174F_AND_5986_DUPLICATE_REJECTED' @($logitech,$integrated174F,$integrated5986) $false
 Check '5986_WITH_UNAVAILABLE_04F2_ACCEPTED' @($logitech,$integrated5986,$unavailable04F2) $true
 Check 'UNKNOWN_04F2_ALONE_REJECTED' @($logitech,$unavailable04F2) $false
 Check '5986_WRONG_INTERFACE_REJECTED' @($logitech,(New-Camera 'USB\VID_5986&PID_212B&MI_02\X')) $false
